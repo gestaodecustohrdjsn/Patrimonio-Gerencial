@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Sistema de controle patrimonial hospitalar" />
+  <title>Patrimônio+</title>
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">P+</div>
+        <div>
+          <strong>Patrimônio+</strong>
+          <small>Gestão patrimonial</small>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">Visão geral</button>
+        <button class="nav-item" data-view="patrimonios">Patrimônios</button>
+        <button class="nav-item" data-view="centros">Centros de custo</button>
+        <button class="nav-item" data-view="importacao">Importação</button>
+        <button class="nav-item" data-view="etiquetas">Etiquetas</button>
+        <button class="nav-item" data-view="relatorios">Relatórios</button>
+        <button class="nav-item" data-view="configuracoes">Configurações</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span id="modeBadge" class="badge">Modo demonstração</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button" id="menuButton" aria-label="Abrir ou fechar menu">☰</button>
+        <div class="search-wrap">
+          <input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…" />
+        </div>
+        <button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>
+      </header>
+
+      <section id="viewRoot" class="content"></section>
+    </main>
+  </div>
+
+  <dialog id="assetDialog">
+    <form method="dialog" id="assetForm">
+      <div class="dialog-header">
+        <div>
+          <button type="button" class="back-button" id="closeDialogButton">← Voltar</button>
+          <h2>Novo patrimônio</h2>
+          <p>A ID interna será gerada automaticamente.</p>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <label>
+          Tipo *
+          <select id="tipo" required>
+            <option value="">Selecione</option>
+            <option value="1">Equipamento Médico</option>
+            <option value="2">Mobiliário</option>
+            <option value="3">Equipamento de Informática</option>
+          </select>
+        </label>
+
+        <label>
+          Data de aquisição
+          <input id="dataAquisicao" type="date" />
+          <small>Se ficar vazia, será usada a data do cadastro.</small>
+        </label>
+
+        <label class="full">
+          Descrição *
+          <input id="descricao" required maxlength="180" placeholder="Ex.: Cadeira fixa azul" />
+        </label>
+
+        <label class="full">
+          Descrição padrão *
+          <input id="descricaoPadrao" required maxlength="180" placeholder="Ex.: CADEIRA FIXA SEM BRAÇO" />
+        </label>
+
+        <label>
+          Valor *
+          <input id="valor" required inputmode="decimal" placeholder="0,00" />
+        </label>
+
+        <label>
+          Valor padrão SIGEM *
+          <input id="valorSigem" required inputmode="decimal" placeholder="0,00" />
+        </label>
+
+        <label>
+          Centro de custo *
+          <select id="centroCusto" required></select>
+        </label>
+
+        <label>
+          Aquisição *
+          <select id="aquisicao" required>
+            <option value="">Selecione</option>
+            <option>Compra</option>
+            <option>Doação</option>
+            <option>Locação</option>
+          </select>
+        </label>
+
+        <label>
+          Estado de conservação *
+          <select id="estado" required>
+            <option value="">Selecione</option>
+            <option>Produto Novo</option>
+            <option>Bem Conservado</option>
+            <option>Desgastado</option>
+            <option>Inutilizável</option>
+          </select>
+        </label>
+
+        <label>
+          ID SES
+          <input id="idSes" maxlength="50" />
+        </label>
+
+        <label>
+          Marca/Modelo
+          <input id="marcaModelo" maxlength="120" />
+        </label>
+
+        <label>
+          Nº Nota Fiscal
+          <input id="notaFiscal" maxlength="60" />
+        </label>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="ghost-button" id="cancelButton">Cancelar</button>
+        <button type="submit" class="primary-button" value="save">Salvar patrimônio</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./js/config.js"></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
