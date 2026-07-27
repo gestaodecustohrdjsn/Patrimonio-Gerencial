@@ -1,4 +1,4 @@
-import { supabase, hasSupabaseConfig } from "./lib/supabase.js";
+import { supabase, hasSupabaseConfig, hasSupabaseLibrary } from "./lib/supabase.js";
 import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/utils.js";
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
@@ -9,6 +9,10 @@ import { renderLogin } from "./pages/login.js";
 
 const state = { currentView: "dashboard", centers: [], assets: [], sigemCount: 0, search: "", session: null, selectedSigem: null };
 const appRoot = document.querySelector("#appRoot");
+
+function renderFatal(title, message) {
+  appRoot.innerHTML = `<main class="login-page"><section class="login-card"><div class="login-brand"><div class="brand-mark">P+</div><div><strong>Patrimônio+</strong><small>Diagnóstico</small></div></div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></section></main>`;
+}
 
 function renderConfigError() {
   appRoot.innerHTML = `<main class="login-page"><section class="login-card"><div class="login-brand"><div class="brand-mark">P+</div><div><strong>Patrimônio+</strong><small>Configuração inicial</small></div></div><h1>Conexão pendente</h1><p>Preencha <code>js/config.js</code> com a Project URL e a Publishable Key do Supabase.</p></section></main>`;
@@ -156,8 +160,12 @@ function exportCsv() { const rows=filteredAssets(); const data=[["ID Interna","I
 
 async function start() {
   if (!hasSupabaseConfig()) { renderConfigError(); return; }
+  if (!hasSupabaseLibrary()) {
+    renderFatal("Biblioteca não carregada", "O navegador não conseguiu carregar a biblioteca do Supabase. Faça Ctrl+F5 e verifique se a rede ou o bloqueador de conteúdo está impedindo cdn.jsdelivr.net.");
+    return;
+  }
   state.session = await getSession();
   if (!state.session) renderLogin(appRoot); else { shell(); await loadData(); }
   onAuthChange(async session => { state.session=session; if (!session) renderLogin(appRoot); else { shell(); await loadData(); } });
 }
-start().catch(e => { console.error(e); toast(e.message,"error"); });
+start().catch(e => { console.error(e); renderFatal("Erro ao iniciar", e?.message || "Erro desconhecido ao iniciar o sistema."); });
