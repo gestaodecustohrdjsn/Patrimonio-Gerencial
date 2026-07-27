@@ -1,0 +1,7 @@
+{
+  "index_exists": true,
+  "schema_contains_function": true,
+  "back_button_present": true,
+  "mobile_css_present": true,
+  "export_csv_present": true
+}
