@@ -72,9 +72,9 @@ create table public.patrimonios (
   id_interna varchar(16) not null unique,
   id_ses text unique,
   descricao text not null,
-  descricao_padrao_id uuid not null references public.descricoes_padrao(id),
+  descricao_padrao_id uuid references public.descricoes_padrao(id),
   data_aquisicao date not null default current_date,
-  valor_aquisicao numeric(14,2) not null check (valor_aquisicao >= 0),
+  valor_aquisicao numeric(14,2) check (valor_aquisicao >= 0),
   nota_fiscal_numero text,
   centro_custo_id uuid not null references public.centros_custo(id),
   tipo_id smallint not null references public.tipos_patrimonio(id),
@@ -82,13 +82,17 @@ create table public.patrimonios (
   status public.status_patrimonio not null default 'ATIVO',
   tipo_aquisicao public.tipo_aquisicao not null,
   fornecedor_id uuid references public.fornecedores(id),
-  estado_conservacao public.estado_conservacao not null,
+  estado_conservacao public.estado_conservacao not null default 'BEM_CONSERVADO',
   observacoes text,
   criado_por uuid references auth.users(id),
   criado_em timestamptz not null default now(),
   atualizado_por uuid references auth.users(id),
   atualizado_em timestamptz not null default now(),
-  inativado_em timestamptz
+  inativado_em timestamptz,
+  removido boolean not null default false,
+  removido_em timestamptz,
+  removido_por uuid references auth.users(id),
+  public_token uuid not null unique default gen_random_uuid()
 );
 
 create table public.historico_alteracoes (
@@ -262,3 +266,33 @@ create policy "usuarios autenticados atualizam patrimonios" on public.patrimonio
 create policy "usuarios autenticados leem historico" on public.historico_alteracoes for select to authenticated using (true);
 
 -- As políticas administrativas serão refinadas quando criarmos perfis e permissões.
+
+
+create or replace function public.consultar_patrimonio_publico(p_token uuid)
+returns table (
+  id_interna text, id_ses text, descricao text, tipo_id smallint, descricao_padrao text,
+  marca_modelo text, centro_custo text, estado_conservacao text, status text,
+  tipo_aquisicao text, data_aquisicao date, valor_aquisicao numeric,
+  nota_fiscal_numero text, fornecedor text, observacoes text,
+  criado_em timestamptz, atualizado_em timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id_interna::text, p.id_ses, p.descricao, p.tipo_id, d.descricao,
+         p.marca_modelo, c.nome, p.estado_conservacao::text, p.status::text,
+         p.tipo_aquisicao::text, p.data_aquisicao, p.valor_aquisicao,
+         p.nota_fiscal_numero, f.razao_social, p.observacoes, p.criado_em, p.atualizado_em
+    from public.patrimonios p
+    join public.centros_custo c on c.id = p.centro_custo_id
+    left join public.descricoes_padrao d on d.id = p.descricao_padrao_id
+    left join public.fornecedores f on f.id = p.fornecedor_id
+   where p.public_token = p_token and coalesce(p.removido, false) = false
+   limit 1;
+$$;
+
+revoke all on function public.consultar_patrimonio_publico(uuid) from public;
+grant usage on schema public to anon, authenticated;
+grant execute on function public.consultar_patrimonio_publico(uuid) to anon, authenticated;

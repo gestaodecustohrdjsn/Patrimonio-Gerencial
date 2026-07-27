@@ -1,14 +1,15 @@
-# Patrimônio+ v0.6
+# Patrimônio+ v0.7
 
-Esta versão adiciona:
+Sistema web de gestão patrimonial conectado ao Supabase e publicado no GitHub Pages.
 
-- busca rápida por ID interna, ID SES, descrição, item de referência, marca/modelo e centro de custo;
-- ativação e inativação com registro no histórico;
-- remoção lógica e restauração;
-- exclusão definitiva controlada para registros de teste;
-- QR Code para abrir a ficha;
-- etiqueta individual usando o layout oficial enviado;
-- download da etiqueta em PNG e impressão pelo navegador;
-- correção e validação reforçada do cadastro de itens `- HRPP`.
+## Destaques da versão
 
-Leia `INSTRUCOES_ATUALIZACAO.md` antes de publicar.
+- cadastro com apenas Tipo, Descrição, Aquisição e Centro de Custo obrigatórios;
+- SIGEM e valores opcionais;
+- padrões: data atual, Bem Conservado e Ativo;
+- consulta pública por QR Code, sem login e somente leitura;
+- token público aleatório por patrimônio;
+- ficha administrativa, edição, movimentação, histórico, ativação, inativação e remoção lógica preservados;
+- etiqueta usando o layout oficial em `assets/layout-etiqueta-patrimonio.png`.
+
+Consulte `INSTRUCOES_ATUALIZACAO.md` antes de publicar.

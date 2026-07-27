@@ -1,33 +1,55 @@
-# Atualização para a v0.6
+# Atualização para Patrimônio+ v0.7
+
+Aplique na ordem abaixo: primeiro Supabase, depois GitHub Pages.
 
 ## 1. Supabase
 
-1. Abra o **SQL Editor**.
-2. Confirme que a consulta será executada como `postgres`.
-3. Abra `database/005_status_remocao_qr.sql`.
-4. Copie todo o conteúdo e execute.
-5. O resultado esperado contém `v0.6 pronta`.
+1. Abra o projeto no Supabase.
+2. Entre em **SQL Editor** e crie uma nova consulta.
+3. Confirme que o editor está executando como **postgres**.
+4. Abra `database/006_consulta_publica_cadastro_flexivel.sql`.
+5. Cole todo o conteúdo e clique em **Run**.
+6. O resultado esperado começa com `v0.7 pronta`.
 
-O script preserva os patrimônios existentes e acrescenta apenas os campos e funções necessários para remoção segura.
+O script preserva os patrimônios e históricos existentes. Ele:
+
+- torna SIGEM e valor opcionais;
+- mantém data atual, Bem Conservado e Ativo como padrões;
+- cria um token público aleatório para cada patrimônio;
+- cria uma consulta pública limitada, sem liberar a tabela inteira;
+- permite ao papel `anon` executar somente essa consulta.
+
+Não execute novamente os scripts 003, 004 ou 005.
 
 ## 2. GitHub Pages
 
-1. Só publique depois de o SQL terminar sem erro.
-2. Substitua os arquivos da versão atual pelo conteúdo desta pasta.
-3. Preserve `js/config.js` com a Project URL e a chave pública atuais.
-4. Confirme que `index.html` está na raiz e que existe `assets/layout-etiqueta-patrimonio.png`.
-5. Faça o commit, aguarde o Pages e abra com `Ctrl + F5`.
+1. Faça backup do `js/config.js` atualmente publicado.
+2. Substitua os arquivos do repositório pelo conteúdo desta pasta.
+3. Confirme que `index.html` está na raiz do repositório.
+4. Recoloque no novo `js/config.js` a URL e a chave pública do Supabase, caso necessário.
+5. Faça o commit e aguarde o GitHub Pages publicar.
+6. Abra o sistema com `Ctrl + F5`.
 
 ## 3. Testes
 
-1. Use a busca superior com ID interna, SES, descrição, item SIGEM/HRPP, marca ou centro.
-2. Abra uma ficha e teste **Inativar** e **Ativar**; confira a linha do tempo.
-3. Clique em **Remover** e depois em **Ver removidos** na listagem.
-4. Restaure o registro.
-5. Para um bem exclusivamente de teste, remova-o e use **Excluir definitivamente**; digite `EXCLUIR`.
-6. Gere a etiqueta, confira QR e ID, baixe o PNG e teste a impressão.
-7. No novo cadastro, selecione primeiro o Tipo e use o botão `+` para adicionar um item HRPP.
+### Cadastro flexível
 
-## Observação sobre o QR Code
+Cadastre um patrimônio preenchendo apenas:
 
-O endereço usa `#/p/ID_INTERNA`, formato compatível com GitHub Pages. Caso o usuário não esteja autenticado, o sistema mostra o login e abre a ficha após a autenticação.
+- Tipo;
+- Descrição;
+- Aquisição;
+- Centro de custo.
+
+SIGEM e valor devem permanecer vazios. A data deve vir preenchida com hoje, o estado com **Bem Conservado** e o status com **Ativo**.
+
+### Consulta pública
+
+1. Abra a ficha administrativa do patrimônio.
+2. Clique em **Etiqueta / QR**.
+3. Escaneie o QR em uma janela anônima ou em outro celular.
+4. A ficha pública deve abrir sem login e sem botões de edição.
+
+### Segurança
+
+A URL pública usa um UUID aleatório. A função pública devolve somente uma ficha por token e não concede leitura direta da tabela `patrimonios`.

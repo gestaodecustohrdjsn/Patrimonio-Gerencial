@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase.js";
 const SELECT_FIELDS = `
   id,id_interna,id_ses,descricao,data_aquisicao,valor_aquisicao,
   nota_fiscal_numero,tipo_id,marca_modelo,status,tipo_aquisicao,
-  estado_conservacao,criado_em,atualizado_em,removido,removido_em,
+  estado_conservacao,criado_em,atualizado_em,removido,removido_em,public_token,
   centros_custo:centro_custo_id(id,codigo,nome),
   descricoes_padrao:descricao_padrao_id(id,descricao,valor_padrao)
 `;
@@ -75,4 +75,10 @@ export async function listAssetHistory(id) {
     .limit(100);
   if (error) throw error;
   return data;
+}
+
+export async function getPublicAsset(token) {
+  const { data, error } = await supabase.rpc("consultar_patrimonio_publico", { p_token: token });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] || null : data;
 }

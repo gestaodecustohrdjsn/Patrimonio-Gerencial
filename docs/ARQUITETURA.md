@@ -1,20 +1,31 @@
-# Arquitetura v0.1
+# Arquitetura — Patrimônio+ v0.7
 
-## Objetivo
-Substituir a planilha como fonte oficial, mantendo planilhas apenas como entrada, saída e conferência.
+```text
+GitHub Pages
+    ├── Área administrativa autenticada
+    └── Consulta pública somente leitura
+                ↓
+             Supabase
+                ↓
+            PostgreSQL
+```
 
-## Camadas
-- GitHub Pages: interface estática.
-- Supabase Auth: autenticação.
-- Supabase API/RPC: acesso controlado.
-- PostgreSQL: dados, regras e concorrência.
-- Supabase Storage: documentos e etiquetas futuras.
+## Separação de acesso
 
-## Decisões
-1. A ID interna é gerada pelo banco.
-2. Patrimônio não é apagado operacionalmente; é inativado.
-3. Centros de custo inativos continuam no histórico.
-4. Importações passam por área temporária.
-5. O de-para é persistente.
-6. Toda alteração relevante gera histórico.
-7. A página pública do QR Code não mostrará informações financeiras.
+A área administrativa usa autenticação Supabase e as políticas RLS existentes.
+
+A consulta pública não recebe `SELECT` sobre a tabela `patrimonios`. Ela chama a função `consultar_patrimonio_publico(uuid)`, que retorna somente os campos permitidos de um único patrimônio identificado por token aleatório.
+
+## QR Code
+
+O QR aponta para:
+
+```text
+#/consulta/{public_token}
+```
+
+A ID interna continua visível na etiqueta, mas não é usada como chave pública previsível.
+
+## Próxima etapa
+
+A v0.8 será o módulo de importação da base patrimonial existente, com validação e prévia antes da confirmação.

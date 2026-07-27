@@ -3,8 +3,8 @@ import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/uti
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters } from "./services/centros.js";
-import { searchSigem, createHospitalCatalogItem } from "./services/sigem.js";
-import { listAssets, createAsset, updateAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory } from "./services/patrimonios.js";
+import { searchSigem } from "./services/sigem.js";
+import { listAssets, createAsset, updateAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 
 const state = {
@@ -61,21 +61,21 @@ function shell() {
         <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select></label>
         <label>ID SES<input id="idSes" maxlength="50"></label>
         <label class="full">Descrição do bem *<input id="descricao" required maxlength="180" placeholder="Ex.: Cadeira fixa azul"></label>
-        <label class="full sigem-field">Item de referência *<div class="input-action-row"><input id="sigemSearch" required autocomplete="off" placeholder="Pesquise no SIGEM ou no catálogo HRPP"><button type="button" class="square-add-button" id="openCatalogButton" title="Cadastrar item HRPP">+</button></div><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>A busca consulta a mesma tabela de descrições padrão. Itens internos recebem “- HRPP”.</small></label>
+        <label class="full sigem-field">Item de referência SIGEM <span class="optional-tag">opcional</span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise um item de referência, se houver"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>O patrimônio pode ser cadastrado sem vínculo com o catálogo SIGEM.</small></label>
       </div></fieldset>
 
       <fieldset class="form-section"><legend>Aquisição e valores</legend><div class="form-grid">
-        <label>Data de aquisição<input id="dataAquisicao" type="date"><small>Se ficar vazia, será usada a data atual.</small></label>
+        <label>Data de aquisição<input id="dataAquisicao" type="date"><small>Preenchida automaticamente com a data atual.</small></label>
         <label>Aquisição *<select id="aquisicao" required><option value="">Selecione</option><option value="COMPRA">Compra</option><option value="DOACAO">Doação</option><option value="LOCACAO">Locação</option></select></label>
-        <label>Valor de aquisição<input id="valor" inputmode="decimal" placeholder="Deixe vazio para usar o valor de referência"></label>
-        <label>Valor de referência<input id="valorSigem" readonly tabindex="-1"></label>
+        <label>Valor de aquisição <span class="optional-tag">opcional</span><input id="valor" inputmode="decimal" placeholder="Pode ficar vazio"></label>
+        <label>Valor de referência SIGEM<input id="valorSigem" readonly tabindex="-1" placeholder="—"></label>
         <label>Nº Nota Fiscal<input id="notaFiscal" maxlength="60"></label>
         <label>Marca/Modelo<input id="marcaModelo" maxlength="120"></label>
       </div></fieldset>
 
       <fieldset class="form-section"><legend>Localização e condição</legend><div class="form-grid">
         <label>Centro de custo *<select id="centroCusto" required></select></label>
-        <label>Estado de conservação<select id="estado"><option value="">Bem Conservado (padrão)</option><option value="PRODUTO_NOVO">Produto Novo</option><option value="BEM_CONSERVADO">Bem Conservado</option><option value="DESGASTADO">Desgastado</option><option value="INUTILIZAVEL">Inutilizável</option></select></label>
+        <label>Estado de conservação<select id="estado"><option value="PRODUTO_NOVO">Produto Novo</option><option value="BEM_CONSERVADO" selected>Bem Conservado</option><option value="DESGASTADO">Desgastado</option><option value="INUTILIZAVEL">Inutilizável</option></select></label>
         <label id="statusField" hidden>Status<select id="status"><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option></select></label>
       </div></fieldset>
 
@@ -83,16 +83,6 @@ function shell() {
     </form>
   </dialog>
 
-  <dialog id="catalogDialog" class="small-dialog">
-    <form method="dialog" id="catalogForm">
-      <div class="dialog-header"><button type="button" class="back-button" id="closeCatalogButton">← Voltar</button><h2>Novo item HRPP</h2><p>Informe apenas o nome e o valor. O sistema adicionará “- HRPP” automaticamente.</p></div>
-      <div class="form-grid">
-        <label class="full">Nome do item *<input id="catalogDescription" required maxlength="180" placeholder="Ex.: Cadeira específica para coleta"></label>
-        <label class="full">Valor de referência *<input id="catalogValue" required inputmode="decimal" placeholder="0,00"></label>
-      </div>
-      <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelCatalogButton">Cancelar</button><button type="submit" class="primary-button" id="saveCatalogButton">Adicionar e selecionar</button></div>
-    </form>
-  </dialog>
 
   <dialog id="moveDialog" class="small-dialog">
     <form method="dialog" id="moveForm">
@@ -157,7 +147,7 @@ function renderDashboard() {
     <div class="cards cards-three">
       <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${visibleAssets.length}</div></article>
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
-      <article class="card value-card"><div><span class="muted">Valor cadastrado</span><div class="metric metric-money">${valueContent}</div></div><button class="ghost-button compact-button" data-action="toggle-value">${visibilityLabel}</button></article>
+      <article class="card value-card"><div><span class="muted">Valor total informado</span><div class="metric metric-money">${valueContent}</div></div><button class="ghost-button compact-button" data-action="toggle-value">${visibilityLabel}</button></article>
     </div>
     ${assetsTable(visibleAssets.slice(0, 8), "Últimos patrimônios")}`;
   bindDynamicActions();
@@ -194,7 +184,7 @@ function renderAssetDetail(loadingHistory = false) {
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header detail-header"><div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(asset.descricao)}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.removido ? " · REMOVIDO" : ""}</p></div><div class="header-actions"><button class="ghost-button" data-action="label">Etiqueta / QR</button>${asset.removido ? `<button class="ghost-button" data-action="restore">Restaurar</button><button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : `<button class="ghost-button" data-action="move">Movimentar</button><button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button><button class="danger-button" data-action="remove">Remover</button><button class="primary-button" data-action="edit">Editar patrimônio</button>`}</div></div>
     <section class="detail-grid">
-      ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Tipo", typeName(asset.tipo_id)], ["Descrição padrão", asset.descricoes_padrao?.descricao || "—"], ["Marca/Modelo", asset.marca_modelo || "—"]])}
+      ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Tipo", typeName(asset.tipo_id)], ["Item de referência SIGEM", asset.descricoes_padrao?.descricao || "—"], ["Marca/Modelo", asset.marca_modelo || "—"]])}
       ${detailCard("Aquisição e valores", [["Data de aquisição", formatDate(asset.data_aquisicao)], ["Tipo de aquisição", acquisitionName(asset.tipo_aquisicao)], ["Valor de aquisição", money(asset.valor_aquisicao)], ["Nota fiscal", asset.nota_fiscal_numero || "—"]])}
       ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")], ["Criado em", formatDateTime(asset.criado_em)]])}
     </section>
@@ -244,10 +234,6 @@ function bindStaticActions() {
   document.querySelector("#assetForm").addEventListener("submit", submitAsset);
   document.querySelector("#globalSearch").addEventListener("input", (event) => { state.search = event.target.value; state.currentView = "patrimonios"; render(); });
   document.querySelector("#sigemSearch").addEventListener("input", debounce(handleSigemSearch));
-  document.querySelector("#openCatalogButton").addEventListener("click", openCatalogDialog);
-  document.querySelector("#closeCatalogButton").addEventListener("click", closeCatalogDialog);
-  document.querySelector("#cancelCatalogButton").addEventListener("click", closeCatalogDialog);
-  document.querySelector("#catalogForm").addEventListener("submit", submitCatalogItem);
   document.querySelector("#closeMoveButton").addEventListener("click", closeMoveDialog);
   document.querySelector("#cancelMoveButton").addEventListener("click", closeMoveDialog);
   document.querySelector("#moveForm").addEventListener("submit", submitMovement);
@@ -295,6 +281,9 @@ function openNewAsset() {
   document.querySelector("#statusField").hidden = true;
   document.querySelector("#saveAssetButton").textContent = "Salvar patrimônio";
   populateCenters();
+  document.querySelector("#dataAquisicao").value = new Date().toISOString().slice(0, 10);
+  document.querySelector("#estado").value = "BEM_CONSERVADO";
+  document.querySelector("#status").value = "ATIVO";
   document.querySelector("#assetDialog").showModal();
   document.querySelector("#tipo").focus();
 }
@@ -313,28 +302,20 @@ function openEditAsset() {
   document.querySelector("#descricao").value = asset.descricao || "";
   document.querySelector("#dataAquisicao").value = asset.data_aquisicao || "";
   document.querySelector("#aquisicao").value = asset.tipo_aquisicao || "";
-  document.querySelector("#valor").value = Number(asset.valor_aquisicao || 0).toFixed(2).replace(".", ",");
+  document.querySelector("#valor").value = asset.valor_aquisicao == null ? "" : Number(asset.valor_aquisicao).toFixed(2).replace(".", ",");
   document.querySelector("#notaFiscal").value = asset.nota_fiscal_numero || "";
   document.querySelector("#marcaModelo").value = asset.marca_modelo || "";
   document.querySelector("#estado").value = asset.estado_conservacao || "BEM_CONSERVADO";
   document.querySelector("#status").value = asset.status || "ATIVO";
   populateCenters("centroCusto", asset.centros_custo?.id || "");
-  selectSigem({ id: asset.descricoes_padrao?.id, descricao: asset.descricoes_padrao?.descricao, valor_padrao: asset.descricoes_padrao?.valor_padrao, origem: /\s-\sHRPP$/i.test(asset.descricoes_padrao?.descricao || "") ? "HRPP" : "SIGEM" });
+  if (asset.descricoes_padrao?.id) {
+    selectSigem({ id: asset.descricoes_padrao.id, descricao: asset.descricoes_padrao.descricao, valor_padrao: asset.descricoes_padrao.valor_padrao });
+  }
   document.querySelector("#assetDialog").showModal();
 }
 
 function closeDialog() { document.querySelector("#assetDialog").close(); }
-function closeCatalogDialog() { document.querySelector("#catalogDialog").close(); }
 function closeMoveDialog() { document.querySelector("#moveDialog").close(); }
-
-function openCatalogDialog() {
-  const currentType = document.querySelector("#tipo").value;
-  if (!currentType) { toast("Selecione primeiro o tipo do patrimônio.", "error"); return; }
-  document.querySelector("#catalogForm").reset();
-  document.querySelector("#catalogDescription").value = document.querySelector("#sigemSearch").value.trim();
-  document.querySelector("#catalogDialog").showModal();
-  document.querySelector("#catalogDescription").focus();
-}
 
 function openMoveDialog() {
   const asset = selectedAsset();
@@ -357,7 +338,7 @@ async function handleSigemSearch(event) {
   try {
     const items = await searchSigem(input.value);
     const options = items.map((item) => `<button type="button" class="sigem-option" data-id="${item.id}" data-description="${escapeHtml(item.descricao)}" data-value="${item.valor_padrao}" data-origin="${/\s-\sHRPP$/i.test(item.descricao) ? "HRPP" : "SIGEM"}"><span>${escapeHtml(item.descricao)}<small>${/\s-\sHRPP$/i.test(item.descricao) ? "Catálogo HRPP" : "SIGEM"}</small></span><strong>${money(item.valor_padrao)}</strong></button>`).join("");
-    box.innerHTML = options || '<div class="search-message">Nenhum item encontrado. Use o botão + ao lado do campo para cadastrar um item HRPP.</div>';
+    box.innerHTML = options || '<div class="search-message">Nenhum item SIGEM encontrado. Você pode deixar este campo vazio.</div>';
     box.querySelectorAll(".sigem-option").forEach((button) => button.addEventListener("click", () => selectSigem(button)));
   } catch (error) {
     box.innerHTML = `<div class="search-message">Erro: ${escapeHtml(error.message)}</div>`;
@@ -383,37 +364,13 @@ function selectSigem(buttonOrItem) {
   document.querySelector("#sigemResults").hidden = true;
 }
 
-async function submitCatalogItem(event) {
-  event.preventDefault();
-  const description = document.querySelector("#catalogDescription").value.trim();
-  const value = normalizeMoney(document.querySelector("#catalogValue").value);
-  const typeId = Number(document.querySelector("#tipo").value);
-  if (!description) { toast("Informe o nome do item.", "error"); return; }
-  if (!Number.isFinite(value) || value < 0) { toast("Informe um valor de referência válido.", "error"); return; }
-  const button = document.querySelector("#saveCatalogButton");
-  button.disabled = true;
-  button.textContent = "Salvando…";
-  try {
-    const item = await createHospitalCatalogItem({ descricao: description, valorPadrao: value, tipoId });
-    if (!item?.id) throw new Error("O banco não retornou o item criado. Confira a função cadastrar_item_catalogo_hrpp.");
-    selectSigem({ ...item, origem: "HRPP" });
-    closeCatalogDialog();
-    toast("Item HRPP adicionado à tabela de descrições padrão.", "success");
-  } catch (error) {
-    toast(error.code === "23505" ? "Já existe um item com essa descrição." : error.message, "error");
-  } finally {
-    button.disabled = false;
-    button.textContent = "Adicionar e selecionar";
-  }
-}
-
 function assetPayload() {
   const rawValue = document.querySelector("#valor").value.trim();
-  const value = rawValue ? normalizeMoney(rawValue) : Number(state.selectedSigem?.valor);
+  const value = rawValue ? normalizeMoney(rawValue) : null;
   return {
     id_ses: document.querySelector("#idSes").value.trim() || null,
     descricao: document.querySelector("#descricao").value.trim(),
-    descricao_padrao_id: state.selectedSigem.id,
+    descricao_padrao_id: state.selectedSigem?.id || null,
     data_aquisicao: document.querySelector("#dataAquisicao").value || new Date().toISOString().slice(0, 10),
     valor_aquisicao: value,
     nota_fiscal_numero: document.querySelector("#notaFiscal").value.trim() || null,
@@ -428,9 +385,8 @@ function assetPayload() {
 
 async function submitAsset(event) {
   event.preventDefault();
-  if (!state.selectedSigem || !document.querySelector("#descricaoPadraoId").value) { toast("Selecione um item na lista de resultados.", "error"); return; }
   const payload = assetPayload();
-  if (!Number.isFinite(payload.valor_aquisicao) || payload.valor_aquisicao < 0) { toast("Informe um valor de aquisição válido ou deixe o campo vazio.", "error"); return; }
+  if (payload.valor_aquisicao !== null && (!Number.isFinite(payload.valor_aquisicao) || payload.valor_aquisicao < 0)) { toast("Informe um valor de aquisição válido ou deixe o campo vazio.", "error"); return; }
   const button = document.querySelector("#saveAssetButton");
   button.disabled = true;
   button.textContent = "Salvando…";
@@ -535,7 +491,7 @@ async function deletePermanentAsset() {
 
 function assetPublicUrl(asset) {
   const base = `${window.location.origin}${window.location.pathname}`;
-  return `${base}#/p/${encodeURIComponent(asset.id_interna)}`;
+  return `${base}#/consulta/${encodeURIComponent(asset.public_token)}`;
 }
 
 function openLabelDialog() {
@@ -623,18 +579,107 @@ function formatDateTime(value) {
 function acquisitionName(value) { return ({ COMPRA: "Compra", DOACAO: "Doação", LOCACAO: "Locação" })[value] || value || "—"; }
 function conservationName(value) { return ({ PRODUTO_NOVO: "Produto Novo", BEM_CONSERVADO: "Bem Conservado", DESGASTADO: "Desgastado", INUTILIZAVEL: "Inutilizável" })[value] || value || "—"; }
 
+
+function publicTokenFromHash() {
+  const match = window.location.hash.match(/^#\/consulta\/([0-9a-f-]{36})$/i);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function publicField(label, value) {
+  if (value === null || value === undefined || value === "") return "";
+  return `<div class="public-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`;
+}
+
+function renderPublicAsset(asset) {
+  const statusText = asset.status === "ATIVO" ? "Ativo" : "Inativo";
+  const valueText = asset.valor_aquisicao == null ? null : money(asset.valor_aquisicao);
+  appRoot.innerHTML = `
+    <main class="public-page">
+      <section class="public-shell">
+        <header class="public-brand">
+          <div class="brand-mark">P+</div>
+          <div><strong>Patrimônio+</strong><small>Consulta pública de patrimônio</small></div>
+        </header>
+        <section class="public-hero">
+          <div>
+            <span class="public-eyebrow">Patrimônio identificado</span>
+            <h1>${escapeHtml(asset.descricao)}</h1>
+            <p class="public-id">${escapeHtml(asset.id_interna)}</p>
+          </div>
+          <span class="public-status ${asset.status === "ATIVO" ? "is-active" : "is-inactive"}">${statusText}</span>
+        </section>
+        <section class="public-card-grid">
+          <article class="public-card">
+            <h2>Identificação</h2>
+            ${publicField("ID interna", asset.id_interna)}
+            ${publicField("ID SES", asset.id_ses)}
+            ${publicField("Tipo", typeName(asset.tipo_id))}
+            ${publicField("Item de referência SIGEM", asset.descricao_padrao)}
+            ${publicField("Marca/Modelo", asset.marca_modelo)}
+          </article>
+          <article class="public-card">
+            <h2>Localização e condição</h2>
+            ${publicField("Centro de custo", asset.centro_custo)}
+            ${publicField("Estado de conservação", conservationName(asset.estado_conservacao))}
+            ${publicField("Status", statusText)}
+          </article>
+          <article class="public-card">
+            <h2>Aquisição</h2>
+            ${publicField("Forma de aquisição", acquisitionName(asset.tipo_aquisicao))}
+            ${publicField("Data de aquisição", formatDate(asset.data_aquisicao))}
+            ${publicField("Valor informado", valueText)}
+            ${publicField("Nota fiscal", asset.nota_fiscal_numero)}
+            ${publicField("Fornecedor", asset.fornecedor)}
+            ${publicField("Observações", asset.observacoes)}
+            ${publicField("Cadastrado em", formatDateTime(asset.criado_em))}
+          </article>
+        </section>
+        <footer class="public-footer">
+          <span>Consulta somente para visualização</span>
+          <small>Última atualização: ${escapeHtml(formatDateTime(asset.atualizado_em))}</small>
+        </footer>
+      </section>
+    </main>`;
+}
+
+async function openPublicAsset(token) {
+  appRoot.innerHTML = `<main class="public-page"><section class="public-loading"><div class="brand-mark">P+</div><h1>Consultando patrimônio</h1><p>Aguarde um instante…</p></section></main>`;
+  try {
+    const asset = await getPublicAsset(token);
+    if (!asset) {
+      appRoot.innerHTML = `<main class="public-page"><section class="public-loading"><div class="brand-mark">P+</div><h1>Patrimônio não encontrado</h1><p>O código pode ser inválido ou o patrimônio não está disponível para consulta.</p></section></main>`;
+      return;
+    }
+    renderPublicAsset(asset);
+  } catch (error) {
+    appRoot.innerHTML = `<main class="public-page"><section class="public-loading"><div class="brand-mark">P+</div><h1>Não foi possível consultar</h1><p>${escapeHtml(error.message)}</p></section></main>`;
+  }
+}
+
 async function start() {
   if (!hasSupabaseConfig()) { renderConfigError(); return; }
   if (!hasSupabaseLibrary()) { renderFatal("Biblioteca não carregada", "O navegador não conseguiu carregar a biblioteca do Supabase. Faça Ctrl+F5 e verifique se a rede ou o bloqueador de conteúdo está impedindo cdn.jsdelivr.net."); return; }
+
+  const publicToken = publicTokenFromHash();
+  if (publicToken) {
+    await openPublicAsset(publicToken);
+    return;
+  }
+
   state.session = await getSession();
   if (!state.session) renderLogin(appRoot); else { shell(); await loadData(); }
   onAuthChange(async (session) => {
+    if (publicTokenFromHash()) return;
     state.session = session;
     if (!session) renderLogin(appRoot); else { shell(); await loadData(); }
   });
 }
 
-window.addEventListener("hashchange", openAssetFromHash);
+window.addEventListener("hashchange", async () => {
+  const token = publicTokenFromHash();
+  if (token) await openPublicAsset(token);
+  else openAssetFromHash();
+});
 
 start().catch((error) => {
   console.error(error);

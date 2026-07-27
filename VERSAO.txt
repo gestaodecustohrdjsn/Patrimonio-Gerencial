@@ -1,2 +1,1 @@
-Patrimônio+ v0.6
-QR Code, etiqueta individual, busca rápida, ativação/inativação, remoção lógica, restauração e exclusão definitiva de testes.
+Patrimônio+ v0.7

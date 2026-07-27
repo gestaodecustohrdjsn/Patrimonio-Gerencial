@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Sistema de controle patrimonial hospitalar">
   <title>Patrimônio+</title>
-  <link rel="stylesheet" href="./css/styles.css?v=0.6">
+  <link rel="stylesheet" href="./css/styles.css?v=0.7">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="appRoot"><main class="login-page"><section class="login-card"><h1>Patrimônio+</h1><p>Carregando sistema…</p></section></main></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="window.__SUPABASE_CDN_ERROR__=true"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="./js/config.js?v=0.6"></script>
+  <script src="./js/config.js?v=0.7"></script>
   <script>
     window.addEventListener("error", function (event) {
       const root = document.querySelector("#appRoot");
@@ -20,6 +20,6 @@
       root.innerHTML = `<main class="login-page"><section class="login-card"><h1>Não foi possível iniciar</h1><p>O navegador bloqueou ou não conseguiu carregar um arquivo do sistema.</p><p><strong>Detalhe:</strong> ${String(event.message || "erro desconhecido")}</p><p>Atualize com Ctrl+F5. Se persistir, confira o Console do navegador.</p></section></main>`;
     });
   </script>
-  <script type="module" src="./js/app.js?v=0.6"></script>
+  <script type="module" src="./js/app.js?v=0.7"></script>
 </body>
 </html>
