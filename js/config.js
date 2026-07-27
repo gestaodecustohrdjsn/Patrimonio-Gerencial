@@ -1,7 +1,6 @@
-// Renomeie este arquivo para config.js e preencha quando conectar ao Supabase.
-// Enquanto USE_DEMO_MODE estiver true, os dados ficam somente neste navegador.
+// Preencha SOMENTE com a Project URL e a Publishable Key do Supabase.
+// Esta chave é pública por projeto e foi criada para uso no navegador.
 window.APP_CONFIG = {
-  USE_DEMO_MODE: true,
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: ""
+  SUPABASE_URL: "https://yxgdauvjgfpalfitabzc.supabase.co/rest/v1/",
+  SUPABASE_ANON_KEY: "sb_publishable_SgCnNsm0mwKwLBwU6lZVKg_PnD5-Tze"
 };
