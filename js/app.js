@@ -4,7 +4,7 @@ import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters } from "./services/centros.js";
 import { searchSigem, createHospitalCatalogItem } from "./services/sigem.js";
-import { listAssets, createAsset, updateAsset, listAssetHistory } from "./services/patrimonios.js";
+import { listAssets, createAsset, updateAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 
 const state = {
@@ -17,7 +17,8 @@ const state = {
   selectedAssetId: null,
   history: [],
   showDashboardValue: false,
-  assetFormMode: "create"
+  assetFormMode: "create",
+  showRemoved: false
 };
 
 const appRoot = document.querySelector("#appRoot");
@@ -99,6 +100,12 @@ function shell() {
       <label>Novo centro de custo *<select id="moveCenter" required></select></label>
       <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelMoveButton">Cancelar</button><button type="submit" class="primary-button" id="saveMoveButton">Confirmar movimentação</button></div>
     </form>
+  </dialog>
+
+  <dialog id="labelDialog" class="label-dialog">
+    <div class="dialog-header"><button type="button" class="back-button" id="closeLabelButton">← Voltar</button><h2>Etiqueta do patrimônio</h2><p>QR Code para abrir a ficha e ID interna sobre o layout oficial.</p></div>
+    <div id="labelPreview" class="label-preview"><img src="./assets/layout-etiqueta-patrimonio.png" alt="Layout da etiqueta"><div id="labelQr" class="label-qr"></div><div id="labelId" class="label-id"></div></div>
+    <div class="dialog-actions"><button type="button" class="ghost-button" id="downloadLabelButton">Baixar PNG</button><button type="button" class="primary-button" id="printLabelButton">Imprimir etiqueta</button></div>
   </dialog>`;
   bindStaticActions();
 }
@@ -107,6 +114,7 @@ async function loadData() {
   try {
     [state.centers, state.assets] = await Promise.all([listCenters(), listAssets()]);
     render();
+    openAssetFromHash();
   } catch (error) {
     toast(`Erro ao carregar dados: ${error.message}`, "error");
   }
@@ -114,8 +122,9 @@ async function loadData() {
 
 function filteredAssets() {
   const q = state.search.trim().toLowerCase();
-  if (!q) return state.assets;
-  return state.assets.filter((asset) => [asset.id_interna, asset.id_ses, asset.descricao, asset.marca_modelo, asset.centros_custo?.nome, typeName(asset.tipo_id)].some((value) => String(value || "").toLowerCase().includes(q)));
+  const source = state.assets.filter((asset) => state.showRemoved ? asset.removido : !asset.removido);
+  if (!q) return source;
+  return source.filter((asset) => [asset.id_interna, asset.id_ses, asset.descricao, asset.descricoes_padrao?.descricao, asset.marca_modelo, asset.centros_custo?.nome, typeName(asset.tipo_id)].some((value) => String(value || "").toLowerCase().includes(q)));
 }
 
 function selectedAsset() {
@@ -138,30 +147,31 @@ function render() {
 }
 
 function renderDashboard() {
-  const active = state.assets.filter((asset) => asset.status === "ATIVO").length;
-  const total = state.assets.reduce((sum, asset) => sum + Number(asset.valor_aquisicao || 0), 0);
+  const visibleAssets = state.assets.filter((asset) => !asset.removido);
+  const active = visibleAssets.filter((asset) => asset.status === "ATIVO").length;
+  const total = visibleAssets.reduce((sum, asset) => sum + Number(asset.valor_aquisicao || 0), 0);
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
   const visibilityLabel = state.showDashboardValue ? "Ocultar valor" : "Mostrar valor";
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header"><div><h1>Visão geral</h1><p>Dados reais do Supabase.</p></div><button class="primary-button" data-action="new">+ Cadastrar patrimônio</button></div>
     <div class="cards cards-three">
-      <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${state.assets.length}</div></article>
+      <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${visibleAssets.length}</div></article>
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
       <article class="card value-card"><div><span class="muted">Valor cadastrado</span><div class="metric metric-money">${valueContent}</div></div><button class="ghost-button compact-button" data-action="toggle-value">${visibilityLabel}</button></article>
     </div>
-    ${assetsTable(state.assets.slice(0, 8), "Últimos patrimônios")}`;
+    ${assetsTable(visibleAssets.slice(0, 8), "Últimos patrimônios")}`;
   bindDynamicActions();
 }
 
 function renderAssets() {
   const rows = filteredAssets();
-  document.querySelector("#viewRoot").innerHTML = `<div class="page-header"><div><h1>Patrimônios</h1><p>Consulte e cadastre bens no banco real.</p></div><button class="primary-button" data-action="new">+ Novo patrimônio</button></div>${assetsTable(rows, `${rows.length} patrimônio(s)`)}`;
+  document.querySelector("#viewRoot").innerHTML = `<div class="page-header"><div><h1>${state.showRemoved ? "Patrimônios removidos" : "Patrimônios"}</h1><p>${state.showRemoved ? "Registros ocultados das listas operacionais." : "Consulte e cadastre bens no banco real."}</p></div><div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver patrimônios" : "Ver removidos"}</button><button class="primary-button" data-action="new">+ Novo patrimônio</button></div></div>${assetsTable(rows, `${rows.length} patrimônio(s)`)}`;
   bindDynamicActions();
 }
 
 function assetsTable(assets, title) {
   if (!assets.length) return `<section class="panel"><div class="panel-header"><h2>${title}</h2></div><div class="empty">Nenhum patrimônio encontrado.</div></section>`;
-  return `<section class="panel"><div class="panel-header"><h2>${title}</h2><button class="ghost-button" data-action="export">Exportar CSV</button></div><div class="table-wrap"><table><thead><tr><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Valor</th><th>Status</th><th>ID SES</th></tr></thead><tbody>${assets.map((asset) => `<tr class="asset-row" data-asset-id="${asset.id}" tabindex="0"><td><strong>${escapeHtml(asset.id_interna)}</strong></td><td>${escapeHtml(asset.descricao)}</td><td>${typeName(asset.tipo_id)}</td><td>${escapeHtml(asset.centros_custo?.nome || "—")}</td><td>${money(asset.valor_aquisicao)}</td><td class="${asset.status === "ATIVO" ? "status-active" : "status-inactive"}">${asset.status === "ATIVO" ? "Ativo" : "Inativo"}</td><td>${escapeHtml(asset.id_ses || "—")}</td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="panel"><div class="panel-header"><h2>${title}</h2><button class="ghost-button" data-action="export">Exportar CSV</button></div><div class="table-wrap"><table><thead><tr><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Valor</th><th>Status</th><th>ID SES</th></tr></thead><tbody>${assets.map((asset) => `<tr class="asset-row ${asset.removido ? "removed-row" : ""}" data-asset-id="${asset.id}" tabindex="0"><td><strong>${escapeHtml(asset.id_interna)}</strong></td><td>${escapeHtml(asset.descricao)}</td><td>${typeName(asset.tipo_id)}</td><td>${escapeHtml(asset.centros_custo?.nome || "—")}</td><td>${money(asset.valor_aquisicao)}</td><td class="${asset.status === "ATIVO" ? "status-active" : "status-inactive"}">${asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")}</td><td>${escapeHtml(asset.id_ses || "—")}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 async function openAssetDetail(id) {
@@ -182,11 +192,11 @@ function renderAssetDetail(loadingHistory = false) {
   const asset = selectedAsset();
   if (!asset) { state.currentView = "patrimonios"; renderAssets(); return; }
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header detail-header"><div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(asset.descricao)}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}</p></div><div class="header-actions"><button class="ghost-button" data-action="move">Movimentar</button><button class="primary-button" data-action="edit">Editar patrimônio</button></div></div>
+    <div class="page-header detail-header"><div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(asset.descricao)}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.removido ? " · REMOVIDO" : ""}</p></div><div class="header-actions"><button class="ghost-button" data-action="label">Etiqueta / QR</button>${asset.removido ? `<button class="ghost-button" data-action="restore">Restaurar</button><button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : `<button class="ghost-button" data-action="move">Movimentar</button><button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button><button class="danger-button" data-action="remove">Remover</button><button class="primary-button" data-action="edit">Editar patrimônio</button>`}</div></div>
     <section class="detail-grid">
       ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Tipo", typeName(asset.tipo_id)], ["Descrição padrão", asset.descricoes_padrao?.descricao || "—"], ["Marca/Modelo", asset.marca_modelo || "—"]])}
       ${detailCard("Aquisição e valores", [["Data de aquisição", formatDate(asset.data_aquisicao)], ["Tipo de aquisição", acquisitionName(asset.tipo_aquisicao)], ["Valor de aquisição", money(asset.valor_aquisicao)], ["Nota fiscal", asset.nota_fiscal_numero || "—"]])}
-      ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.status === "ATIVO" ? "Ativo" : "Inativo"], ["Criado em", formatDateTime(asset.criado_em)]])}
+      ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")], ["Criado em", formatDateTime(asset.criado_em)]])}
     </section>
     <section class="panel"><div class="panel-header"><h2>Histórico</h2></div>${loadingHistory ? '<div class="loading">Carregando histórico…</div>' : historyHtml(asset, state.history)}</section>`;
   bindDynamicActions();
@@ -202,7 +212,9 @@ function historyHtml(asset, history) {
     const beforeCenterId = entry.dados_anteriores?.centro_custo_id;
     const afterCenterId = entry.dados_novos?.centro_custo_id;
     const moved = entry.operacao === "UPDATE" && beforeCenterId && afterCenterId && beforeCenterId !== afterCenterId;
-    let title = entry.operacao === "INSERT" ? "Patrimônio cadastrado" : entry.operacao === "INATIVACAO" ? "Patrimônio inativado" : entry.operacao === "REATIVACAO" ? "Patrimônio reativado" : "Dados atualizados";
+    const removed = entry.operacao === "UPDATE" && !entry.dados_anteriores?.removido && entry.dados_novos?.removido;
+    const restored = entry.operacao === "UPDATE" && entry.dados_anteriores?.removido && !entry.dados_novos?.removido;
+    let title = entry.operacao === "INSERT" ? "Patrimônio cadastrado" : entry.operacao === "INATIVACAO" ? "Patrimônio inativado" : entry.operacao === "REATIVACAO" ? "Patrimônio reativado" : removed ? "Patrimônio removido" : restored ? "Patrimônio restaurado" : "Dados atualizados";
     let description = "Alteração registrada automaticamente pelo sistema.";
     if (moved) {
       title = "Movimentação de centro de custo";
@@ -239,6 +251,9 @@ function bindStaticActions() {
   document.querySelector("#closeMoveButton").addEventListener("click", closeMoveDialog);
   document.querySelector("#cancelMoveButton").addEventListener("click", closeMoveDialog);
   document.querySelector("#moveForm").addEventListener("submit", submitMovement);
+  document.querySelector("#closeLabelButton").addEventListener("click", () => document.querySelector("#labelDialog").close());
+  document.querySelector("#downloadLabelButton").addEventListener("click", downloadLabelPng);
+  document.querySelector("#printLabelButton").addEventListener("click", printLabel);
 }
 
 function bindDynamicActions() {
@@ -252,6 +267,12 @@ function bindDynamicActions() {
   document.querySelectorAll('[data-action="back-assets"]').forEach((button) => button.addEventListener("click", () => { state.currentView = "patrimonios"; renderAssets(); }));
   document.querySelectorAll('[data-action="edit"]').forEach((button) => button.addEventListener("click", openEditAsset));
   document.querySelectorAll('[data-action="move"]').forEach((button) => button.addEventListener("click", openMoveDialog));
+  document.querySelectorAll('[data-action="toggle-status"]').forEach((button) => button.addEventListener("click", toggleAssetStatus));
+  document.querySelectorAll('[data-action="remove"]').forEach((button) => button.addEventListener("click", removeAsset));
+  document.querySelectorAll('[data-action="restore"]').forEach((button) => button.addEventListener("click", restoreAsset));
+  document.querySelectorAll('[data-action="delete-permanent"]').forEach((button) => button.addEventListener("click", deletePermanentAsset));
+  document.querySelectorAll('[data-action="label"]').forEach((button) => button.addEventListener("click", openLabelDialog));
+  document.querySelectorAll('[data-action="toggle-removed"]').forEach((button) => button.addEventListener("click", () => { state.showRemoved = !state.showRemoved; renderAssets(); }));
 }
 
 function populateCenters(selectId = "centroCusto", selected = "") {
@@ -374,7 +395,8 @@ async function submitCatalogItem(event) {
   button.textContent = "Salvando…";
   try {
     const item = await createHospitalCatalogItem({ descricao: description, valorPadrao: value, tipoId });
-    selectSigem(item);
+    if (!item?.id) throw new Error("O banco não retornou o item criado. Confira a função cadastrar_item_catalogo_hrpp.");
+    selectSigem({ ...item, origem: "HRPP" });
     closeCatalogDialog();
     toast("Item HRPP adicionado à tabela de descrições padrão.", "success");
   } catch (error) {
@@ -458,6 +480,126 @@ async function submitMovement(event) {
   }
 }
 
+
+async function toggleAssetStatus() {
+  const asset = selectedAsset();
+  if (!asset || asset.removido) return;
+  const nextStatus = asset.status === "ATIVO" ? "INATIVO" : "ATIVO";
+  if (!window.confirm(`${nextStatus === "ATIVO" ? "Ativar" : "Inativar"} o patrimônio ${asset.id_interna}?`)) return;
+  try {
+    const updated = await updateAsset(asset.id, { status: nextStatus, inativado_em: nextStatus === "INATIVO" ? new Date().toISOString() : null });
+    state.assets = state.assets.map((item) => item.id === updated.id ? updated : item);
+    toast(`Patrimônio ${nextStatus === "ATIVO" ? "ativado" : "inativado"}.`, "success");
+    await openAssetDetail(updated.id);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function removeAsset() {
+  const asset = selectedAsset();
+  if (!asset || !window.confirm(`Remover ${asset.id_interna} das listas operacionais? O registro poderá ser restaurado.`)) return;
+  try {
+    const updated = await setAssetRemoved(asset.id, true);
+    state.assets = state.assets.map((item) => item.id === updated.id ? updated : item);
+    toast("Patrimônio removido com segurança.", "success");
+    state.showRemoved = true;
+    await openAssetDetail(updated.id);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function restoreAsset() {
+  const asset = selectedAsset();
+  if (!asset || !window.confirm(`Restaurar o patrimônio ${asset.id_interna}?`)) return;
+  try {
+    const updated = await setAssetRemoved(asset.id, false);
+    state.assets = state.assets.map((item) => item.id === updated.id ? updated : item);
+    toast("Patrimônio restaurado.", "success");
+    state.showRemoved = false;
+    await openAssetDetail(updated.id);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function deletePermanentAsset() {
+  const asset = selectedAsset();
+  if (!asset) return;
+  const confirmation = window.prompt(`Exclusão definitiva de ${asset.id_interna}. Digite EXCLUIR para apagar o patrimônio e o histórico. Use apenas para registros de teste.`);
+  if (confirmation !== "EXCLUIR") { if (confirmation !== null) toast("Confirmação inválida.", "error"); return; }
+  try {
+    await permanentlyDeleteTestAsset(asset.id, confirmation);
+    state.assets = state.assets.filter((item) => item.id !== asset.id);
+    state.selectedAssetId = null;
+    state.currentView = "patrimonios";
+    toast("Patrimônio de teste excluído definitivamente.", "success");
+    renderAssets();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function assetPublicUrl(asset) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  return `${base}#/p/${encodeURIComponent(asset.id_interna)}`;
+}
+
+function openLabelDialog() {
+  const asset = selectedAsset();
+  if (!asset) return;
+  if (!window.QRCode) { toast("Biblioteca de QR Code não carregada. Atualize a página.", "error"); return; }
+  const qrRoot = document.querySelector("#labelQr");
+  qrRoot.innerHTML = "";
+  document.querySelector("#labelId").textContent = asset.id_interna;
+  new window.QRCode(qrRoot, { text: assetPublicUrl(asset), width: 186, height: 186, correctLevel: window.QRCode.CorrectLevel.M });
+  document.querySelector("#labelDialog").showModal();
+}
+
+async function composeLabelCanvas() {
+  const asset = selectedAsset();
+  if (!asset) throw new Error("Patrimônio não selecionado");
+  const canvas = document.createElement("canvas");
+  canvas.width = 1166;
+  canvas.height = 454;
+  const ctx = canvas.getContext("2d");
+  const image = new Image();
+  image.src = "./assets/layout-etiqueta-patrimonio.png";
+  await image.decode();
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const qrCanvas = document.querySelector("#labelQr canvas");
+  const qrImage = document.querySelector("#labelQr img");
+  if (qrCanvas) ctx.drawImage(qrCanvas, 51, 43, 382, 382);
+  else if (qrImage) ctx.drawImage(qrImage, 51, 43, 382, 382);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 62px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(asset.id_interna, 798, 384);
+  return canvas;
+}
+
+async function downloadLabelPng() {
+  try {
+    const canvas = await composeLabelCanvas();
+    const anchor = document.createElement("a");
+    anchor.download = `etiqueta-${selectedAsset().id_interna}.png`;
+    anchor.href = canvas.toDataURL("image/png");
+    anchor.click();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function printLabel() {
+  try {
+    const canvas = await composeLabelCanvas();
+    const popup = window.open("", "_blank", "width=900,height=600");
+    if (!popup) throw new Error("O navegador bloqueou a janela de impressão.");
+    popup.document.write(`<html><head><title>Etiqueta ${escapeHtml(selectedAsset().id_interna)}</title><style>@page{margin:0}body{margin:0;display:grid;place-items:center;min-height:100vh}img{width:100%;max-width:1166px}</style></head><body><img src="${canvas.toDataURL("image/png")}" onload="window.print();window.close()"></body></html>`);
+    popup.document.close();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function openAssetFromHash() {
+  const match = window.location.hash.match(/^#\/p\/(.+)$/);
+  if (!match || !state.assets.length) return;
+  const idInterna = decodeURIComponent(match[1]);
+  const asset = state.assets.find((item) => item.id_interna === idInterna);
+  if (asset) openAssetDetail(asset.id);
+}
+
 function exportCsv() {
   const rows = filteredAssets();
   const data = [["ID Interna", "ID SES", "Descrição", "Item de referência", "Tipo", "Centro de Custo", "Valor", "Status"], ...rows.map((asset) => [asset.id_interna, asset.id_ses || "", asset.descricao, asset.descricoes_padrao?.descricao || "", typeName(asset.tipo_id), asset.centros_custo?.nome || "", asset.valor_aquisicao, asset.status])];
@@ -491,6 +633,8 @@ async function start() {
     if (!session) renderLogin(appRoot); else { shell(); await loadData(); }
   });
 }
+
+window.addEventListener("hashchange", openAssetFromHash);
 
 start().catch((error) => {
   console.error(error);

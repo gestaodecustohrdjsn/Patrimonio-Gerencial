@@ -1,23 +1,33 @@
-# Atualização para a v0.5
+# Atualização para a v0.6
 
-## Supabase
+## 1. Supabase
 
-Nenhum SQL novo é necessário. A v0.5 utiliza as tabelas, políticas e o histórico já existentes.
-Não execute novamente os arquivos 003 ou 004.
+1. Abra o **SQL Editor**.
+2. Confirme que a consulta será executada como `postgres`.
+3. Abra `database/005_status_remocao_qr.sql`.
+4. Copie todo o conteúdo e execute.
+5. O resultado esperado contém `v0.6 pronta`.
 
-## GitHub Pages
+O script preserva os patrimônios existentes e acrescenta apenas os campos e funções necessários para remoção segura.
 
-1. Faça backup da versão publicada, se desejar.
-2. Substitua os arquivos do repositório pelo conteúdo desta pasta.
-3. Preserve `js/config.js` com a URL e a chave pública do seu projeto Supabase.
-4. Faça o commit.
-5. Aguarde o GitHub Pages atualizar e abra o sistema com Ctrl+F5.
+## 2. GitHub Pages
 
-## Testes rápidos
+1. Só publique depois de o SQL terminar sem erro.
+2. Substitua os arquivos da versão atual pelo conteúdo desta pasta.
+3. Preserve `js/config.js` com a Project URL e a chave pública atuais.
+4. Confirme que `index.html` está na raiz e que existe `assets/layout-etiqueta-patrimonio.png`.
+5. Faça o commit, aguarde o Pages e abra com `Ctrl + F5`.
 
-1. Confirme os três cards do dashboard na mesma linha.
-2. Abra a lista e clique em um patrimônio para abrir a ficha.
-3. Edite um campo e salve.
-4. Movimente o patrimônio para outro centro de custo.
-5. Confira o histórico na ficha.
-6. No cadastro, use o botão + ao lado do item de referência para criar um item HRPP.
+## 3. Testes
+
+1. Use a busca superior com ID interna, SES, descrição, item SIGEM/HRPP, marca ou centro.
+2. Abra uma ficha e teste **Inativar** e **Ativar**; confira a linha do tempo.
+3. Clique em **Remover** e depois em **Ver removidos** na listagem.
+4. Restaure o registro.
+5. Para um bem exclusivamente de teste, remova-o e use **Excluir definitivamente**; digite `EXCLUIR`.
+6. Gere a etiqueta, confira QR e ID, baixe o PNG e teste a impressão.
+7. No novo cadastro, selecione primeiro o Tipo e use o botão `+` para adicionar um item HRPP.
+
+## Observação sobre o QR Code
+
+O endereço usa `#/p/ID_INTERNA`, formato compatível com GitHub Pages. Caso o usuário não esteja autenticado, o sistema mostra o login e abre a ficha após a autenticação.
