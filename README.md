@@ -1,15 +1,15 @@
-# Patrimônio+ v0.4
+# Patrimônio+ v0.5
 
-Versão conectada ao Supabase, com autenticação, cadastro e consulta de patrimônios.
+Versão funcional conectada ao Supabase.
 
-## Regras desta versão
+Principais recursos:
 
-- Estado de conservação vazio assume `BEM_CONSERVADO`.
-- Valor de aquisição vazio assume o valor de referência do item selecionado.
-- Itens inexistentes no SIGEM podem ser cadastrados no catálogo interno com sufixo `- HRPP`.
-- O catálogo é pesquisado sob demanda.
-- O dashboard não carrega nem exibe a quantidade de itens SIGEM.
-- O valor total fica oculto inicialmente.
-- Centros de custo aparecem apenas pelo nome no formulário.
+- Dashboard com três indicadores.
+- Cadastro reorganizado em blocos simétricos.
+- Cadastro rápido de item HRPP pelo botão + ao lado do item de referência.
+- Lista simples com ID SES ao final.
+- Ficha individual do patrimônio.
+- Edição dos dados cadastrais.
+- Movimentação entre centros de custo com registro no histórico existente.
 
-Leia `INSTRUCOES_ATUALIZACAO.md` antes de publicar.
+Consulte `INSTRUCOES_ATUALIZACAO.md` antes de publicar.

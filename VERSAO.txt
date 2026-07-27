@@ -1,2 +1,2 @@
-Patrimônio+ v0.4
-Regras de valor e conservação na aplicação; catálogo HRPP via função segura do PostgreSQL.
+Patrimônio+ v0.5
+Ficha individual, edição, movimentação, dashboard com três cards e cadastro reorganizado.
