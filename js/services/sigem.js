@@ -1,18 +1,10 @@
 import { supabase } from "../lib/supabase.js";
 
-export async function countSigem() {
-  const { count, error } = await supabase
-    .from("descricoes_padrao")
-    .select("id", { count: "exact", head: true })
-    .eq("ativo", true);
-  if (error) throw error;
-  return count ?? 0;
-}
-
-// Carregamento sob demanda: somente quando o usuário pesquisa no cadastro.
+// Consulta sob demanda: o catálogo só é acessado quando o usuário pesquisa.
 export async function searchSigem(term, limit = 20) {
   const text = term.trim();
   if (text.length < 2) return [];
+
   const { data, error } = await supabase
     .from("descricoes_padrao")
     .select("id,descricao,valor_padrao,tipo_id")
@@ -20,6 +12,19 @@ export async function searchSigem(term, limit = 20) {
     .ilike("descricao", `%${text}%`)
     .order("descricao")
     .limit(limit);
+
   if (error) throw error;
   return data;
+}
+
+// O cadastro HRPP usa uma função segura do banco, sem liberar INSERT direto na tabela.
+export async function createHospitalCatalogItem({ descricao, valorPadrao, tipoId }) {
+  const { data, error } = await supabase.rpc("cadastrar_item_catalogo_hrpp", {
+    p_descricao: descricao,
+    p_valor_padrao: valorPadrao,
+    p_tipo_id: tipoId
+  });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
 }

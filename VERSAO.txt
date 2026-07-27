@@ -1,2 +1,2 @@
-Patrimônio+ v0.2.2 — pacote limpo
-Data: 2026-07-27
+Patrimônio+ v0.4
+Regras de valor e conservação na aplicação; catálogo HRPP via função segura do PostgreSQL.

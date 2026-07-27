@@ -1,15 +1,15 @@
-# Patrimônio+ v0.2
+# Patrimônio+ v0.4
 
-Versão conectada ao Supabase com autenticação, sessão persistente, dashboard real, centros de custo, pesquisa SIGEM sob demanda e cadastro de patrimônio.
+Versão conectada ao Supabase, com autenticação, cadastro e consulta de patrimônios.
 
-## Configuração
+## Regras desta versão
 
-1. Abra `js/config.js`.
-2. Preencha `SUPABASE_URL` com a Project URL.
-3. Preencha `SUPABASE_ANON_KEY` com a Publishable Key.
-4. Nunca use a Secret Key no frontend.
-5. Abra o projeto por um servidor HTTP ou publique no GitHub Pages.
+- Estado de conservação vazio assume `BEM_CONSERVADO`.
+- Valor de aquisição vazio assume o valor de referência do item selecionado.
+- Itens inexistentes no SIGEM podem ser cadastrados no catálogo interno com sufixo `- HRPP`.
+- O catálogo é pesquisado sob demanda.
+- O dashboard não carrega nem exibe a quantidade de itens SIGEM.
+- O valor total fica oculto inicialmente.
+- Centros de custo aparecem apenas pelo nome no formulário.
 
-## SIGEM
-
-Os 814 itens não são baixados ao abrir o sistema. O dashboard busca apenas a contagem. No cadastro, a pesquisa consulta o Supabase após duas letras e retorna no máximo 20 opções.
+Leia `INSTRUCOES_ATUALIZACAO.md` antes de publicar.
