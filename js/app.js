@@ -18,7 +18,13 @@ const state = {
   history: [],
   showDashboardValue: false,
   assetFormMode: "create",
-  showRemoved: false
+  showRemoved: false,
+  importFileName: "",
+  importHeaders: [],
+  importRows: [],
+  importMapping: {},
+  importValidated: [],
+  importBusy: false
 };
 
 const appRoot = document.querySelector("#appRoot");
@@ -128,7 +134,7 @@ function render() {
     case "patrimonios": renderAssets(); break;
     case "ficha": renderAssetDetail(); break;
     case "centros": renderCenters(); break;
-    case "importacao": placeholder("Importação", "Receberá CSV, validação e de-para antes da confirmação."); break;
+    case "importacao": renderImport(); break;
     case "etiquetas": placeholder("Etiquetas", "Será conectado ao layout de QR Code e PDF em lote."); break;
     case "relatorios": placeholder("Relatórios", "Exportações por filtros e seleção de colunas."); break;
     case "configuracoes": placeholder("Configurações", `Usuário conectado: ${escapeHtml(state.session?.user?.email || "")}.`); break;
@@ -218,6 +224,110 @@ function historyHtml(asset, history) {
 
 function renderCenters() {
   document.querySelector("#viewRoot").innerHTML = `<div class="page-header"><div><h1>Centros de custo</h1><p>Dados carregados diretamente do banco.</p></div></div><section class="panel"><div class="panel-header"><h2>${state.centers.length} centro(s)</h2></div><div class="table-wrap"><table><thead><tr><th>Código</th><th>Centro de custo</th><th>Status</th></tr></thead><tbody>${state.centers.map((center) => `<tr><td>${escapeHtml(center.codigo)}</td><td><strong>${escapeHtml(center.nome)}</strong></td><td class="${center.ativo ? "status-active" : "status-inactive"}">${center.ativo ? "Ativo" : "Inativo"}</td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+function normalizeText(value) {
+  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function parseCsv(text) {
+  const sample = text.split(/\r?\n/).slice(0, 5).join("\n");
+  const delimiter = (sample.match(/;/g) || []).length >= (sample.match(/,/g) || []).length ? ";" : ",";
+  const rows = []; let row = []; let field = ""; let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') { if (quoted && text[i + 1] === '"') { field += '"'; i++; } else quoted = !quoted; }
+    else if (ch === delimiter && !quoted) { row.push(field); field = ""; }
+    else if ((ch === "\n" || ch === "\r") && !quoted) {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some((v) => String(v).trim())) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  if (field || row.length) { row.push(field); if (row.some((v) => String(v).trim())) rows.push(row); }
+  if (rows.length < 2) throw new Error("O arquivo não possui linhas suficientes.");
+  const headers = rows[0].map((h, i) => String(h).trim() || `Coluna ${i + 1}`);
+  return { headers, rows: rows.slice(1).map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ""]))) };
+}
+
+const IMPORT_FIELDS = [
+  ["descricao", "Descrição *"], ["tipo", "Tipo *"], ["aquisicao", "Aquisição *"], ["centro", "Centro de custo *"],
+  ["id_ses", "ID SES"], ["data", "Data de aquisição"], ["valor", "Valor"], ["marca", "Marca/Modelo"], ["nota", "Nota fiscal"]
+];
+
+function guessMapping(headers) {
+  const aliases = { descricao:["descricao","bem","item","patrimonio"], tipo:["tipo","classificacao","categoria"], aquisicao:["aquisicao","forma aquisicao","origem"], centro:["centro de custo","centro custo","setor","cc"], id_ses:["id ses","ses","patrimonio ses"], data:["data aquisicao","data de aquisicao","data"], valor:["valor aquisicao","valor de aquisicao","valor"], marca:["marca modelo","marca/modelo","modelo","marca"], nota:["nota fiscal","nf","numero nf"] };
+  const out = {};
+  for (const [field] of IMPORT_FIELDS) {
+    const found = headers.find((h) => aliases[field].some((a) => normalizeText(h) === normalizeText(a) || normalizeText(h).includes(normalizeText(a))));
+    out[field] = found || "";
+  }
+  return out;
+}
+
+function mappingOptions(selected) {
+  return `<option value="">Não importar</option>${state.importHeaders.map((h) => `<option value="${escapeHtml(h)}" ${h === selected ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}`;
+}
+
+function renderImport() {
+  const hasFile = state.importRows.length > 0;
+  const counts = state.importValidated.reduce((a, r) => { a[r.level] = (a[r.level] || 0) + 1; return a; }, {});
+  document.querySelector("#viewRoot").innerHTML = `
+    <div class="page-header"><div><h1>Importação inteligente</h1><p>Carregue um CSV, confira o mapeamento e valide antes de gravar.</p></div></div>
+    <section class="import-step"><div class="step-title"><span>1</span><div><h2>Selecionar arquivo</h2><p>Compatível com CSV separado por vírgula ou ponto e vírgula.</p></div></div><label class="file-drop"><input id="importFile" type="file" accept=".csv,text/csv"><strong>${state.importFileName || "Escolher arquivo CSV"}</strong><small>${hasFile ? `${state.importRows.length} linha(s) encontradas` : "Nenhum arquivo selecionado"}</small></label></section>
+    ${hasFile ? `<section class="import-step"><div class="step-title"><span>2</span><div><h2>Mapear colunas</h2><p>Os quatro campos marcados são necessários.</p></div></div><div class="mapping-grid">${IMPORT_FIELDS.map(([f,l]) => `<label>${l}<select data-import-map="${f}">${mappingOptions(state.importMapping[f])}</select></label>`).join("")}</div><div class="import-actions"><button class="primary-button" data-action="validate-import">Validar dados</button></div></section>` : ""}
+    ${state.importValidated.length ? `<section class="import-step"><div class="step-title"><span>3</span><div><h2>Prévia e validação</h2><p>Nenhum dado foi gravado até este momento.</p></div></div><div class="import-summary"><article><strong>${counts.ok || 0}</strong><span>Prontos</span></article><article><strong>${counts.warning || 0}</strong><span>Com avisos</span></article><article><strong>${counts.error || 0}</strong><span>Com erros</span></article></div><div class="table-wrap"><table class="import-table"><thead><tr><th>Linha</th><th>Descrição</th><th>Centro</th><th>Situação</th></tr></thead><tbody>${state.importValidated.slice(0,200).map((r) => `<tr><td>${r.line}</td><td>${escapeHtml(r.payload.descricao || "—")}</td><td>${escapeHtml(r.centerName || "—")}</td><td><span class="validation-${r.level}">${escapeHtml(r.messages.join(" · ") || "Pronto para importar")}</span></td></tr>`).join("")}</tbody></table></div>${state.importValidated.length > 200 ? `<p class="import-note">Mostrando as primeiras 200 linhas.</p>` : ""}<div class="import-actions"><button class="primary-button" data-action="run-import" ${(counts.error || 0) > 0 || state.importBusy ? "disabled" : ""}>${state.importBusy ? "Importando…" : `Importar ${state.importValidated.length} patrimônio(s)`}</button></div></section>` : ""}`;
+  document.querySelector("#importFile")?.addEventListener("change", handleImportFile);
+  document.querySelectorAll("[data-import-map]").forEach((el) => el.addEventListener("change", () => { state.importMapping[el.dataset.importMap] = el.value; state.importValidated = []; renderImport(); }));
+  document.querySelector('[data-action="validate-import"]')?.addEventListener("click", validateImport);
+  document.querySelector('[data-action="run-import"]')?.addEventListener("click", runImport);
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files?.[0]; if (!file) return;
+  try {
+    const parsed = parseCsv(await file.text());
+    state.importFileName = file.name; state.importHeaders = parsed.headers; state.importRows = parsed.rows; state.importMapping = guessMapping(parsed.headers); state.importValidated = []; renderImport();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function parseImportDate(value) {
+  const raw = String(value || "").trim(); if (!raw) return new Date().toISOString().slice(0,10);
+  const br = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (br) return `${br[3]}-${br[2].padStart(2,"0")}-${br[1].padStart(2,"0")}`;
+  const d = new Date(raw); return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0,10);
+}
+function mapTipo(value) { const n=normalizeText(value); if (/informat|comput|ti/.test(n)) return 3; if (/mobil|moveis|cadeira|mesa|armario/.test(n)) return 2; if (/medic|hospital|equip/.test(n)) return 1; return null; }
+function mapAquisicao(value) { const n=normalizeText(value); if (/doa/.test(n)) return "DOACAO"; if (/loca|alug/.test(n)) return "LOCACAO"; if (/compra|proprio|aquis/.test(n)) return "COMPRA"; return null; }
+
+function validateImport() {
+  const required=["descricao","tipo","aquisicao","centro"];
+  const missing=required.filter((f)=>!state.importMapping[f]); if(missing.length){toast("Mapeie todos os quatro campos obrigatórios.","error");return;}
+  const centersByName=new Map(state.centers.map(c=>[normalizeText(c.nome),c]));
+  const existingSes=new Set(state.assets.map(a=>normalizeText(a.id_ses)).filter(Boolean));
+  const seenSes=new Set();
+  state.importValidated=state.importRows.map((row,index)=>{
+    const val=(f)=>String(row[state.importMapping[f]]??"").trim(); const messages=[]; let level="ok";
+    const center=centersByName.get(normalizeText(val("centro"))); const tipo=mapTipo(val("tipo")); const aquisicao=mapAquisicao(val("aquisicao")); const date=parseImportDate(val("data"));
+    if(!val("descricao")) messages.push("Descrição vazia"); if(!center) messages.push("Centro não encontrado"); if(!tipo) messages.push("Tipo não reconhecido"); if(!aquisicao) messages.push("Aquisição não reconhecida"); if(!date) messages.push("Data inválida");
+    const idSes=val("id_ses")||null; if(idSes && (existingSes.has(normalizeText(idSes))||seenSes.has(normalizeText(idSes)))) messages.push("ID SES duplicada"); if(idSes) seenSes.add(normalizeText(idSes));
+    let value=null; if(val("valor")){ value=normalizeMoney(val("valor")); if(!Number.isFinite(value)||value<0) messages.push("Valor inválido"); }
+    if(messages.length) level="error"; else if(!idSes||value===null){level="warning";messages.push(!idSes&&value===null?"Sem ID SES e sem valor":!idSes?"Sem ID SES":"Sem valor");}
+    return {line:index+2,level,messages,centerName:center?.nome,payload:{id_ses:idSes,descricao:val("descricao"),descricao_padrao_id:null,data_aquisicao:date,valor_aquisicao:value,nota_fiscal_numero:val("nota")||null,centro_custo_id:center?.id||null,tipo_id:tipo,marca_modelo:val("marca")||null,tipo_aquisicao:aquisicao,estado_conservacao:"BEM_CONSERVADO",status:"ATIVO"}};
+  }); renderImport();
+}
+
+async function runImport() {
+  if(!state.importValidated.length||state.importValidated.some(r=>r.level==="error")) return;
+  if(!window.confirm(`Importar ${state.importValidated.length} patrimônios?`)) return;
+  state.importBusy=true; renderImport(); let imported=0;
+  try{
+    for(const row of state.importValidated){ const asset=await createAsset(row.payload); state.assets.unshift(asset); imported++; }
+    toast(`${imported} patrimônio(s) importado(s) com sucesso.`,"success");
+    state.importFileName="";state.importHeaders=[];state.importRows=[];state.importMapping={};state.importValidated=[];state.currentView="patrimonios";render();
+  }catch(error){toast(`Importação interrompida após ${imported} registro(s): ${error.message}`,"error");}
+  finally{state.importBusy=false;}
 }
 
 function placeholder(title, description) {
@@ -528,10 +638,10 @@ async function composeLabelCanvas() {
   const qrSource = qrCanvas || qrImage;
   if (!qrSource) throw new Error("QR Code ainda não foi gerado.");
 
-  // 5% menor que a versão anterior e novamente centralizado no quadrado.
-  const qrSize = 181.45;
-  const qrX = 30.28;
-  const qrY = 26.28;
+  // Mais 2% menor que a v0.8, mantendo o mesmo centro no quadrado.
+  const qrSize = 177.82;
+  const qrX = 32.10;
+  const qrY = 28.10;
   ctx.drawImage(qrSource, qrX * scale, qrY * scale, qrSize * scale, qrSize * scale);
 
   ctx.fillStyle = "#ffffff";

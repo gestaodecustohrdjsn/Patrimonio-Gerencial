@@ -480,3 +480,30 @@ button:disabled { opacity: .65; cursor: wait; }
   #assetForm { padding: 18px; }
   .form-section { padding: 15px; }
 }
+
+/* v0.9 — ajuste fino da etiqueta e importação inteligente */
+.label-qr { left: 5.43%; top: 11.71%; width: 30.54%; }
+/* A prévia usa posicionamento próprio; o canvas/PDF permanece no ponto já validado. */
+.label-id { top: 71.90%; }
+.import-step { margin-bottom:18px; padding:22px; background:white; border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); }
+.step-title { display:flex; gap:14px; align-items:flex-start; margin-bottom:18px; }
+.step-title > span { width:32px; height:32px; flex:0 0 32px; display:grid; place-items:center; border-radius:50%; background:var(--primary); color:white; font-weight:800; }
+.step-title h2 { margin:0 0 4px; font-size:18px; }
+.step-title p { margin:0; color:var(--muted); }
+.file-drop { display:grid; gap:5px; padding:22px; border:2px dashed #b7cbd4; border-radius:12px; background:#fafdfe; cursor:pointer; }
+.file-drop input { position:absolute; opacity:0; pointer-events:none; }
+.file-drop small { color:var(--muted); }
+.mapping-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.mapping-grid label { display:grid; gap:6px; font-weight:650; }
+.import-actions { display:flex; justify-content:flex-end; margin-top:18px; }
+.import-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+.import-summary article { padding:14px; border:1px solid var(--border); border-radius:11px; display:grid; gap:3px; }
+.import-summary strong { font-size:25px; color:var(--primary); }
+.import-summary span,.import-note { color:var(--muted); }
+.validation-ok,.validation-warning,.validation-error { font-weight:700; }
+.validation-ok { color:var(--success); }
+.validation-warning { color:#9a6700; }
+.validation-error { color:var(--danger); }
+.import-table { min-width:720px; }
+@media(max-width:900px){.mapping-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:620px){.mapping-grid,.import-summary{grid-template-columns:1fr;}}

@@ -1,14 +1,3 @@
-# Patrimônio+ v0.8
+# Patrimônio+ v0.9
 
-Versão de consolidação do núcleo do sistema patrimonial.
-
-## Destaques
-
-- cadastro flexível com quatro campos obrigatórios;
-- ficha administrativa, histórico e movimentação;
-- ativação, inativação e remoção lógica;
-- consulta pública segura pelo QR Code;
-- etiqueta oficial com QR e ID interna;
-- ajuste fino da etiqueta e exportação em alta resolução.
-
-A próxima fase prevista é a importação inteligente da base patrimonial existente.
+Versão com importação inteligente por CSV, mapeamento de colunas, validação prévia, detecção de centro de custo e conflitos de ID SES. Também inclui ajuste fino da etiqueta: QR 2% menor e correção exclusiva da posição da ID na prévia.
