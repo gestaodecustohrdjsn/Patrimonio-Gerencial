@@ -1,15 +1,14 @@
-# Patrimônio+ v0.7
+# Patrimônio+ v0.8
 
-Sistema web de gestão patrimonial conectado ao Supabase e publicado no GitHub Pages.
+Versão de consolidação do núcleo do sistema patrimonial.
 
-## Destaques da versão
+## Destaques
 
-- cadastro com apenas Tipo, Descrição, Aquisição e Centro de Custo obrigatórios;
-- SIGEM e valores opcionais;
-- padrões: data atual, Bem Conservado e Ativo;
-- consulta pública por QR Code, sem login e somente leitura;
-- token público aleatório por patrimônio;
-- ficha administrativa, edição, movimentação, histórico, ativação, inativação e remoção lógica preservados;
-- etiqueta usando o layout oficial em `assets/layout-etiqueta-patrimonio.png`.
+- cadastro flexível com quatro campos obrigatórios;
+- ficha administrativa, histórico e movimentação;
+- ativação, inativação e remoção lógica;
+- consulta pública segura pelo QR Code;
+- etiqueta oficial com QR e ID interna;
+- ajuste fino da etiqueta e exportação em alta resolução.
 
-Consulte `INSTRUCOES_ATUALIZACAO.md` antes de publicar.
+A próxima fase prevista é a importação inteligente da base patrimonial existente.

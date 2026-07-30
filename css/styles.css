@@ -432,3 +432,51 @@ button:disabled { opacity: .65; cursor: wait; }
   .public-card-grid { grid-template-columns: 1fr; }
   .public-footer { flex-direction: column; }
 }
+
+/* v0.8 — consolidação visual e ajuste fino da etiqueta */
+#assetDialog { width: min(920px, calc(100vw - 28px)); }
+#assetForm { padding: 26px; }
+.form-section { padding: 20px; }
+.form-section + .form-section { margin-top: 20px; }
+.form-section legend { font-size: 14px; letter-spacing: .015em; }
+.form-grid { align-items: start; }
+.form-grid label { min-width: 0; }
+.dialog-actions { padding-top: 4px; }
+
+/* QR 5% menor, centralizado novamente dentro da área branca. */
+.label-qr {
+  left: 5.12%;
+  top: 11.40%;
+  width: 31.16%;
+}
+/* ID elevada cerca de 3px no layout-base. */
+.label-id { top: 73.08%; }
+
+.public-id-block {
+  display: inline-grid;
+  gap: 3px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 12px;
+  background: rgba(255,255,255,.10);
+}
+.public-id-block > span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  opacity: .72;
+}
+.public-id-block .public-id { margin: 0; }
+.public-card { min-height: 100%; }
+.public-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 22px;
+  padding-top: 18px;
+}
+
+@media (max-width: 760px) {
+  #assetForm { padding: 18px; }
+  .form-section { padding: 15px; }
+}

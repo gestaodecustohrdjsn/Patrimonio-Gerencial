@@ -93,9 +93,9 @@ function shell() {
   </dialog>
 
   <dialog id="labelDialog" class="label-dialog">
-    <div class="dialog-header"><button type="button" class="back-button" id="closeLabelButton">← Voltar</button><h2>Etiqueta do patrimônio</h2><p>QR Code para abrir a ficha e ID interna sobre o layout oficial.</p></div>
+    <div class="dialog-header"><button type="button" class="back-button" id="closeLabelButton">← Voltar</button><h2>Etiqueta do patrimônio</h2><p>QR Code público e ID interna sobre o layout oficial.</p></div>
     <div id="labelPreview" class="label-preview"><img src="./assets/layout-etiqueta-patrimonio.png" alt="Layout da etiqueta"><div id="labelQr" class="label-qr"></div><div id="labelId" class="label-id"></div></div>
-    <div class="dialog-actions"><button type="button" class="ghost-button" id="downloadLabelButton">Baixar PNG</button><button type="button" class="primary-button" id="printLabelButton">Imprimir etiqueta</button></div>
+    <div class="dialog-actions"><button type="button" class="ghost-button" id="downloadLabelButton">Baixar PNG</button><button type="button" class="primary-button" id="printLabelButton">Imprimir / Salvar PDF</button></div>
   </dialog>`;
   bindStaticActions();
 }
@@ -501,30 +501,44 @@ function openLabelDialog() {
   const qrRoot = document.querySelector("#labelQr");
   qrRoot.innerHTML = "";
   document.querySelector("#labelId").textContent = asset.id_interna;
-  new window.QRCode(qrRoot, { text: assetPublicUrl(asset), width: 186, height: 186, correctLevel: window.QRCode.CorrectLevel.M });
+  new window.QRCode(qrRoot, { text: assetPublicUrl(asset), width: 176, height: 176, correctLevel: window.QRCode.CorrectLevel.M });
   document.querySelector("#labelDialog").showModal();
 }
 
 async function composeLabelCanvas() {
   const asset = selectedAsset();
   if (!asset) throw new Error("Patrimônio não selecionado");
+
+  // Base visual: 583 × 227. Exportação em 3× para impressão nítida.
+  const baseWidth = 583;
+  const baseHeight = 227;
+  const scale = 3;
   const canvas = document.createElement("canvas");
-  canvas.width = 1166;
-  canvas.height = 454;
+  canvas.width = baseWidth * scale;
+  canvas.height = baseHeight * scale;
   const ctx = canvas.getContext("2d");
+
   const image = new Image();
   image.src = "./assets/layout-etiqueta-patrimonio.png";
   await image.decode();
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
   const qrCanvas = document.querySelector("#labelQr canvas");
   const qrImage = document.querySelector("#labelQr img");
-  if (qrCanvas) ctx.drawImage(qrCanvas, 51, 43, 382, 382);
-  else if (qrImage) ctx.drawImage(qrImage, 51, 43, 382, 382);
+  const qrSource = qrCanvas || qrImage;
+  if (!qrSource) throw new Error("QR Code ainda não foi gerado.");
+
+  // 5% menor que a versão anterior e novamente centralizado no quadrado.
+  const qrSize = 181.45;
+  const qrX = 30.28;
+  const qrY = 26.28;
+  ctx.drawImage(qrSource, qrX * scale, qrY * scale, qrSize * scale, qrSize * scale);
+
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 62px Arial, sans-serif";
+  ctx.font = `900 ${31 * scale}px Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(asset.id_interna, 798, 384);
+  ctx.fillText(asset.id_interna, 399 * scale, 189 * scale);
   return canvas;
 }
 
@@ -602,9 +616,9 @@ function renderPublicAsset(asset) {
         </header>
         <section class="public-hero">
           <div>
-            <span class="public-eyebrow">Patrimônio identificado</span>
+            <span class="public-eyebrow">Consulta pública · somente visualização</span>
             <h1>${escapeHtml(asset.descricao)}</h1>
-            <p class="public-id">${escapeHtml(asset.id_interna)}</p>
+            <div class="public-id-block"><span>ID interna</span><p class="public-id">${escapeHtml(asset.id_interna)}</p></div>
           </div>
           <span class="public-status ${asset.status === "ATIVO" ? "is-active" : "is-inactive"}">${statusText}</span>
         </section>
