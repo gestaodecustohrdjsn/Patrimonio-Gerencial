@@ -1,0 +1,19 @@
+{
+  "checks": {
+    "javascript_sintaxe_ok": true,
+    "build_1_5_1": true,
+    "runtime_v151": true,
+    "public_center_object": true,
+    "public_sigem_object": true,
+    "public_allowed_centers": true,
+    "type_plain_internal": true,
+    "status_plain_internal": true,
+    "mobile_only_exception": true,
+    "maintenance_exception": true,
+    "structured_movement": true,
+    "structured_maintenance": true,
+    "no_duplicate_async": true,
+    "no_supabase_runtime": true
+  },
+  "syntax_errors": []
+}
