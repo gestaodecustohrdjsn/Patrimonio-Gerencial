@@ -7,7 +7,7 @@ export function renderLogin(root) {
       <section class="login-card">
         <div class="login-brand"><div class="brand-mark">P+</div><div><strong>Patrimônio+</strong><small>Gestão patrimonial</small></div></div>
         <h1>Entrar</h1>
-        <p>Use o usuário cadastrado no Supabase.</p>
+        <p>Use seu usuário do Patrimônio+.</p>
         <form id="loginForm" class="login-form">
           <label>E-mail<input id="loginEmail" type="email" required autocomplete="username"></label>
           <label>Senha<input id="loginPassword" type="password" required autocomplete="current-password"></label>
@@ -24,7 +24,7 @@ export function renderLogin(root) {
     try {
       await signIn(document.querySelector("#loginEmail").value.trim(), document.querySelector("#loginPassword").value);
     } catch (error) {
-      toast(error.message === "Invalid login credentials" ? "E-mail ou senha inválidos." : error.message, "error");
+      toast(error.message || "Não foi possível entrar.", "error");
       button.disabled = false;
       button.textContent = "Entrar";
     }

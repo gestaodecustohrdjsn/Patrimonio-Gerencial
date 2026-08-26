@@ -1,6 +1,5 @@
-// Configuração pública do cliente Supabase.
-// Nunca coloque a Secret Key neste arquivo.
+// Configuração pública da aplicação.
+// O frontend conhece apenas a URL da API. Nenhuma senha de banco fica aqui.
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://yxgdauvjgfpalfitabzc.supabase.co",
-  SUPABASE_ANON_KEY: "sb_publishable_SgCnNsm0mwKwLBwU6lZVKg_PnD5-Tze"
+  API_BASE_URL: "https://patrimonio-api.patrimonio-gerencial.workers.dev"
 };

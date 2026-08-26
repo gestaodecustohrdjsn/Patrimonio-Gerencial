@@ -1,22 +1,45 @@
-import { supabase } from "../lib/supabase.js";
+import { apiRequest, getStoredToken, storeToken } from "../lib/api.js";
+
+const listeners = new Set();
+let currentSession = null;
+
+function notify(session) {
+  currentSession = session;
+  for (const callback of listeners) callback(session);
+}
 
 export async function getSession() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
+  if (!getStoredToken()) return null;
+  try {
+    const data = await apiRequest("/api/me");
+    currentSession = data?.user ? { user: data.user } : null;
+    return currentSession;
+  } catch {
+    storeToken(null);
+    currentSession = null;
+    return null;
+  }
 }
 
 export async function signIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  return data;
+  const data = await apiRequest("/api/auth/login", {
+    method: "POST",
+    auth: false,
+    body: { email, password }
+  });
+  storeToken(data.token);
+  const session = { user: data.user };
+  notify(session);
+  return session;
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  try { await apiRequest("/api/auth/logout", { method: "POST" }); } catch {}
+  storeToken(null);
+  notify(null);
 }
 
 export function onAuthChange(callback) {
-  return supabase.auth.onAuthStateChange((_event, session) => callback(session));
+  listeners.add(callback);
+  return { data: { subscription: { unsubscribe: () => listeners.delete(callback) } } };
 }

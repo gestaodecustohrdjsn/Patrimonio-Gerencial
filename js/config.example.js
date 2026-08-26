@@ -1,4 +1,3 @@
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://SEU-PROJETO.supabase.co",
-  SUPABASE_ANON_KEY: "SUA_PUBLISHABLE_KEY"
+  API_BASE_URL: "https://sua-api.exemplo.com"
 };

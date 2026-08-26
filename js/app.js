@@ -1,10 +1,10 @@
-import { supabase, hasSupabaseConfig, hasSupabaseLibrary } from "./lib/supabase.js";
+import { hasApiConfig } from "./lib/api.js";
 import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/utils.js";
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters } from "./services/centros.js";
 import { searchSigem } from "./services/sigem.js";
-import { listAssets, createAsset, updateAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
+import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 
 const state = {
@@ -34,7 +34,7 @@ function renderFatal(title, message) {
 }
 
 function renderConfigError() {
-  appRoot.innerHTML = `<main class="login-page"><section class="login-card"><div class="login-brand"><div class="brand-mark">P+</div><div><strong>Patrimônio+</strong><small>Configuração inicial</small></div></div><h1>Conexão pendente</h1><p>Preencha <code>js/config.js</code> com a Project URL e a Publishable Key do Supabase.</p></section></main>`;
+  appRoot.innerHTML = `<main class="login-page"><section class="login-card"><div class="login-brand"><div class="brand-mark">P+</div><div><strong>Patrimônio+</strong><small>Configuração inicial</small></div></div><h1>Conexão pendente</h1><p>Preencha <code>js/config.js</code> com a URL pública da API do Patrimônio+.</p></section></main>`;
 }
 
 function shell() {
@@ -51,7 +51,7 @@ function shell() {
         <button class="nav-item" data-view="relatorios">Relatórios</button>
         <button class="nav-item" data-view="configuracoes">Configurações</button>
       </nav>
-      <div class="sidebar-footer"><span class="badge">Supabase conectado</span><button class="logout-button" id="logoutButton">Sair</button></div>
+      <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
     </aside>
     <main class="main">
       <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div><button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button></header>
@@ -149,7 +149,7 @@ function renderDashboard() {
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
   const visibilityLabel = state.showDashboardValue ? "Ocultar valor" : "Mostrar valor";
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Visão geral</h1><p>Dados reais do Supabase.</p></div><button class="primary-button" data-action="new">+ Cadastrar patrimônio</button></div>
+    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div><button class="primary-button" data-action="new">+ Cadastrar patrimônio</button></div>
     <div class="cards cards-three">
       <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${visibleAssets.length}</div></article>
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
@@ -161,7 +161,7 @@ function renderDashboard() {
 
 function renderAssets() {
   const rows = filteredAssets();
-  document.querySelector("#viewRoot").innerHTML = `<div class="page-header"><div><h1>${state.showRemoved ? "Patrimônios removidos" : "Patrimônios"}</h1><p>${state.showRemoved ? "Registros ocultados das listas operacionais." : "Consulte e cadastre bens no banco real."}</p></div><div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver patrimônios" : "Ver removidos"}</button><button class="primary-button" data-action="new">+ Novo patrimônio</button></div></div>${assetsTable(rows, `${rows.length} patrimônio(s)`)}`;
+  document.querySelector("#viewRoot").innerHTML = `<div class="page-header"><div><h1>${state.showRemoved ? "Patrimônios removidos" : "Patrimônios"}</h1><p>${state.showRemoved ? "Registros ocultados das listas operacionais." : "Consulte e cadastre bens no banco patrimonial."}</p></div><div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver patrimônios" : "Ver removidos"}</button><button class="primary-button" data-action="new">+ Novo patrimônio</button></div></div>${assetsTable(rows, `${rows.length} patrimônio(s)`)}`;
   bindDynamicActions();
 }
 
@@ -533,7 +533,7 @@ async function submitMovement(event) {
   button.disabled = true;
   button.textContent = "Movimentando…";
   try {
-    const updated = await updateAsset(asset.id, { centro_custo_id: newCenterId });
+    const updated = await moveAsset(asset.id, newCenterId);
     state.assets = state.assets.map((item) => item.id === updated.id ? updated : item);
     closeMoveDialog();
     toast("Movimentação registrada no histórico.", "success");
@@ -737,7 +737,7 @@ function renderPublicAsset(asset) {
             <h2>Identificação</h2>
             ${publicField("ID interna", asset.id_interna)}
             ${publicField("ID SES", asset.id_ses)}
-            ${publicField("Tipo", typeName(asset.tipo_id))}
+            ${publicField("Tipo", asset.tipo || typeName(asset.tipo_id))}
             ${publicField("Item de referência SIGEM", asset.descricao_padrao)}
             ${publicField("Marca/Modelo", asset.marca_modelo)}
           </article>
@@ -781,8 +781,7 @@ async function openPublicAsset(token) {
 }
 
 async function start() {
-  if (!hasSupabaseConfig()) { renderConfigError(); return; }
-  if (!hasSupabaseLibrary()) { renderFatal("Biblioteca não carregada", "O navegador não conseguiu carregar a biblioteca do Supabase. Faça Ctrl+F5 e verifique se a rede ou o bloqueador de conteúdo está impedindo cdn.jsdelivr.net."); return; }
+  if (!hasApiConfig()) { renderConfigError(); return; }
 
   const publicToken = publicTokenFromHash();
   if (publicToken) {
