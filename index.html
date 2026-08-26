@@ -8,7 +8,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Patrimônio+</title>
-  <link rel="stylesheet" href="./css/styles.css?v=1.4.1">
+  <link rel="stylesheet" href="./css/styles.css?v=1.5.0">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -23,14 +23,14 @@
 
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="./js/runtime-v141/config.js?v=1.4.1"></script>
+  <script src="./js/runtime-v15/config.js?v=1.5.0"></script>
   <script>
     window.addEventListener("error", function (event) {
       const root = document.querySelector("#appRoot");
       if (!root) return;
-      root.innerHTML = `<main class="login-page"><section class="login-card"><h1>Não foi possível iniciar</h1><p>O navegador não conseguiu carregar um arquivo do sistema.</p><p><strong>Detalhe:</strong> ${String(event.message || "erro desconhecido")}</p><p>Build esperado: 1.4.1</p></section></main>`;
+      root.innerHTML = `<main class="login-page"><section class="login-card"><h1>Não foi possível iniciar</h1><p>O navegador não conseguiu carregar um arquivo do sistema.</p><p><strong>Detalhe:</strong> ${String(event.message || "erro desconhecido")}</p><p>Build esperado: 1.5</p></section></main>`;
     });
   </script>
-  <script type="module" src="./js/runtime-v141/app.js?v=1.4.1"></script>
+  <script type="module" src="./js/runtime-v15/app.js?v=1.5.0"></script>
 </body>
 </html>
