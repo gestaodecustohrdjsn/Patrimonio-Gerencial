@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "javascript_sintaxe_ok": true,
+    "runtime_v13": true,
+    "build_1_3": true,
+    "row_direct_click": true,
+    "optional_inline": true,
+    "qr_short_route": true,
+    "qr_legacy_route_supported": true,
+    "qr_test_button": true,
+    "qr_error_level_low": true,
+    "no_supabase_runtime": true
+  },
+  "syntax_errors": []
+}
