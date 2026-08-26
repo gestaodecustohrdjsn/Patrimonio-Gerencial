@@ -1,36 +1,13 @@
-# Atualização para o frontend portátil 1.1
+# Publicação do frontend 1.2
 
-## O que esta versão corrige
-- Não usa Supabase em runtime.
-- O login chama `POST /api/auth/login`.
-- Todos os módulos estão em `js/runtime-v11/`, um caminho novo.
-- Isso impede que arquivos JavaScript antigos do GitHub Pages/cache sejam reutilizados.
+1. Primeiro publique a API 3.1 e confirme `/health` com `version: 3.1.0`.
+2. Depois substitua o conteúdo publicado do GitHub Pages por esta versão.
+3. O `index.html` deve ficar na raiz do repositório.
+4. Aguarde o Pages concluir o deploy e use `Ctrl + F5`.
+5. Na tela de login deve aparecer `Infraestrutura: API Patrimônio+ · build 1.2`.
 
-## Publicação recomendada no GitHub
-
-A forma MAIS segura é apagar o conteúdo antigo do repositório (exceto `.git`) e enviar apenas:
-
-- `index.html`
-- `VERSAO.txt`
-- `assets/`
-- `css/`
-- `js/`
-
-Se preferir sobrescrever, também funciona porque o novo `index.html` referencia somente `js/runtime-v11/`.
-
-## Depois do commit
-1. Aguarde o GitHub Pages concluir o deploy.
-2. Abra:
-   `https://gestaodecustohrdjsn.github.io/Patrimonio-Gerencial/`
-3. Faça `Ctrl + F5`.
-4. Na tela de login deve aparecer:
-   `Infraestrutura: API Patrimônio+ · build 1.1`
-5. O Console NÃO deve tentar acessar nenhum domínio `supabase.co`.
-
-## Login
-Use:
-- e-mail: `gestaodecustohrdjsn@gmail.com`
-- a senha que você definiu via API.
-
-## Se não aparecer “build 1.1”
-O GitHub Pages ainda está servindo a versão anterior. Confira Actions/Pages e aguarde o deploy.
+## Testes rápidos
+- cadastrar patrimônio com SIGEM e sem valor manual;
+- abrir a ficha clicando na linha;
+- pesquisar um centro de custo na busca superior;
+- abrir a aba Etiquetas e gerar uma etiqueta.

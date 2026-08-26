@@ -507,3 +507,13 @@ button:disabled { opacity: .65; cursor: wait; }
 .import-table { min-width:720px; }
 @media(max-width:900px){.mapping-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:620px){.mapping-grid,.import-summary{grid-template-columns:1fr;}}
+
+/* Portátil 1.2 — refinamentos de formulário e pesquisa */
+.optional-note {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.center-search-row { cursor: pointer; }
+.center-search-row:hover td { background: #f6fafb; }
