@@ -517,3 +517,29 @@ button:disabled { opacity: .65; cursor: wait; }
 }
 .center-search-row { cursor: pointer; }
 .center-search-row:hover td { background: #f6fafb; }
+
+
+/* Portátil 1.3 — alinhamento dos títulos dos campos */
+.field-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+}
+.field-title .optional-note {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+/* Mantém uma área branca limpa em volta do código. */
+.label-qr {
+  background: #fff;
+}
+.label-qr canvas,
+.label-qr img {
+  image-rendering: auto;
+}
+.asset-row {
+  cursor: pointer;
+}

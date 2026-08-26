@@ -8,7 +8,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Patrimônio+</title>
-  <link rel="stylesheet" href="./css/styles.css?v=1.2.0">
+  <link rel="stylesheet" href="./css/styles.css?v=1.3.0">
 </head>
 <body>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -22,14 +22,14 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script src="./js/runtime-v12/config.js?v=1.2.0"></script>
+  <script src="./js/runtime-v13/config.js?v=1.3.0"></script>
   <script>
     window.addEventListener("error", function (event) {
       const root = document.querySelector("#appRoot");
       if (!root) return;
-      root.innerHTML = `<main class="login-page"><section class="login-card"><h1>Não foi possível iniciar</h1><p>O navegador não conseguiu carregar um arquivo do sistema.</p><p><strong>Detalhe:</strong> ${String(event.message || "erro desconhecido")}</p><p>Build esperado: 1.2</p></section></main>`;
+      root.innerHTML = `<main class="login-page"><section class="login-card"><h1>Não foi possível iniciar</h1><p>O navegador não conseguiu carregar um arquivo do sistema.</p><p><strong>Detalhe:</strong> ${String(event.message || "erro desconhecido")}</p><p>Build esperado: 1.3</p></section></main>`;
     });
   </script>
-  <script type="module" src="./js/runtime-v12/app.js?v=1.2.0"></script>
+  <script type="module" src="./js/runtime-v13/app.js?v=1.3.0"></script>
 </body>
 </html>
