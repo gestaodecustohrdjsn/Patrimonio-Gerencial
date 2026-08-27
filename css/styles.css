@@ -807,3 +807,40 @@ button:disabled { opacity: .65; cursor: wait; }
     grid-column:auto;
   }
 }
+
+
+/* ===== Ajustes v1.5.3 ===== */
+.edit-action-button{
+  border:1px solid var(--primary);
+  background:var(--primary);
+  color:#fff;
+  border-radius:9px;
+  padding:10px 14px;
+  font-weight:750;
+}
+.edit-action-button:hover{filter:brightness(.96)}
+.edit-action-button.active{
+  background:#fff;
+  color:var(--primary);
+}
+
+.move-mobility-control{margin-bottom:12px}
+.mobility-alert{
+  margin:10px 0 12px;
+  border-radius:9px;
+  padding:9px 11px;
+  font-size:12px;
+  line-height:1.4;
+  border:1px solid transparent;
+}
+.mobility-alert.is-neutral{
+  background:#f4f7f8;
+  color:#5d6d75;
+  border-color:#dfe7ea;
+}
+.mobility-alert.is-warning{
+  background:#fff1f1;
+  color:#9b4141;
+  border-color:#efc9c9;
+}
+#moveDialog .stacked-fields{gap:10px}

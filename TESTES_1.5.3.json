@@ -1,0 +1,21 @@
+{
+  "checks": {
+    "javascript_sintaxe_ok": true,
+    "build_1_5_3": true,
+    "runtime_v153": true,
+    "edit_button_top": true,
+    "created_removed_from_cards": true,
+    "allowed_centers_last": true,
+    "public_no_mobile_top": true,
+    "cadastro_only_mobile": true,
+    "movement_people_stacked": true,
+    "movement_card_4": true,
+    "movement_segmented": true,
+    "fixed_confirmation": true,
+    "destination_warning": true,
+    "screwdriver_icon": true,
+    "no_duplicate_async": true,
+    "no_supabase_runtime": true
+  },
+  "syntax_errors": []
+}
