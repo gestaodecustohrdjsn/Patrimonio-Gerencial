@@ -20,3 +20,24 @@ export async function updateCatalogType(id, tipoId) {
   });
   return data;
 }
+
+
+export async function listCatalogUpdateContext() {
+  const data = await apiRequest("/api/catalogo/atualizacoes/contexto");
+  return {
+    aliases: data.aliases || [],
+    atualizacoes: data.atualizacoes || []
+  };
+}
+
+export async function applyCatalogUpdate(payload) {
+  const data = await apiRequest("/api/catalogo/atualizacoes/aplicar", {
+    method: "POST",
+    body: payload
+  });
+  return data.resultado;
+}
+
+export async function getCatalogUpdateDetail(id) {
+  return apiRequest(`/api/catalogo/atualizacoes/${encodeURIComponent(id)}`);
+}
