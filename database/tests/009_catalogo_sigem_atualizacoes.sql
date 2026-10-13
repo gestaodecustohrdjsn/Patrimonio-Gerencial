@@ -36,13 +36,19 @@ begin
   select aplicar_atualizacao_catalogo_sigem_api(
     'TESTE_ATUALIZADOR_SIGEM.csv',
     false,
-    1,
+    2,
     jsonb_build_array(
       jsonb_build_object(
         'acao','EXATO',
         'nome',v_item_nome,
         'item_id',v_item_id,
         'reativar',false
+      ),
+      jsonb_build_object(
+        'acao','NOVO',
+        'nome','TESTE ITEM NOVO ATUALIZADOR SIGEM',
+        'tipo_id',2,
+        'valor_padrao',1.23
       )
     ),
     v_usuario_id
@@ -55,6 +61,10 @@ begin
 
   if (v_resultado->>'correspondencias_exatas')::integer <> 1 then
     raise exception 'Contagem de correspondência exata incorreta: %', v_resultado;
+  end if;
+
+  if (v_resultado->>'novos_itens')::integer <> 1 then
+    raise exception 'Contagem de novo item incorreta: %', v_resultado;
   end if;
 
   v_atualizacao_id := (v_resultado->>'atualizacao_id')::uuid;
@@ -75,7 +85,17 @@ begin
       and acao='EXATO'
       and item_catalogo_id=v_item_id
   ) then
-    raise exception 'Detalhe da atualização não foi criado';
+    raise exception 'Detalhe da correspondência exata não foi criado';
+  end if;
+
+  if not exists(
+    select 1
+    from catalogo_sigem_atualizacao_itens
+    where atualizacao_id=v_atualizacao_id
+      and acao='NOVO'
+      and item_catalogo_nome='TESTE ITEM NOVO ATUALIZADOR SIGEM'
+  ) then
+    raise exception 'Novo item de teste não foi criado';
   end if;
 
   if not exists(
