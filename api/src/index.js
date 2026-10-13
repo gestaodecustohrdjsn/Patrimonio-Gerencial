@@ -87,7 +87,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.3",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.4",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -155,6 +155,61 @@ export default {
         return responseJson({ok:true},200,env,request);
       }
       if (request.method === "GET" && url.pathname === "/api/me") return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil}},200,env,request);
+
+      if (request.method === "GET" && url.pathname === "/api/historico") {
+        const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||30)));
+        const rows=await sql`
+          select
+            h.id,
+            h.tabela,
+            h.registro_id,
+            h.operacao,
+            h.criado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario,
+            case
+              when h.tabela='patrimonios' then jsonb_build_object(
+                'tipo','patrimonio',
+                'id_interna',coalesce(p.id_interna,h.dados_novos->>'id_interna',h.dados_anteriores->>'id_interna'),
+                'nome',coalesce(pd.descricao,p.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao')
+              )
+              when h.tabela='centros_custo' then jsonb_build_object(
+                'tipo','centro',
+                'codigo',coalesce(cc.codigo,h.dados_novos->>'codigo',h.dados_anteriores->>'codigo'),
+                'nome',coalesce(cc.nome,h.dados_novos->>'nome',h.dados_anteriores->>'nome')
+              )
+              when h.tabela='descricoes_padrao' then jsonb_build_object(
+                'tipo','sigem',
+                'nome',coalesce(dp.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao')
+              )
+              else jsonb_build_object('tipo',h.tabela)
+            end as entidade,
+            jsonb_build_object(
+              'tipo_antes',h.dados_anteriores->>'tipo_id',
+              'tipo_depois',h.dados_novos->>'tipo_id',
+              'origem_nome',h.dados_novos#>>'{movimentacao,origem_nome}',
+              'destino_nome',h.dados_novos#>>'{movimentacao,destino_nome}',
+              'descricao',h.dados_novos->>'descricao',
+              'codigo_antes',h.dados_anteriores->>'codigo',
+              'codigo_depois',h.dados_novos->>'codigo',
+              'nome_antes',h.dados_anteriores->>'nome',
+              'nome_depois',h.dados_novos->>'nome'
+            ) as detalhes
+          from historico_alteracoes h
+          left join usuarios u on u.id=h.usuario_id
+          left join patrimonios p on h.tabela='patrimonios' and p.id=h.registro_id
+          left join centros_custo cc on h.tabela='centros_custo' and cc.id=h.registro_id
+          left join descricoes_padrao dp on h.tabela='descricoes_padrao' and dp.id=h.registro_id
+          left join descricoes_padrao pd on h.tabela='patrimonios'
+            and pd.id=coalesce(
+              p.descricao_padrao_id,
+              nullif(h.dados_novos->>'descricao_padrao_id','')::uuid,
+              nullif(h.dados_anteriores->>'descricao_padrao_id','')::uuid
+            )
+          order by h.criado_em desc,h.id desc
+          limit ${limit}
+        `;
+        return responseJson({ok:true,eventos:rows},200,env,request);
+      }
 
       if (request.method === "GET" && url.pathname === "/api/centros") {
         const rows=await sql`
