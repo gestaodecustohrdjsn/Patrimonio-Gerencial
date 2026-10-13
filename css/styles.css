@@ -893,3 +893,38 @@ button:disabled { opacity: .65; cursor: wait; }
   .catalog-type-select{min-width:160px}
   .center-actions{min-width:250px}
 }
+
+
+/* ===== Dashboard / Catálogo / Configurações v1.5.7 ===== */
+.dashboard-history-panel .panel-header small{display:block;color:var(--muted);margin-top:4px}
+.event-log{display:grid}
+.event-row{display:grid;grid-template-columns:18px minmax(0,1fr);gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.event-row:last-child{border-bottom:0}
+.event-marker{width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:6px;box-shadow:0 0 0 4px rgba(44,144,201,.12)}
+.event-main{line-height:1.45}
+.event-main strong{color:var(--text)}
+.event-main span{color:var(--text)}
+.event-detail{margin-top:3px;color:var(--primary);font-weight:650}
+.event-meta{margin-top:4px;color:var(--muted);font-size:12px}
+.event-log-footer{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end}
+
+.catalog-summary-cards{margin-bottom:18px}
+.catalog-update-preview .panel-header small{display:block;color:var(--muted);margin-top:4px;max-width:850px}
+.settings-card-list{display:grid;gap:14px}
+.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.settings-card.is-open{border-color:#b9d4df}
+.settings-card-toggle{width:100%;border:0;background:transparent;display:grid;grid-template-columns:48px minmax(0,1fr) 32px;align-items:center;gap:14px;padding:18px;text-align:left;color:var(--text)}
+.settings-card-toggle:hover{background:#fbfdfe}
+.settings-card-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--surface-soft);color:var(--primary);font-weight:800}
+.settings-card-title{display:grid;gap:4px}
+.settings-card-title strong{font-size:16px}
+.settings-card-title span{color:var(--muted);font-size:13px;line-height:1.4}
+.settings-card-chevron{font-size:24px;color:var(--primary);text-align:center}
+.settings-card-content{border-top:1px solid var(--border);padding:18px;background:#fbfdfe}
+.settings-coming-soon{display:grid;gap:8px}
+.settings-coming-soon p{margin:0;color:var(--muted);max-width:780px;line-height:1.5}
+@media(max-width:760px){
+  .settings-card-toggle{grid-template-columns:42px minmax(0,1fr) 26px;padding:15px}
+  .settings-card-icon{width:38px;height:38px}
+  .event-row{padding:12px 14px}
+}
