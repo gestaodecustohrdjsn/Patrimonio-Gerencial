@@ -844,3 +844,25 @@ button:disabled { opacity: .65; cursor: wait; }
   border-color:#efc9c9;
 }
 #moveDialog .stacked-fields{gap:10px}
+
+
+/* ===== Relações por Centro de Custo v1.5.4 ===== */
+.report-filter-panel{margin-bottom:18px}
+.report-filter-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.report-summary-cards{margin-bottom:18px}
+.report-preview-panel{margin-top:0}
+.report-preview-panel .panel-header small{display:block;color:var(--muted);margin-top:4px}
+.report-table{min-width:1080px}
+.report-table td{vertical-align:top}
+.report-empty-state{margin-top:18px;text-align:center}
+@media(max-width:1000px){
+  .report-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .report-filter-grid{grid-template-columns:1fr}
+  .report-filter-grid .filter-wide{grid-column:auto}
+  .report-summary-cards{grid-template-columns:1fr 1fr}
+}
+@media(max-width:520px){
+  .report-summary-cards{grid-template-columns:1fr}
+}
