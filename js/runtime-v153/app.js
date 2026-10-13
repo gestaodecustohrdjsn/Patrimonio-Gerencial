@@ -1204,7 +1204,7 @@ async function openCatalogUpdate() {
   try {
     await ensureCatalogUpdateContext();
   } catch (error) {
-    toast(\`Não foi possível carregar o contexto do catálogo: \${error.message}\`, "error");
+    toast(`Não foi possível carregar o contexto do catálogo: ${error.message}`, "error");
     return;
   }
   resetCatalogUpdate();
@@ -1235,9 +1235,9 @@ function guessCatalogUpdateMapping(headers) {
 }
 
 function catalogUpdateMappingOptions(selected) {
-  return \`<option value="">Não usar</option>\${state.catalogUpdateHeaders.map(header =>
-    \`<option value="\${escapeHtml(header)}" \${header===selected?"selected":""}>\${escapeHtml(header)}</option>\`
-  ).join("")}\`;
+  return `<option value="">Não usar</option>${state.catalogUpdateHeaders.map(header =>
+    `<option value="${escapeHtml(header)}" ${header===selected?"selected":""}>${escapeHtml(header)}</option>`
+  ).join("")}`;
 }
 
 function parseCatalogType(value) {
@@ -1260,7 +1260,7 @@ function parseCatalogValue(value) {
 }
 
 function catalogBigrams(value) {
-  const text = \` \${normalizeText(value)} \`;
+  const text = ` ${normalizeText(value)} `;
   const out = [];
   for (let i=0;i<text.length-1;i++) out.push(text.slice(i,i+2));
   return out;
@@ -1458,80 +1458,80 @@ function catalogUpdateReviewCounts() {
 
 function catalogTypeSelect(value, rowIndex, disabled = false) {
   const current = Number(value||0);
-  return \`<select class="catalog-update-type" data-row-index="\${rowIndex}" \${disabled?"disabled":""}>
+  return `<select class="catalog-update-type" data-row-index="${rowIndex}" ${disabled?"disabled":""}>
     <option value="">Selecione</option>
-    <option value="1" \${current===1?"selected":""}>Equipamento Médico</option>
-    <option value="2" \${current===2?"selected":""}>Mobiliário</option>
-    <option value="3" \${current===3?"selected":""}>Informática</option>
-  </select>\`;
+    <option value="1" ${current===1?"selected":""}>Equipamento Médico</option>
+    <option value="2" ${current===2?"selected":""}>Mobiliário</option>
+    <option value="3" ${current===3?"selected":""}>Informática</option>
+  </select>`;
 }
 
 function catalogCandidateSelect(row) {
   const candidates = row.candidates || [];
-  return \`<select class="catalog-update-candidate" data-row-index="\${row.index}">
-    \${candidates.map(candidate => {
+  return `<select class="catalog-update-candidate" data-row-index="${row.index}">
+    ${candidates.map(candidate => {
       const item = candidate.item;
       const pct = Math.round(candidate.score*100);
-      return \`<option value="\${item.id}" \${item.id===row.selectedItemId?"selected":""}>\${escapeHtml(item.descricao)} · \${pct}%</option>\`;
+      return `<option value="${item.id}" ${item.id===row.selectedItemId?"selected":""}>${escapeHtml(item.descricao)} · ${pct}%</option>`;
     }).join("")}
-  </select>\`;
+  </select>`;
 }
 
 function catalogReviewRowHtml(row) {
   const importedTypeLabel = row.importedType ? typeName(row.importedType) : "Não informado";
 
   if (row.kind==="similar") {
-    return \`<tr>
-      <td>\${row.line}</td>
-      <td><strong>\${escapeHtml(row.name)}</strong>\${row.ambiguousExact?'<small class="row-note warning-text">Há mais de um item com este mesmo nome no catálogo.</small>':""}</td>
-      <td>\${catalogCandidateSelect(row)}</td>
+    return `<tr>
+      <td>${row.line}</td>
+      <td><strong>${escapeHtml(row.name)}</strong>${row.ambiguousExact?'<small class="row-note warning-text">Há mais de um item com este mesmo nome no catálogo.</small>':""}</td>
+      <td>${catalogCandidateSelect(row)}</td>
       <td>
-        <select class="catalog-update-action" data-row-index="\${row.index}">
-          <option value="" \${!row.action?"selected":""}>Revisar…</option>
-          <option value="same" \${row.action==="same"?"selected":""}>É o mesmo item</option>
-          <option value="new" \${row.action==="new"?"selected":""}>É um item novo</option>
-          <option value="ignore" \${row.action==="ignore"?"selected":""}>Ignorar</option>
+        <select class="catalog-update-action" data-row-index="${row.index}">
+          <option value="" ${!row.action?"selected":""}>Revisar…</option>
+          <option value="same" ${row.action==="same"?"selected":""}>É o mesmo item</option>
+          <option value="new" ${row.action==="new"?"selected":""}>É um item novo</option>
+          <option value="ignore" ${row.action==="ignore"?"selected":""}>Ignorar</option>
         </select>
       </td>
-      <td>\${catalogTypeSelect(row.finalType,row.index,row.action==="ignore")}</td>
-      <td>\${escapeHtml(importedTypeLabel)}</td>
-    </tr>\`;
+      <td>${catalogTypeSelect(row.finalType,row.index,row.action==="ignore")}</td>
+      <td>${escapeHtml(importedTypeLabel)}</td>
+    </tr>`;
   }
 
   if (row.kind==="new") {
-    return \`<tr>
-      <td>\${row.line}</td>
-      <td><strong>\${escapeHtml(row.name)}</strong><small class="row-note">Nenhuma correspondência semelhante encontrada.</small></td>
+    return `<tr>
+      <td>${row.line}</td>
+      <td><strong>${escapeHtml(row.name)}</strong><small class="row-note">Nenhuma correspondência semelhante encontrada.</small></td>
       <td>—</td>
       <td>
-        <select class="catalog-update-action" data-row-index="\${row.index}">
-          <option value="new" \${row.action==="new"?"selected":""}>Adicionar item</option>
-          <option value="ignore" \${row.action==="ignore"?"selected":""}>Ignorar</option>
+        <select class="catalog-update-action" data-row-index="${row.index}">
+          <option value="new" ${row.action==="new"?"selected":""}>Adicionar item</option>
+          <option value="ignore" ${row.action==="ignore"?"selected":""}>Ignorar</option>
         </select>
       </td>
-      <td>\${catalogTypeSelect(row.finalType,row.index,row.action==="ignore")}</td>
-      <td>\${escapeHtml(importedTypeLabel)}</td>
-    </tr>\`;
+      <td>${catalogTypeSelect(row.finalType,row.index,row.action==="ignore")}</td>
+      <td>${escapeHtml(importedTypeLabel)}</td>
+    </tr>`;
   }
 
   if (row.kind==="file_duplicate") {
-    return \`<tr>
-      <td>\${row.line}</td>
-      <td><strong>\${escapeHtml(row.name)}</strong><small class="row-note warning-text">Repetido no próprio arquivo (primeira ocorrência na linha \${row.duplicateOfLine}).</small></td>
+    return `<tr>
+      <td>${row.line}</td>
+      <td><strong>${escapeHtml(row.name)}</strong><small class="row-note warning-text">Repetido no próprio arquivo (primeira ocorrência na linha ${row.duplicateOfLine}).</small></td>
       <td>—</td>
       <td>
-        <select class="catalog-update-action" data-row-index="\${row.index}">
-          <option value="ignore" \${row.action==="ignore"?"selected":""}>Não adicionar</option>
-          <option value="duplicate" \${row.action==="duplicate"?"selected":""}>Adicionar mesmo assim</option>
+        <select class="catalog-update-action" data-row-index="${row.index}">
+          <option value="ignore" ${row.action==="ignore"?"selected":""}>Não adicionar</option>
+          <option value="duplicate" ${row.action==="duplicate"?"selected":""}>Adicionar mesmo assim</option>
         </select>
       </td>
-      <td>\${catalogTypeSelect(row.finalType,row.index,row.action!=="duplicate")}</td>
-      <td>\${escapeHtml(importedTypeLabel)}</td>
-    </tr>\`;
+      <td>${catalogTypeSelect(row.finalType,row.index,row.action!=="duplicate")}</td>
+      <td>${escapeHtml(importedTypeLabel)}</td>
+    </tr>`;
   }
 
   if (row.kind==="invalid") {
-    return \`<tr><td>\${row.line}</td><td colspan="5"><span class="validation-error">Linha sem descrição SIGEM. Será ignorada.</span></td></tr>\`;
+    return `<tr><td>${row.line}</td><td colspan="5"><span class="validation-error">Linha sem descrição SIGEM. Será ignorada.</span></td></tr>`;
   }
   return "";
 }
@@ -1540,43 +1540,43 @@ function catalogExistingRowHtml(row) {
   const item = row.matchedItem;
   const source = row.kind==="alias" ? "Alias conhecido" : "Correspondência exata";
   const inactive = item && !item.ativo;
-  return \`<tr>
-    <td>\${row.line}</td>
-    <td><strong>\${escapeHtml(row.name)}</strong></td>
-    <td>\${escapeHtml(item?.descricao || "—")}</td>
-    <td>\${source}\${inactive?' · <span class="warning-text">item inativo será reativado</span>':""}\${row.typeConflict?'<small class="row-note warning-text">O Tipo do arquivo difere do Tipo atual; o cadastro atual será preservado.</small>':""}</td>
+  return `<tr>
+    <td>${row.line}</td>
+    <td><strong>${escapeHtml(row.name)}</strong></td>
+    <td>${escapeHtml(item?.descricao || "—")}</td>
+    <td>${source}${inactive?' · <span class="warning-text">item inativo será reativado</span>':""}${row.typeConflict?'<small class="row-note warning-text">O Tipo do arquivo difere do Tipo atual; o cadastro atual será preservado.</small>':""}</td>
     <td>
-      <select class="catalog-update-action" data-row-index="\${row.index}">
-        <option value="skip" \${row.action==="skip"?"selected":""}>Não adicionar novamente</option>
-        <option value="duplicate" \${row.action==="duplicate"?"selected":""}>Adicionar mesmo assim</option>
+      <select class="catalog-update-action" data-row-index="${row.index}">
+        <option value="skip" ${row.action==="skip"?"selected":""}>Não adicionar novamente</option>
+        <option value="duplicate" ${row.action==="duplicate"?"selected":""}>Adicionar mesmo assim</option>
       </select>
     </td>
-    <td>\${catalogTypeSelect(row.finalType,row.index,row.action!=="duplicate")}</td>
-  </tr>\`;
+    <td>${catalogTypeSelect(row.finalType,row.index,row.action!=="duplicate")}</td>
+  </tr>`;
 }
 
 function catalogMissingRowsHtml() {
   if (!state.catalogUpdateComplete) return "";
   if (!state.catalogUpdateMissing.length) {
-    return \`<section class="catalog-review-section">
+    return `<section class="catalog-review-section">
       <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Todos os itens ativos atuais foram reconhecidos no arquivo.</p></div><span class="badge">0</span></div>
-    </section>\`;
+    </section>`;
   }
-  return \`<section class="catalog-review-section">
-    <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Nada é inativado automaticamente. Escolha explicitamente quando necessário.</p></div><span class="badge">\${state.catalogUpdateMissing.length}</span></div>
+  return `<section class="catalog-review-section">
+    <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Nada é inativado automaticamente. Escolha explicitamente quando necessário.</p></div><span class="badge">${state.catalogUpdateMissing.length}</span></div>
     <div class="table-wrap catalog-review-table"><table>
       <thead><tr><th>Item atual</th><th>Tipo</th><th>Patrimônios</th><th>Ação</th></tr></thead>
-      <tbody>\${state.catalogUpdateMissing.map(item=>\`<tr>
-        <td><strong>\${escapeHtml(item.descricao)}</strong></td>
-        <td>\${escapeHtml(typeName(item.tipo_id))}</td>
-        <td>\${Number(item.patrimonios_vinculados||0)}</td>
-        <td><select class="catalog-missing-action" data-item-id="\${item.id}">
-          <option value="keep" \${item.action==="keep"?"selected":""}>Manter ativo</option>
-          <option value="inactive" \${item.action==="inactive"?"selected":""}>Inativar</option>
+      <tbody>${state.catalogUpdateMissing.map(item=>`<tr>
+        <td><strong>${escapeHtml(item.descricao)}</strong></td>
+        <td>${escapeHtml(typeName(item.tipo_id))}</td>
+        <td>${Number(item.patrimonios_vinculados||0)}</td>
+        <td><select class="catalog-missing-action" data-item-id="${item.id}">
+          <option value="keep" ${item.action==="keep"?"selected":""}>Manter ativo</option>
+          <option value="inactive" ${item.action==="inactive"?"selected":""}>Inativar</option>
         </select></td>
-      </tr>\`).join("")}</tbody>
+      </tr>`).join("")}</tbody>
     </table></div>
-  </section>\`;
+  </section>`;
 }
 
 function buildCatalogUpdatePlan() {
@@ -1592,7 +1592,7 @@ function buildCatalogUpdatePlan() {
     if (row.kind==="exact" || row.kind==="alias") {
       if (row.action==="duplicate") {
         const typeId = Number(row.finalType||row.importedType||row.matchedItem?.tipo_id);
-        if (![1,2,3].includes(typeId)) errors.push(\`Linha \${row.line}: defina o Tipo do item duplicado.\`);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do item duplicado.`);
         else actions.push({ acao:"DUPLICADO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
       } else {
         actions.push({
@@ -1608,7 +1608,7 @@ function buildCatalogUpdatePlan() {
     if (row.kind==="file_duplicate") {
       if (row.action==="duplicate") {
         const typeId = Number(row.finalType||row.importedType);
-        if (![1,2,3].includes(typeId)) errors.push(\`Linha \${row.line}: defina o Tipo do item duplicado.\`);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do item duplicado.`);
         else actions.push({ acao:"DUPLICADO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
       } else {
         actions.push({ acao:"IGNORAR", nome:row.name, tipo_id:row.importedType, valor_padrao:row.value });
@@ -1621,7 +1621,7 @@ function buildCatalogUpdatePlan() {
         actions.push({ acao:"IGNORAR", nome:row.name, tipo_id:row.importedType, valor_padrao:row.value });
       } else {
         const typeId = Number(row.finalType||row.importedType);
-        if (![1,2,3].includes(typeId)) errors.push(\`Linha \${row.line}: defina o Tipo do novo item.\`);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do novo item.`);
         else actions.push({ acao:"NOVO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
       }
       continue;
@@ -1629,7 +1629,7 @@ function buildCatalogUpdatePlan() {
 
     if (row.kind==="similar") {
       if (!row.action) {
-        errors.push(\`Linha \${row.line}: confirme se o item semelhante é o mesmo, novo ou deve ser ignorado.\`);
+        errors.push(`Linha ${row.line}: confirme se o item semelhante é o mesmo, novo ou deve ser ignorado.`);
         continue;
       }
       if (row.action==="ignore") {
@@ -1646,12 +1646,12 @@ function buildCatalogUpdatePlan() {
       const candidate = row.candidates.find(entry=>entry.item.id===row.selectedItemId);
       if (row.action==="same") {
         if (!candidate) {
-          errors.push(\`Linha \${row.line}: selecione o item correspondente.\`);
+          errors.push(`Linha ${row.line}: selecione o item correspondente.`);
           continue;
         }
         const typeId = Number(row.finalType||row.importedType||candidate.item.tipo_id);
         if (![1,2,3].includes(typeId)) {
-          errors.push(\`Linha \${row.line}: defina o Tipo da correspondência.\`);
+          errors.push(`Linha ${row.line}: defina o Tipo da correspondência.`);
           continue;
         }
         actions.push({
@@ -1665,7 +1665,7 @@ function buildCatalogUpdatePlan() {
         });
       } else if (row.action==="new") {
         const typeId = Number(row.finalType||row.importedType);
-        if (![1,2,3].includes(typeId)) errors.push(\`Linha \${row.line}: defina o Tipo do novo item.\`);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do novo item.`);
         else actions.push({ acao:"NOVO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
       }
     }
@@ -1707,31 +1707,31 @@ function renderCatalogUpdateDialog() {
 
   if (state.catalogUpdateStage==="file" || state.catalogUpdateStage==="mapping") {
     const hasFile = state.catalogUpdateRows.length>0;
-    root.innerHTML = \`
+    root.innerHTML = `
       <div class="catalog-wizard">
         <section class="catalog-step">
           <div class="step-title"><span>1</span><div><h3>Selecionar nova lista SIGEM</h3><p>CSV em UTF-8 ou Windows-1252, separado por vírgula ou ponto e vírgula.</p></div></div>
           <label class="file-drop catalog-file-drop">
             <input id="catalogUpdateFile" type="file" accept=".csv,text/csv">
-            <strong>\${state.catalogUpdateFileName || "Escolher arquivo CSV"}</strong>
-            <small>\${hasFile ? \`\${state.catalogUpdateRows.length} linha(s) encontradas\` : "Nenhum arquivo selecionado"}</small>
+            <strong>${state.catalogUpdateFileName || "Escolher arquivo CSV"}</strong>
+            <small>${hasFile ? `${state.catalogUpdateRows.length} linha(s) encontradas` : "Nenhum arquivo selecionado"}</small>
           </label>
         </section>
 
-        \${hasFile ? \`<section class="catalog-step">
+        ${hasFile ? `<section class="catalog-step">
           <div class="step-title"><span>2</span><div><h3>Mapear colunas</h3><p>Descrição é obrigatória. Tipo e valor são opcionais, mas ajudam na inclusão dos novos itens.</p></div></div>
           <div class="mapping-grid">
-            <label>Descrição/Nome SIGEM *<select data-catalog-map="nome">\${catalogUpdateMappingOptions(state.catalogUpdateMapping.nome)}</select></label>
-            <label>Tipo/Classificação<select data-catalog-map="tipo">\${catalogUpdateMappingOptions(state.catalogUpdateMapping.tipo)}</select></label>
-            <label>Valor SIGEM<select data-catalog-map="valor">\${catalogUpdateMappingOptions(state.catalogUpdateMapping.valor)}</select></label>
+            <label>Descrição/Nome SIGEM *<select data-catalog-map="nome">${catalogUpdateMappingOptions(state.catalogUpdateMapping.nome)}</select></label>
+            <label>Tipo/Classificação<select data-catalog-map="tipo">${catalogUpdateMappingOptions(state.catalogUpdateMapping.tipo)}</select></label>
+            <label>Valor SIGEM<select data-catalog-map="valor">${catalogUpdateMappingOptions(state.catalogUpdateMapping.valor)}</select></label>
           </div>
           <label class="catalog-complete-check">
-            <input id="catalogUpdateComplete" type="checkbox" \${state.catalogUpdateComplete?"checked":""}>
+            <input id="catalogUpdateComplete" type="checkbox" ${state.catalogUpdateComplete?"checked":""}>
             <span><strong>Este arquivo representa o catálogo completo.</strong><small>Somente marque se itens ausentes realmente puderem ser revisados para inativação. Nada será inativado automaticamente.</small></span>
           </label>
           <div class="import-actions"><button class="primary-button" data-action="analyze-catalog-update">Comparar com catálogo atual</button></div>
-        </section>\` : ""}
-      </div>\`;
+        </section>` : ""}
+      </div>`;
 
     document.querySelector("#catalogUpdateFile")?.addEventListener("change", handleCatalogUpdateFile);
     document.querySelectorAll("[data-catalog-map]").forEach(select=>select.addEventListener("change",()=>{
@@ -1750,57 +1750,57 @@ function renderCatalogUpdateDialog() {
     const reviewRows = state.catalogUpdateAnalysis.filter(row=>["similar","new","file_duplicate","invalid"].includes(row.kind));
     const final = catalogFinalSummary();
 
-    root.innerHTML = \`
+    root.innerHTML = `
       <div class="catalog-wizard">
         <section class="catalog-step catalog-review-summary">
           <div class="step-title"><span>3</span><div><h3>Revisar comparação</h3><p>Nenhuma alteração foi gravada. Revise principalmente correspondências semelhantes e itens novos.</p></div></div>
           <div class="import-summary catalog-summary-grid">
-            <article><strong>\${counts.exact}</strong><span>Exatos</span></article>
-            <article><strong>\${counts.alias}</strong><span>Via de-para</span></article>
-            <article><strong>\${counts.similar}</strong><span>Semelhantes</span></article>
-            <article><strong>\${counts.new}</strong><span>Novos</span></article>
-            <article><strong>\${counts.fileDuplicate}</strong><span>Duplicados no arquivo</span></article>
-            <article><strong>\${counts.unresolved}</strong><span>Pendentes</span></article>
+            <article><strong>${counts.exact}</strong><span>Exatos</span></article>
+            <article><strong>${counts.alias}</strong><span>Via de-para</span></article>
+            <article><strong>${counts.similar}</strong><span>Semelhantes</span></article>
+            <article><strong>${counts.new}</strong><span>Novos</span></article>
+            <article><strong>${counts.fileDuplicate}</strong><span>Duplicados no arquivo</span></article>
+            <article><strong>${counts.unresolved}</strong><span>Pendentes</span></article>
           </div>
-          \${counts.typeWarnings? \`<div class="catalog-alert warning"><strong>\${counts.typeWarnings} divergência(s) de Tipo em itens já existentes.</strong><span>O Tipo atual do catálogo será preservado, a menos que você adicione uma cópia nova.</span></div>\`:""}
+          ${counts.typeWarnings? `<div class="catalog-alert warning"><strong>${counts.typeWarnings} divergência(s) de Tipo em itens já existentes.</strong><span>O Tipo atual do catálogo será preservado, a menos que você adicione uma cópia nova.</span></div>`:""}
         </section>
 
-        \${reviewRows.length ? \`<section class="catalog-review-section">
-          <div class="section-heading"><div><h3>Itens que exigem revisão</h3><p>Escolha a ação e confirme o Tipo quando necessário.</p></div><span class="badge">\${reviewRows.length}</span></div>
+        ${reviewRows.length ? `<section class="catalog-review-section">
+          <div class="section-heading"><div><h3>Itens que exigem revisão</h3><p>Escolha a ação e confirme o Tipo quando necessário.</p></div><span class="badge">${reviewRows.length}</span></div>
           <div class="table-wrap catalog-review-table"><table>
             <thead><tr><th>Linha</th><th>Arquivo</th><th>Possível correspondência</th><th>Ação</th><th>Tipo final</th><th>Tipo no arquivo</th></tr></thead>
-            <tbody>\${reviewRows.map(catalogReviewRowHtml).join("")}</tbody>
+            <tbody>${reviewRows.map(catalogReviewRowHtml).join("")}</tbody>
           </table></div>
-        </section>\` : ""}
+        </section>` : ""}
 
         <details class="catalog-existing-details">
-          <summary>Itens já encontrados no catálogo (\${existing.length})</summary>
+          <summary>Itens já encontrados no catálogo (${existing.length})</summary>
           <div class="table-wrap catalog-review-table"><table>
             <thead><tr><th>Linha</th><th>Arquivo</th><th>Catálogo atual</th><th>Correspondência</th><th>Ação</th><th>Tipo se duplicar</th></tr></thead>
-            <tbody>\${existing.map(catalogExistingRowHtml).join("")}</tbody>
+            <tbody>${existing.map(catalogExistingRowHtml).join("")}</tbody>
           </table></div>
         </details>
 
-        \${catalogMissingRowsHtml()}
+        ${catalogMissingRowsHtml()}
 
         <section class="catalog-review-section catalog-final-preview">
           <div class="section-heading"><div><h3>Prévia final</h3><p>Este é o plano que será enviado ao banco.</p></div></div>
           <div class="catalog-final-grid">
-            <span><strong>\${final.exact}</strong> exatos</span>
-            <span><strong>\${final.alias}</strong> de-paras</span>
-            <span><strong>\${final.same}</strong> correspondências confirmadas</span>
-            <span><strong>\${final.added}</strong> novos</span>
-            <span><strong>\${final.duplicates}</strong> duplicados autorizados</span>
-            <span><strong>\${final.ignored}</strong> ignorados</span>
-            <span><strong>\${final.inactive}</strong> a inativar</span>
+            <span><strong>${final.exact}</strong> exatos</span>
+            <span><strong>${final.alias}</strong> de-paras</span>
+            <span><strong>${final.same}</strong> correspondências confirmadas</span>
+            <span><strong>${final.added}</strong> novos</span>
+            <span><strong>${final.duplicates}</strong> duplicados autorizados</span>
+            <span><strong>${final.ignored}</strong> ignorados</span>
+            <span><strong>${final.inactive}</strong> a inativar</span>
           </div>
-          \${final.errors.length ? \`<div class="catalog-alert error"><strong>Existem \${final.errors.length} pendência(s).</strong><ul>\${final.errors.slice(0,12).map(error=>\`<li>\${escapeHtml(error)}</li>\`).join("")}</ul>\${final.errors.length>12?'<span>Revise as demais linhas pendentes acima.</span>':""}</div>\` : '<div class="catalog-alert success"><strong>Plano pronto para confirmação.</strong><span>A aplicação final será transacional: se algo falhar, nada fica parcialmente gravado.</span></div>'}
+          ${final.errors.length ? `<div class="catalog-alert error"><strong>Existem ${final.errors.length} pendência(s).</strong><ul>${final.errors.slice(0,12).map(error=>`<li>${escapeHtml(error)}</li>`).join("")}</ul>${final.errors.length>12?'<span>Revise as demais linhas pendentes acima.</span>':""}</div>` : '<div class="catalog-alert success"><strong>Plano pronto para confirmação.</strong><span>A aplicação final será transacional: se algo falhar, nada fica parcialmente gravado.</span></div>'}
           <div class="catalog-review-actions">
             <button class="ghost-button" data-action="restart-catalog-update">Trocar arquivo</button>
-            <button class="primary-button" data-action="confirm-catalog-update" \${final.errors.length||state.catalogUpdateBusy?"disabled":""}>\${state.catalogUpdateBusy?"Aplicando…":"Confirmar atualização"}</button>
+            <button class="primary-button" data-action="confirm-catalog-update" ${final.errors.length||state.catalogUpdateBusy?"disabled":""}>${state.catalogUpdateBusy?"Aplicando…":"Confirmar atualização"}</button>
           </div>
         </section>
-      </div>\`;
+      </div>`;
 
     bindCatalogReviewEvents();
   }
@@ -1865,7 +1865,7 @@ async function handleCatalogUpdateFile(event) {
     state.catalogUpdateStage="mapping";
     renderCatalogUpdateDialog();
   } catch (error) {
-    toast(\`Não foi possível ler o arquivo: \${error.message}\`,"error");
+    toast(`Não foi possível ler o arquivo: ${error.message}`,"error");
   }
 }
 
@@ -1878,11 +1878,11 @@ async function confirmCatalogUpdate() {
   const message = [
     "Confirmar atualização do Catálogo SIGEM?",
     "",
-    \`Arquivo: \${state.catalogUpdateFileName}\`,
-    \`Novos itens: \${final.added}\`,
-    \`Correspondências confirmadas: \${final.same}\`,
-    \`Duplicados autorizados: \${final.duplicates}\`,
-    \`Itens a inativar: \${final.inactive}\`,
+    `Arquivo: ${state.catalogUpdateFileName}`,
+    `Novos itens: ${final.added}`,
+    `Correspondências confirmadas: ${final.same}`,
+    `Duplicados autorizados: ${final.duplicates}`,
+    `Itens a inativar: ${final.inactive}`,
     "",
     "A operação será gravada no histórico."
   ].join("\\n");
@@ -1907,7 +1907,7 @@ async function confirmCatalogUpdate() {
     toast("Catálogo SIGEM atualizado com sucesso.","success");
     renderCatalog();
   } catch (error) {
-    toast(\`Atualização não aplicada: \${error.message}\`,"error");
+    toast(`Atualização não aplicada: ${error.message}`,"error");
     state.catalogUpdateBusy=false;
     renderCatalogUpdateDialog();
   }
@@ -1918,26 +1918,26 @@ async function openCatalogUpdateDetail(id) {
     state.catalogUpdateDetail=await getCatalogUpdateDetail(id);
     renderCatalog();
   } catch (error) {
-    toast(\`Não foi possível abrir os detalhes: \${error.message}\`,"error");
+    toast(`Não foi possível abrir os detalhes: ${error.message}`,"error");
   }
 }
 
 function catalogUpdateHistoryHtml() {
   const updates=state.catalogUpdates||[];
   if (!updates.length) return '<div class="empty">Nenhuma atualização de catálogo registrada ainda.</div>';
-  return \`<div class="table-wrap"><table class="catalog-history-table">
+  return `<div class="table-wrap"><table class="catalog-history-table">
     <thead><tr><th>Data</th><th>Arquivo</th><th>Usuário</th><th>Itens</th><th>Novos</th><th>De-para</th><th>Inativados</th><th></th></tr></thead>
-    <tbody>\${updates.map(update=>\`<tr>
-      <td>\${escapeHtml(historyDateTime(update.criado_em))}</td>
-      <td><strong>\${escapeHtml(update.nome_arquivo)}</strong></td>
-      <td>\${escapeHtml(update.usuario?.nome||"Sistema")}</td>
-      <td>\${Number(update.quantidade_arquivo||0)}</td>
-      <td>\${Number(update.novos_itens||0)}</td>
-      <td>\${Number(update.correspondencias_confirmadas||0)+Number(update.correspondencias_alias||0)}</td>
-      <td>\${Number(update.inativados||0)}</td>
-      <td><button class="ghost-button compact-button" data-catalog-update-detail="\${update.id}">Detalhes</button></td>
-    </tr>\`).join("")}</tbody>
-  </table></div>\`;
+    <tbody>${updates.map(update=>`<tr>
+      <td>${escapeHtml(historyDateTime(update.criado_em))}</td>
+      <td><strong>${escapeHtml(update.nome_arquivo)}</strong></td>
+      <td>${escapeHtml(update.usuario?.nome||"Sistema")}</td>
+      <td>${Number(update.quantidade_arquivo||0)}</td>
+      <td>${Number(update.novos_itens||0)}</td>
+      <td>${Number(update.correspondencias_confirmadas||0)+Number(update.correspondencias_alias||0)}</td>
+      <td>${Number(update.inativados||0)}</td>
+      <td><button class="ghost-button compact-button" data-catalog-update-detail="${update.id}">Detalhes</button></td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
 }
 
 function catalogUpdateDetailHtml() {
@@ -1949,25 +1949,25 @@ function catalogUpdateDetailHtml() {
     acc[item.acao]=(acc[item.acao]||0)+1;
     return acc;
   },{});
-  return \`<section class="panel catalog-update-detail-panel">
+  return `<section class="panel catalog-update-detail-panel">
     <div class="panel-header">
-      <div><h2>Detalhes da atualização</h2><small>\${escapeHtml(update.nome_arquivo)} · \${escapeHtml(historyDateTime(update.criado_em))}</small></div>
+      <div><h2>Detalhes da atualização</h2><small>${escapeHtml(update.nome_arquivo)} · ${escapeHtml(historyDateTime(update.criado_em))}</small></div>
       <button class="ghost-button compact-button" data-action="close-catalog-detail">Fechar</button>
     </div>
     <div class="catalog-detail-summary">
-      \${Object.entries(counts).map(([key,value])=>\`<span><strong>\${value}</strong> \${escapeHtml(key.replaceAll("_"," ").toLowerCase())}</span>\`).join("")}
+      ${Object.entries(counts).map(([key,value])=>`<span><strong>${value}</strong> ${escapeHtml(key.replaceAll("_"," ").toLowerCase())}</span>`).join("")}
     </div>
     <div class="table-wrap catalog-detail-items"><table>
       <thead><tr><th>Ação</th><th>Nome no arquivo</th><th>Item final</th><th>Tipo</th><th>Similaridade</th></tr></thead>
-      <tbody>\${items.map(item=>\`<tr>
-        <td>\${escapeHtml(item.acao)}</td>
-        <td>\${escapeHtml(item.nome_arquivo)}</td>
-        <td>\${escapeHtml(item.item_catalogo_nome||"—")}</td>
-        <td>\${escapeHtml(item.tipo_id?typeName(item.tipo_id):"—")}</td>
-        <td>\${item.similaridade!=null?\`\${Math.round(Number(item.similaridade)*100)}%\`:"—"}</td>
-      </tr>\`).join("")}</tbody>
+      <tbody>${items.map(item=>`<tr>
+        <td>${escapeHtml(item.acao)}</td>
+        <td>${escapeHtml(item.nome_arquivo)}</td>
+        <td>${escapeHtml(item.item_catalogo_nome||"—")}</td>
+        <td>${escapeHtml(item.tipo_id?typeName(item.tipo_id):"—")}</td>
+        <td>${item.similaridade!=null?`${Math.round(Number(item.similaridade)*100)}%`:"—"}</td>
+      </tr>`).join("")}</tbody>
     </table></div>
-  </section>\`;
+  </section>`;
 }
 
 async function renderCatalog() {
