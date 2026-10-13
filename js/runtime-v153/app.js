@@ -286,7 +286,8 @@ function historyActionLabel(event) {
     "centros_custo:CADASTRO": "Cadastrou centro de custo",
     "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
     "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
-    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação SIGEM"
+    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação SIGEM",
+    "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou Catálogo SIGEM"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -301,6 +302,7 @@ function historyEntityLabel(event) {
     return [entity.codigo, entity.nome].filter(Boolean).join(" · ") || "Centro de custo";
   }
   if (entity.tipo === "sigem") return entity.nome || "Item SIGEM";
+  if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
   return "";
 }
 
@@ -320,6 +322,14 @@ function historyDetailText(event) {
     if (before && after && before !== after) return `${before} → ${after}`;
   }
   if (event.operacao === "MANUTENCAO_ABERTA" && d.descricao) return d.descricao;
+  if (event.operacao === "CATALOGO_SIGEM_ATUALIZADO") {
+    const parts = [];
+    if (Number(d.novos_itens || 0)) parts.push(`${d.novos_itens} novo(s)`);
+    if (Number(d.correspondencias_confirmadas || 0)) parts.push(`${d.correspondencias_confirmadas} de-para confirmado(s)`);
+    if (Number(d.inativados || 0)) parts.push(`${d.inativados} inativado(s)`);
+    if (Number(d.reativados || 0)) parts.push(`${d.reativados} reativado(s)`);
+    return parts.length ? parts.join(" · ") : `${d.quantidade_arquivo || 0} item(ns) analisado(s)`;
+  }
   return "";
 }
 
@@ -1916,7 +1926,7 @@ function catalogUpdateHistoryHtml() {
   const updates=state.catalogUpdates||[];
   if (!updates.length) return '<div class="empty">Nenhuma atualização de catálogo registrada ainda.</div>';
   return \`<div class="table-wrap"><table class="catalog-history-table">
-    <thead><tr><th>Data</th><th>Arquivo</th><th>Usuário</th><th>Arquivo</th><th>Novos</th><th>De-para</th><th>Inativados</th><th></th></tr></thead>
+    <thead><tr><th>Data</th><th>Arquivo</th><th>Usuário</th><th>Itens</th><th>Novos</th><th>De-para</th><th>Inativados</th><th></th></tr></thead>
     <tbody>\${updates.map(update=>\`<tr>
       <td>\${escapeHtml(historyDateTime(update.criado_em))}</td>
       <td><strong>\${escapeHtml(update.nome_arquivo)}</strong></td>
@@ -1984,6 +1994,14 @@ async function renderCatalog() {
     }
   }
 
+  if (!state.catalogUpdateContextLoaded) {
+    try {
+      await ensureCatalogUpdateContext();
+    } catch (error) {
+      toast(`Não foi possível carregar o histórico de atualizações: ${error.message}`, "error");
+    }
+  }
+
   const q = normalizeText(state.catalogAdminQuery);
   const typeFilter = String(state.catalogAdminType || "");
   const items = state.catalogAdminItems.filter(item => {
@@ -1999,7 +2017,8 @@ async function renderCatalog() {
 
   root.innerHTML = `
     <div class="page-header">
-      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação dos itens utilizados como referência patrimonial.</p></div>
+      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação e mantenha a lista oficial sincronizada.</p></div>
+      <button class="primary-button" data-action="update-catalog">Atualizar catálogo</button>
     </div>
 
     <div class="cards cards-three catalog-summary-cards">
@@ -2049,14 +2068,20 @@ async function renderCatalog() {
       ${items.length ? "" : '<div class="empty">Nenhum item SIGEM corresponde aos filtros.</div>'}
     </section>
 
-    <section class="panel catalog-update-preview">
+    <section class="panel catalog-update-history-panel">
       <div class="panel-header">
-        <div><h2>Atualização do catálogo</h2><small>A importação inteligente, de-para, aliases, novos itens e histórico de atualizações entram na versão 1.5.8.</small></div>
-        <span class="badge">Próxima etapa</span>
+        <div><h2>Histórico de atualizações</h2><small>Arquivos processados, inclusões, de-paras e inativações ficam registrados aqui.</small></div>
+        <span class="badge">${state.catalogUpdates.length} registro(s)</span>
       </div>
+      ${catalogUpdateHistoryHtml()}
     </section>
+
+    ${catalogUpdateDetailHtml()}
   `;
 
+  document.querySelector('[data-action="update-catalog"]')?.addEventListener("click", openCatalogUpdate);
+  document.querySelectorAll("[data-catalog-update-detail]").forEach(button=>button.addEventListener("click",()=>openCatalogUpdateDetail(button.dataset.catalogUpdateDetail)));
+  document.querySelector('[data-action="close-catalog-detail"]')?.addEventListener("click",()=>{ state.catalogUpdateDetail=null; renderCatalog(); });
   document.querySelector("#catalogAdminSearch")?.addEventListener("input", debounce(event => {
     state.catalogAdminQuery = event.target.value;
     renderCatalog();
