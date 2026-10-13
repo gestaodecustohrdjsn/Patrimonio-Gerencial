@@ -87,7 +87,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.2",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.3",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -157,9 +157,178 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/me") return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil}},200,env,request);
 
       if (request.method === "GET" && url.pathname === "/api/centros") {
-        const rows=await sql`select id,codigo,nome,ativo from centros_custo order by ativo desc,nome asc`;
+        const rows=await sql`
+          select c.id,c.codigo,c.nome,c.ativo,
+            (select count(*)::int from patrimonios p where p.centro_custo_id=c.id and p.removido=false) as patrimonios
+          from centros_custo c
+          order by c.ativo desc,c.nome asc
+        `;
         return responseJson({ok:true,centros:rows},200,env,request);
       }
+
+      if (request.method === "POST" && url.pathname === "/api/centros") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem cadastrar centros de custo."},403,env,request);
+        const b=await bodyJson(request);
+        const codigo=String(b.codigo||"").trim();
+        const nome=String(b.nome||"").trim();
+        if(!codigo||!nome) return responseJson({ok:false,error:"Código e nome do centro de custo são obrigatórios."},400,env,request);
+        const duplicate=await sql`
+          select id from centros_custo
+          where lower(btrim(codigo))=lower(${codigo})
+             or lower(btrim(nome))=lower(${nome})
+          limit 1
+        `;
+        if(duplicate.length) return responseJson({ok:false,error:"Já existe um centro de custo com este código ou nome."},409,env,request);
+        const rows=await sql`
+          insert into centros_custo(codigo,nome,ativo)
+          values(${codigo},${nome},true)
+          returning id,codigo,nome,ativo
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
+          values('centros_custo',${rows[0].id}::uuid,'CADASTRO',jsonb_build_object('codigo',${codigo}::text,'nome',${nome}::text,'ativo',true),${user.id}::uuid)
+        `;
+        return responseJson({ok:true,centro:{...rows[0],patrimonios:0}},201,env,request);
+      }
+
+      const centerMatch=url.pathname.match(/^\/api\/centros\/([0-9a-f-]{36})$/i);
+      if(centerMatch && request.method === "PATCH") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem editar centros de custo."},403,env,request);
+        const currentRows=await sql`select id,codigo,nome,ativo from centros_custo where id=${centerMatch[1]}::uuid limit 1`;
+        const current=currentRows[0];
+        if(!current) return responseJson({ok:false,error:"Centro de custo não encontrado."},404,env,request);
+        const b=await bodyJson(request);
+        const has=(key)=>Object.prototype.hasOwnProperty.call(b,key);
+        const codigo=has("codigo")?String(b.codigo||"").trim():current.codigo;
+        const nome=has("nome")?String(b.nome||"").trim():current.nome;
+        const ativo=has("ativo")?Boolean(b.ativo):Boolean(current.ativo);
+        if(!codigo||!nome) return responseJson({ok:false,error:"Código e nome do centro de custo são obrigatórios."},400,env,request);
+        const duplicate=await sql`
+          select id from centros_custo
+          where id is distinct from ${centerMatch[1]}::uuid
+            and (lower(btrim(codigo))=lower(${codigo}) or lower(btrim(nome))=lower(${nome}))
+          limit 1
+        `;
+        if(duplicate.length) return responseJson({ok:false,error:"Já existe outro centro de custo com este código ou nome."},409,env,request);
+        const rows=await sql`
+          update centros_custo
+          set codigo=${codigo},nome=${nome},ativo=${ativo}
+          where id=${centerMatch[1]}::uuid
+          returning id,codigo,nome,ativo
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+          values(
+            'centros_custo',${centerMatch[1]}::uuid,'EDICAO_CADASTRAL',
+            jsonb_build_object('codigo',${current.codigo}::text,'nome',${current.nome}::text,'ativo',${Boolean(current.ativo)}::boolean),
+            jsonb_build_object('codigo',${codigo}::text,'nome',${nome}::text,'ativo',${ativo}::boolean),
+            ${user.id}::uuid
+          )
+        `;
+        const countRows=await sql`select count(*)::int as total from patrimonios where centro_custo_id=${centerMatch[1]}::uuid and removido=false`;
+        return responseJson({ok:true,centro:{...rows[0],patrimonios:countRows[0].total}},200,env,request);
+      }
+
+      if(centerMatch && request.method === "DELETE") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem excluir centros de custo."},403,env,request);
+        const currentRows=await sql`select id,codigo,nome,ativo from centros_custo where id=${centerMatch[1]}::uuid limit 1`;
+        const current=currentRows[0];
+        if(!current) return responseJson({ok:false,error:"Centro de custo não encontrado."},404,env,request);
+        const b=await bodyJson(request);
+        if(String(b.confirmation||"").trim()!==String(current.codigo)) return responseJson({ok:false,error:"Confirmação inválida. Digite exatamente o código do centro de custo."},400,env,request);
+        const refs=await sql`
+          select
+            (select count(*)::int from patrimonios where centro_custo_id=${centerMatch[1]}::uuid) as patrimonios,
+            (select count(*)::int from movimentacoes where origem_centro_custo_id=${centerMatch[1]}::uuid or destino_centro_custo_id=${centerMatch[1]}::uuid) as movimentacoes,
+            (select count(*)::int from patrimonio_centros_permitidos where centro_custo_id=${centerMatch[1]}::uuid) as permissoes
+        `;
+        const used=Number(refs[0].patrimonios||0)+Number(refs[0].movimentacoes||0)+Number(refs[0].permissoes||0);
+        if(used>0) {
+          return responseJson({
+            ok:false,
+            error:"Este centro de custo já possui vínculos ou histórico. Inative-o em vez de excluir.",
+            referencias:refs[0]
+          },409,env,request);
+        }
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,usuario_id)
+          values(
+            'centros_custo',${centerMatch[1]}::uuid,'EXCLUSAO_DEFINITIVA',
+            jsonb_build_object('codigo',${current.codigo}::text,'nome',${current.nome}::text,'ativo',${Boolean(current.ativo)}::boolean),
+            ${user.id}::uuid
+          )
+        `;
+        await sql`delete from centros_custo where id=${centerMatch[1]}::uuid`;
+        return responseJson({ok:true},200,env,request);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/catalogo/admin") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem gerenciar a classificação SIGEM."},403,env,request);
+        const rows=await sql`
+          select d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,
+            (select count(*)::int from patrimonios p where p.descricao_padrao_id=d.id and p.removido=false) as patrimonios_vinculados
+          from descricoes_padrao d
+          order by d.descricao
+        `;
+        return responseJson({ok:true,itens:rows},200,env,request);
+      }
+
+      const catalogMatch=url.pathname.match(/^\/api\/catalogo\/([0-9a-f-]{36})$/i);
+      if(catalogMatch && request.method === "PATCH") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem alterar a classificação SIGEM."},403,env,request);
+        const b=await bodyJson(request);
+        const novoTipo=Number(b.tipo_id);
+        if(![1,2,3].includes(novoTipo)) return responseJson({ok:false,error:"Tipo SIGEM inválido."},400,env,request);
+        const currentRows=await sql`select id,descricao,valor_padrao,tipo_id,ativo from descricoes_padrao where id=${catalogMatch[1]}::uuid limit 1`;
+        const current=currentRows[0];
+        if(!current) return responseJson({ok:false,error:"Item SIGEM não encontrado."},404,env,request);
+        const tipoAnterior=current.tipo_id==null?null:Number(current.tipo_id);
+        if(tipoAnterior===novoTipo) return responseJson({ok:true,item:current,patrimonios_sincronizados:0},200,env,request);
+
+        const result=await sql`
+          with atual as (
+            select id,tipo_id
+            from descricoes_padrao
+            where id=${catalogMatch[1]}::uuid
+            for update
+          ),
+          catalogo as (
+            update descricoes_padrao d
+            set tipo_id=${novoTipo}
+            from atual a
+            where d.id=a.id
+            returning d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,a.tipo_id as tipo_anterior
+          ),
+          sincronizados as (
+            update patrimonios p
+            set tipo_id=${novoTipo},atualizado_por=${user.id}::uuid
+            from catalogo c
+            where p.descricao_padrao_id=c.id
+              and p.tipo_id is not distinct from c.tipo_anterior
+            returning p.id
+          ),
+          log_catalogo as (
+            insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+            select
+              'descricoes_padrao',c.id,'CLASSIFICACAO_SIGEM_ALTERADA',
+              jsonb_build_object('tipo_id',c.tipo_anterior),
+              jsonb_build_object('tipo_id',c.tipo_id),
+              ${user.id}::uuid
+            from catalogo c
+            returning id
+          )
+          select
+            c.id,c.descricao,c.valor_padrao,c.tipo_id,c.ativo,
+            (select count(*)::int from sincronizados) as patrimonios_sincronizados
+          from catalogo c
+        `;
+        return responseJson({
+          ok:true,
+          item:result[0],
+          patrimonios_sincronizados:Number(result[0]?.patrimonios_sincronizados||0)
+        },200,env,request);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/catalogo") {
         const q=(url.searchParams.get("q")||"").trim(); const limit=Math.min(50,Math.max(1,Number(url.searchParams.get("limit")||20)));
         if(q.length<2) return responseJson({ok:true,itens:[]},200,env,request);
