@@ -26,7 +26,7 @@ begin
     into v_usuario_id
   from usuarios
   where ativo=true
-  order by criado_em
+  order by id
   limit 1;
 
   if v_usuario_id is null then
