@@ -873,3 +873,23 @@ button:disabled { opacity: .65; cursor: wait; }
 .sigem-type-hint.is-locked{color:var(--primary);font-weight:700}
 .sigem-type-hint.is-warning{color:#8a5b00;font-weight:700}
 #tipo:disabled{background:#eef4f6;color:#45606c;cursor:not-allowed}
+
+
+/* ===== Administração SIGEM e Centros v1.5.6 ===== */
+.config-summary-cards,
+.center-summary-cards{margin-bottom:18px}
+.config-panel-header{align-items:flex-start;gap:16px}
+.config-panel-header small{display:block;color:var(--muted);margin-top:4px;max-width:820px;line-height:1.45}
+.config-toolbar{display:grid;grid-template-columns:minmax(260px,2fr) minmax(190px,1fr);gap:12px;padding:0 18px 16px}
+.config-toolbar label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700;color:var(--text)}
+.config-search{min-width:0}
+.config-table-wrap{max-height:66vh;overflow:auto}
+.config-table-wrap thead th{position:sticky;top:0;z-index:2;background:var(--surface)}
+.catalog-type-select{min-width:190px}
+.config-template-placeholder{margin-top:18px}
+.center-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media(max-width:760px){
+  .config-toolbar{grid-template-columns:1fr}
+  .catalog-type-select{min-width:160px}
+  .center-actions{min-width:250px}
+}
