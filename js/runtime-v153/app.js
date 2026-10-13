@@ -1137,19 +1137,19 @@ function printReport() {
   popup.document.close();
 }
 
-async function renderSettings() {
+async function renderCatalog() {
   const root = document.querySelector("#viewRoot");
   if (!canDeleteAssets()) {
     root.innerHTML = `
-      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
-      <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
+      <div class="page-header"><div><h1>Catálogo SIGEM</h1><p>Classificação e manutenção do catálogo de referência.</p></div></div>
+      <div class="placeholder">Somente administradores podem alterar o Catálogo SIGEM.</div>`;
     return;
   }
 
   if (!state.catalogAdminLoaded && !state.catalogAdminLoading) {
     state.catalogAdminLoading = true;
     root.innerHTML = `
-      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
+      <div class="page-header"><div><h1>Catálogo SIGEM</h1><p>Classificação e manutenção do catálogo de referência.</p></div></div>
       <div class="loading">Carregando catálogo SIGEM…</div>`;
     try {
       state.catalogAdminItems = await listCatalogAdmin();
@@ -1176,18 +1176,21 @@ async function renderSettings() {
 
   root.innerHTML = `
     <div class="page-header">
-      <div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div>
+      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação dos itens utilizados como referência patrimonial.</p></div>
     </div>
 
-    <div class="cards cards-three config-summary-cards">
+    <div class="cards cards-three catalog-summary-cards">
       <article class="card"><span class="muted">Equipamento Médico</span><div class="metric">${counts[1]}</div></article>
       <article class="card"><span class="muted">Mobiliário</span><div class="metric">${counts[2]}</div></article>
       <article class="card"><span class="muted">Informática</span><div class="metric">${counts[3]}</div></article>
     </div>
 
-    <section class="panel config-catalog-panel">
+    <section class="panel catalog-admin-panel">
       <div class="panel-header config-panel-header">
-        <div><h2>Classificação do Catálogo SIGEM</h2><small>Defina a qual Tipo cada item SIGEM pertence. Patrimônios vinculados e ainda alinhados à classificação anterior acompanham a alteração automaticamente.</small></div>
+        <div>
+          <h2>Itens do catálogo</h2>
+          <small>Altere a classificação quando necessário. Patrimônios vinculados e ainda alinhados ao Tipo anterior acompanham a alteração automaticamente.</small>
+        </div>
         <span class="badge">${state.catalogAdminItems.length} item(ns)</span>
       </div>
       <div class="config-toolbar">
@@ -1223,18 +1226,21 @@ async function renderSettings() {
       ${items.length ? "" : '<div class="empty">Nenhum item SIGEM corresponde aos filtros.</div>'}
     </section>
 
-    <section class="panel config-template-placeholder">
-      <div class="panel-header"><div><h2>Template da Relação Patrimonial</h2><small>Estrutura reservada para o template dinâmico de impressão. Vamos montar quando você enviar o modelo visual.</small></div></div>
+    <section class="panel catalog-update-preview">
+      <div class="panel-header">
+        <div><h2>Atualização do catálogo</h2><small>A importação inteligente, de-para, aliases, novos itens e histórico de atualizações entram na versão 1.5.8.</small></div>
+        <span class="badge">Próxima etapa</span>
+      </div>
     </section>
   `;
 
   document.querySelector("#catalogAdminSearch")?.addEventListener("input", debounce(event => {
     state.catalogAdminQuery = event.target.value;
-    renderSettings();
+    renderCatalog();
   }, 180));
   document.querySelector("#catalogAdminType")?.addEventListener("change", event => {
     state.catalogAdminType = event.target.value;
-    renderSettings();
+    renderCatalog();
   });
   document.querySelectorAll(".catalog-type-select").forEach(select => {
     select.addEventListener("change", () => changeCatalogType(select));
@@ -1267,12 +1273,57 @@ async function changeCatalogType(select) {
         : "Classificação SIGEM atualizada.",
       "success"
     );
-    renderSettings();
+    renderCatalog();
   } catch (error) {
     select.value = String(previous);
     toast(error.message, "error");
     select.disabled = false;
   }
+}
+
+function renderSettings() {
+  const root = document.querySelector("#viewRoot");
+  if (!canDeleteAssets()) {
+    root.innerHTML = `
+      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
+      <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
+    return;
+  }
+
+  const templateOpen = state.settingsOpenCard === "template";
+  root.innerHTML = `
+    <div class="page-header">
+      <div><h1>Configurações</h1><p>Personalize parâmetros gerais do Patrimônio+.</p></div>
+    </div>
+
+    <div class="settings-card-list">
+      <section class="settings-card ${templateOpen ? "is-open" : ""}">
+        <button class="settings-card-toggle" type="button" data-setting-card="template" aria-expanded="${templateOpen}">
+          <div class="settings-card-icon">RP</div>
+          <div class="settings-card-title">
+            <strong>Template da Relação Patrimonial</strong>
+            <span>Logo, cabeçalho, textos, campos e estrutura da impressão.</span>
+          </div>
+          <span class="settings-card-chevron">${templateOpen ? "−" : "+"}</span>
+        </button>
+        <div class="settings-card-content" ${templateOpen ? "" : "hidden"}>
+          <div class="settings-coming-soon">
+            <strong>Estrutura preparada.</strong>
+            <p>Quando você enviar o PDF ou imagem de referência, esta área receberá o editor visual do template com prévia da impressão.</p>
+            <span class="badge">Em preparação</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+
+  document.querySelectorAll("[data-setting-card]").forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.settingCard;
+      state.settingsOpenCard = state.settingsOpenCard === key ? null : key;
+      renderSettings();
+    });
+  });
 }
 
 function renderCenters() {
