@@ -77,7 +77,7 @@ function shell() {
       <div class="dialog-header"><button type="button" class="back-button" id="closeDialogButton">← Voltar</button><h2 id="assetDialogTitle">Novo patrimônio</h2><p id="assetDialogSubtitle">A ID interna será gerada automaticamente pelo banco.</p></div>
 
       <fieldset class="form-section"><legend>Identificação</legend><div class="form-grid">
-        <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select></label>
+        <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item SIGEM, o Tipo é definido manualmente.</small></label>
         <label>ID SES<input id="idSes" maxlength="50"></label>
         <label class="full">Descrição do bem *<input id="descricao" required maxlength="180" placeholder="Ex.: Cadeira fixa azul"></label>
         <label class="full sigem-field"><span class="field-title">Item de referência SIGEM <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise um item de referência, se houver"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>O patrimônio pode ser cadastrado sem vínculo com o catálogo SIGEM.</small></label>
@@ -586,7 +586,7 @@ function detailEditFormHtml(asset) {
           <label>ID interna<input value="${escapeHtml(asset.id_interna)}" disabled></label>
           <label>ID SES<input name="id_ses" value="${escapeHtml(asset.id_ses || "")}"></label>
           <label class="full">Descrição *<input name="descricao" required value="${escapeHtml(asset.descricao)}"></label>
-          <label>Tipo *<select name="tipo_id" required><option value="1" ${asset.tipo_id==1?"selected":""}>Equipamento Médico</option><option value="2" ${asset.tipo_id==2?"selected":""}>Mobiliário</option><option value="3" ${asset.tipo_id==3?"selected":""}>Informática</option></select></label>
+          <label>Tipo *<select name="tipo_id" required><option value="1" ${asset.tipo_id==1?"selected":""}>Equipamento Médico</option><option value="2" ${asset.tipo_id==2?"selected":""}>Mobiliário</option><option value="3" ${asset.tipo_id==3?"selected":""}>Informática</option></select>${asset.descricoes_padrao?.tipo_id ? `<small class="sigem-type-hint ${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?"is-warning":""}">SIGEM: ${escapeHtml(typeName(asset.descricoes_padrao.tipo_id))}${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?" · Tipo atual diferente":""}</small>` : '<small class="sigem-type-hint">Sem Tipo SIGEM disponível para conferência.</small>'}</label>
           <label>Marca/Modelo<input name="marca_modelo" value="${escapeHtml(asset.marca_modelo || "")}"></label>
         </div>
       </article>
@@ -641,6 +641,11 @@ async function submitDetailEdit(event) {
     mobilidade: state.formMobility,
     centros_permitidos_ids: state.formMobility === "MOVEL" ? [...state.formAllowedCenters] : []
   };
+  const sigemType = Number(asset.descricoes_padrao?.tipo_id || 0);
+  if (validTypeId(sigemType) && payload.tipo_id !== sigemType) {
+    if (!confirmSigemTypeOverride(payload.tipo_id, sigemType, asset.descricoes_padrao?.descricao || "")) return;
+    payload.confirmar_tipo_divergente = true;
+  }
   try {
     const updated = await updateAsset(asset.id, payload);
     state.assets = state.assets.map(a=>a.id===updated.id?updated:a);
@@ -920,9 +925,6 @@ function exportReportCsv() {
   const center = reportCenter();
   if (!rows.length || !center) return;
   const data = [
-    ["Centro de Custo", center.nome],
-    ["Filtros", reportFilterSummary()],
-    [],
     ["ID Interna","ID SES","Descrição","Tipo","Estado de Conservação","Mobilidade","Status","Manutenção"],
     ...rows.map(asset => [
       asset.id_interna,
@@ -940,7 +942,8 @@ function exportReportCsv() {
   const a = document.createElement("a");
   const safeCenter = center.nome.replace(/[<>:"/\\|?*]+/g, "_").trim();
   a.href = url;
-  a.download = `Relacao Patrimonial - ${safeCenter} - ${new Date().toISOString().slice(0,10)}.csv`;
+  const fileDate = new Intl.DateTimeFormat("pt-BR").format(new Date()).replaceAll("/", "-");
+  a.download = `${safeCenter} - Relação Patrimonial - ${fileDate}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1112,6 +1115,7 @@ function bindStaticActions() {
     render();
   });
   document.querySelector("#sigemSearch").addEventListener("input", debounce(handleSigemSearch));
+  document.querySelector("#tipo").addEventListener("change", updateTypeFieldState);
   document.querySelector("#closeMoveButton").addEventListener("click", closeMoveDialog);
   document.querySelector("#cancelMoveButton").addEventListener("click", closeMoveDialog);
   document.querySelector("#moveForm").addEventListener("submit", submitMovement);
@@ -1221,6 +1225,8 @@ function resetAssetForm() {
   document.querySelector("#descricaoPadraoId").value = "";
   document.querySelector("#valorSigem").value = "";
   document.querySelector("#sigemResults").hidden = true;
+  document.querySelector("#tipo").disabled = false;
+  updateTypeFieldState();
 }
 
 function openNewAsset() {
@@ -1263,7 +1269,12 @@ function openEditAsset() {
   populateCenters("centroCusto", asset.centros_custo?.id || "");
   renderFormAllowedCenters();
   if (asset.descricoes_padrao?.id) {
-    selectSigem({ id: asset.descricoes_padrao.id, descricao: asset.descricoes_padrao.descricao, valor_padrao: asset.descricoes_padrao.valor_padrao });
+    selectSigem({
+      id: asset.descricoes_padrao.id,
+      descricao: asset.descricoes_padrao.descricao,
+      valor_padrao: asset.descricoes_padrao.valor_padrao,
+      tipo_id: asset.descricoes_padrao.tipo_id
+    }, { preserveType: true });
   }
   document.querySelector("#assetDialog").showModal();
 }
@@ -1289,6 +1300,7 @@ async function handleSigemSearch(event) {
   state.selectedSigem = null;
   document.querySelector("#descricaoPadraoId").value = "";
   document.querySelector("#valorSigem").value = "";
+  updateTypeFieldState();
   const box = document.querySelector("#sigemResults");
   if (input.value.trim().length < 2) { box.hidden = true; return; }
   box.hidden = false;
@@ -1303,7 +1315,57 @@ async function handleSigemSearch(event) {
   }
 }
 
-function selectSigem(buttonOrItem) {
+function validTypeId(value) {
+  return [1, 2, 3].includes(Number(value));
+}
+
+function updateTypeFieldState() {
+  const select = document.querySelector("#tipo");
+  const hint = document.querySelector("#tipoSigemHint");
+  if (!select || !hint) return;
+  const sigemType = Number(state.selectedSigem?.tipoId || 0);
+  const linked = Boolean(state.selectedSigem?.id);
+
+  hint.classList.remove("is-warning", "is-locked");
+  if (!linked) {
+    select.disabled = false;
+    hint.textContent = "Sem item SIGEM, o Tipo é definido manualmente.";
+    return;
+  }
+
+  if (!validTypeId(sigemType)) {
+    select.disabled = false;
+    hint.textContent = "Este item SIGEM ainda não possui Tipo definido no catálogo. Revise o Tipo antes de salvar.";
+    hint.classList.add("is-warning");
+    return;
+  }
+
+  if (state.assetFormMode === "create") {
+    select.value = String(sigemType);
+    select.disabled = true;
+    hint.textContent = `Definido automaticamente pelo SIGEM: ${typeName(sigemType)}.`;
+    hint.classList.add("is-locked");
+    return;
+  }
+
+  select.disabled = false;
+  if (Number(select.value) !== sigemType) {
+    hint.textContent = `SIGEM: ${typeName(sigemType)}. O Tipo atual está diferente e exigirá confirmação ao salvar.`;
+    hint.classList.add("is-warning");
+  } else {
+    hint.textContent = `Tipo conferido com o SIGEM: ${typeName(sigemType)}.`;
+  }
+}
+
+function confirmSigemTypeOverride(selectedType, sigemType, sigemDescription = "") {
+  if (!validTypeId(sigemType) || Number(selectedType) === Number(sigemType)) return true;
+  const item = sigemDescription ? `\nItem SIGEM: ${sigemDescription}` : "";
+  return window.confirm(
+    `Tipo diferente do catálogo SIGEM.${item}\n\nSIGEM: ${typeName(sigemType)}\nSelecionado: ${typeName(selectedType)}\n\nDeseja manter essa alteração?`
+  );
+}
+
+function selectSigem(buttonOrItem, options = {}) {
   const item = buttonOrItem.dataset ? {
     id: buttonOrItem.dataset.id,
     descricao: buttonOrItem.dataset.description,
@@ -1321,9 +1383,10 @@ function selectSigem(buttonOrItem) {
   document.querySelector("#sigemSearch").value = item.descricao || "";
   document.querySelector("#descricaoPadraoId").value = item.id || "";
   document.querySelector("#valorSigem").value = Number.isFinite(item.valor) ? money(item.valor) : "";
-  if (item.tipoId && [1,2,3].includes(Number(item.tipoId))) {
+  if (!options.preserveType && validTypeId(item.tipoId)) {
     document.querySelector("#tipo").value = String(item.tipoId);
   }
+  updateTypeFieldState();
   document.querySelector("#sigemResults").hidden = true;
 }
 
@@ -1368,6 +1431,14 @@ async function submitAsset(event) {
   };
   if (!payload.tipo_id || !payload.descricao || !payload.data_aquisicao || !payload.tipo_aquisicao || !payload.centro_custo_id) {
     toast("Preencha Tipo, Descrição, Data de aquisição, Aquisição e Centro de custo.", "error"); return;
+  }
+  const sigemType = Number(state.selectedSigem?.tipoId || 0);
+  if (state.assetFormMode === "create" && validTypeId(sigemType)) {
+    payload.tipo_id = sigemType;
+  }
+  if (state.assetFormMode === "edit" && validTypeId(sigemType) && payload.tipo_id !== sigemType) {
+    if (!confirmSigemTypeOverride(payload.tipo_id, sigemType, state.selectedSigem?.descricao || "")) return;
+    payload.confirmar_tipo_divergente = true;
   }
   button.disabled = true; button.textContent = "Salvando…";
   try {
