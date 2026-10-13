@@ -2,8 +2,8 @@ import { hasApiConfig } from "./lib/api.js";
 import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/utils.js";
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
-import { listCenters } from "./services/centros.js";
-import { searchSigem } from "./services/sigem.js";
+import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js";
+import { searchSigem, listCatalogAdmin, updateCatalogType } from "./services/sigem.js";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
@@ -37,7 +37,13 @@ const state = {
   formMobility: "FIXO",
   formAllowedCenters: new Set(),
   moveMobility: "FIXO",
-  moveAllowedCenters: new Set()
+  moveAllowedCenters: new Set(),
+  selectedCenterId: null,
+  catalogAdminItems: [],
+  catalogAdminLoaded: false,
+  catalogAdminLoading: false,
+  catalogAdminQuery: "",
+  catalogAdminType: ""
 };
 
 const appRoot = document.querySelector("#appRoot");
@@ -77,10 +83,10 @@ function shell() {
       <div class="dialog-header"><button type="button" class="back-button" id="closeDialogButton">← Voltar</button><h2 id="assetDialogTitle">Novo patrimônio</h2><p id="assetDialogSubtitle">A ID interna será gerada automaticamente pelo banco.</p></div>
 
       <fieldset class="form-section"><legend>Identificação</legend><div class="form-grid">
+        <label class="full sigem-field"><span class="field-title">Descrição SIGEM <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do catálogo SIGEM"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
+        <label class="full">Descrição complementar *<input id="descricao" required maxlength="180" placeholder="Ex.: preta com rodinhas"></label>
         <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item SIGEM, o Tipo é definido manualmente.</small></label>
         <label>ID SES<input id="idSes" maxlength="50"></label>
-        <label class="full">Descrição do bem *<input id="descricao" required maxlength="180" placeholder="Ex.: Cadeira fixa azul"></label>
-        <label class="full sigem-field"><span class="field-title">Item de referência SIGEM <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise um item de referência, se houver"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>O patrimônio pode ser cadastrado sem vínculo com o catálogo SIGEM.</small></label>
       </div></fieldset>
 
       <fieldset class="form-section"><legend>Aquisição e valores</legend><div class="form-grid">
@@ -165,6 +171,21 @@ function shell() {
   <dialog id="maintenanceDialog" class="maintenance-dialog">
     <div class="dialog-header"><button type="button" class="back-button" id="closeMaintenanceButton">← Voltar</button><h2>Manutenção do patrimônio</h2><p id="maintenanceAssetTitle"></p></div>
     <div id="maintenanceContent"></div>
+  </dialog>
+
+  <dialog id="centerDialog" class="operation-dialog">
+    <form method="dialog" id="centerForm">
+      <div class="dialog-header"><button type="button" class="back-button" id="closeCenterButton">← Voltar</button><h2 id="centerDialogTitle">Novo centro de custo</h2><p>Cadastre ou edite os dados do centro de custo.</p></div>
+      <div class="operation-layout">
+        <section class="operation-section">
+          <div class="form-grid">
+            <label>Código *<input id="centerCode" required maxlength="40" autocomplete="off"></label>
+            <label>Centro de custo *<input id="centerName" required maxlength="160" autocomplete="off"></label>
+          </div>
+        </section>
+      </div>
+      <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelCenterButton">Cancelar</button><button type="submit" class="primary-button" id="saveCenterButton">Salvar centro</button></div>
+    </form>
   </dialog>`;
   bindStaticActions();
 }
@@ -190,6 +211,10 @@ function selectedAsset() {
   return state.assets.find((asset) => asset.id === state.selectedAssetId) || null;
 }
 
+function assetDisplayName(asset) {
+  return asset?.descricoes_padrao?.descricao || asset?.descricao || "—";
+}
+
 function render() {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.currentView));
   switch (state.currentView) {
@@ -201,7 +226,7 @@ function render() {
     case "importacao": renderImport(); break;
     case "etiquetas": renderLabels(); break;
     case "relatorios": renderReports(); break;
-    case "configuracoes": placeholder("Configurações", `Usuário conectado: ${escapeHtml(state.session?.user?.email || "")}.`); break;
+    case "configuracoes": renderSettings(); break;
     default: renderDashboard();
   }
 }
