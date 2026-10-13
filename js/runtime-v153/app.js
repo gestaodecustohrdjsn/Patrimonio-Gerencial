@@ -308,7 +308,7 @@ function assetMatchesFilters(asset, f) {
 function sortAssets(items, order) {
   const rows = [...items];
   const cmpText = (a,b) => String(a||"").localeCompare(String(b||""), "pt-BR", {numeric:true,sensitivity:"base"});
-  if (order === "descricao") rows.sort((a,b)=>cmpText(a.descricao,b.descricao));
+  if (order === "descricao") rows.sort((a,b)=>cmpText(assetDisplayName(a),assetDisplayName(b)));
   else if (order === "centro") rows.sort((a,b)=>cmpText(a.centros_custo?.nome,b.centros_custo?.nome));
   else if (order === "data") rows.sort((a,b)=>cmpText(normalizeDateOnly(b.data_aquisicao),normalizeDateOnly(a.data_aquisicao)));
   else if (order === "valor") rows.sort((a,b)=>Number(b.valor_aquisicao||0)-Number(a.valor_aquisicao||0));
@@ -540,7 +540,7 @@ function assetsTable(assets, title = "", withActions = false) {
     const statusText = asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo");
     return `<tr class="${asset.removido ? "removed-row" : ""}">
       <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
-      <td>${escapeHtml(asset.descricao)}</td>
+      <td>${escapeHtml(assetDisplayName(asset))}</td>
       <td><div class="value-with-badges"><span>${escapeHtml(typeName(asset.tipo_id))}</span>${mobilityBadge(asset)}</div></td>
       <td>${escapeHtml(asset.centros_custo?.nome || "—")}</td>
       <td>${money(asset.valor_aquisicao)}</td>
@@ -580,13 +580,13 @@ function renderAssetDetail(loadingHistory = false) {
 
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header detail-header">
-      <div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(asset.descricao)}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.removido ? " · REMOVIDO" : ""}</p></div>
+      <div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(assetDisplayName(asset))}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.removido ? " · REMOVIDO" : ""}</p></div>
       <div class="header-actions">${actionButtons}</div>
     </div>
 
     ${state.detailEditMode && editAllowed ? detailEditFormHtml(asset) : `
       <section class="detail-grid">
-        ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Tipo", typeName(asset.tipo_id)], ["Item de referência SIGEM", asset.descricoes_padrao?.descricao || "—"], ["Marca/Modelo", asset.marca_modelo || "—"]])}
+        ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Descrição SIGEM", asset.descricoes_padrao?.descricao || "—"], ["Descrição complementar", asset.descricao || "—"], ["Tipo", typeName(asset.tipo_id)], ["Marca/Modelo", asset.marca_modelo || "—"]])}
         ${detailCard("Aquisição e valores", [["Data de aquisição", formatDate(asset.data_aquisicao)], ["Tipo de aquisição", acquisitionName(asset.tipo_aquisicao)], ["Valor de aquisição", money(asset.valor_aquisicao)], ["Nota fiscal", asset.nota_fiscal_numero || "—"]])}
         ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ...(asset.mobilidade === "MOVEL" ? [["Mobilidade", "Móvel"]] : []), ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")], ...(asset.em_manutencao ? [["Condição operacional", "Em manutenção"]] : []), ...(asset.mobilidade === "MOVEL" ? [["Centros permitidos", allowedCentersDisplay(asset)]] : [])])}
       </section>`}
@@ -610,7 +610,7 @@ function detailEditFormHtml(asset) {
         <div class="inline-form-grid">
           <label>ID interna<input value="${escapeHtml(asset.id_interna)}" disabled></label>
           <label>ID SES<input name="id_ses" value="${escapeHtml(asset.id_ses || "")}"></label>
-          <label class="full">Descrição *<input name="descricao" required value="${escapeHtml(asset.descricao)}"></label>
+          <label class="full">Descrição complementar *<input name="descricao" required value="${escapeHtml(asset.descricao)}"></label>
           <label>Tipo *<select name="tipo_id" required><option value="1" ${asset.tipo_id==1?"selected":""}>Equipamento Médico</option><option value="2" ${asset.tipo_id==2?"selected":""}>Mobiliário</option><option value="3" ${asset.tipo_id==3?"selected":""}>Informática</option></select>${asset.descricoes_padrao?.tipo_id ? `<small class="sigem-type-hint ${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?"is-warning":""}">SIGEM: ${escapeHtml(typeName(asset.descricoes_padrao.tipo_id))}${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?" · Tipo atual diferente":""}</small>` : '<small class="sigem-type-hint">Sem Tipo SIGEM disponível para conferência.</small>'}</label>
           <label>Marca/Modelo<input name="marca_modelo" value="${escapeHtml(asset.marca_modelo || "")}"></label>
         </div>
@@ -795,7 +795,7 @@ function renderLabels() {
       <div class="table-wrap"><table><thead><tr><th class="check-col"></th><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Status</th><th>Prévia</th></tr></thead>
       <tbody>${rows.map(asset=>`<tr>
         <td><input class="label-check" type="checkbox" data-label-id="${asset.id}" ${state.labelSelected.has(asset.id)?"checked":""} aria-label="Selecionar ${escapeHtml(asset.id_interna)}"></td>
-        <td><strong>${escapeHtml(asset.id_interna)}</strong></td><td>${escapeHtml(asset.descricao)}</td><td><div class="value-with-badges"><span>${typeName(asset.tipo_id)}</span>${mobilityBadge(asset)}</div></td><td>${escapeHtml(asset.centros_custo?.nome||"—")}</td><td><div class="value-with-badges"><span>${asset.status==="ATIVO"?"Ativo":"Inativo"}</span>${maintenanceBadge(asset)}</div></td>
+        <td><strong>${escapeHtml(asset.id_interna)}</strong></td><td>${escapeHtml(assetDisplayName(asset))}</td><td><div class="value-with-badges"><span>${typeName(asset.tipo_id)}</span>${mobilityBadge(asset)}</div></td><td>${escapeHtml(asset.centros_custo?.nome||"—")}</td><td><div class="value-with-badges"><span>${asset.status==="ATIVO"?"Ativo":"Inativo"}</span>${maintenanceBadge(asset)}</div></td>
         <td><button class="table-action" data-action="label-asset" data-asset-id="${asset.id}" title="Pré-visualizar etiqueta" aria-label="Pré-visualizar etiqueta">${iconSvg("label")}</button></td>
       </tr>`).join("")}</tbody></table></div>
     </section>`;
@@ -918,7 +918,7 @@ function renderReports() {
           <tbody>${rows.map(asset => `<tr>
             <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
             <td>${escapeHtml(asset.id_ses || "—")}</td>
-            <td>${escapeHtml(asset.descricao)}</td>
+            <td>${escapeHtml(assetDisplayName(asset))}</td>
             <td>${escapeHtml(typeName(asset.tipo_id))}</td>
             <td>${escapeHtml(conservationName(asset.estado_conservacao))}</td>
             <td>${asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}</td>
@@ -954,7 +954,7 @@ function exportReportCsv() {
     ...rows.map(asset => [
       asset.id_interna,
       asset.id_ses || "",
-      asset.descricao,
+      assetDisplayName(asset),
       typeName(asset.tipo_id),
       conservationName(asset.estado_conservacao),
       asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo",
@@ -983,7 +983,7 @@ function printReport() {
   const bodyRows = rows.map(asset => `<tr>
     <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
     <td>${escapeHtml(asset.id_ses || "—")}</td>
-    <td>${escapeHtml(asset.descricao)}</td>
+    <td>${escapeHtml(assetDisplayName(asset))}</td>
     <td>${escapeHtml(typeName(asset.tipo_id))}</td>
     <td>${escapeHtml(conservationName(asset.estado_conservacao))}</td>
     <td>${asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}</td>
@@ -1153,6 +1153,9 @@ function bindStaticActions() {
     window.open(assetPublicUrl(asset), "_blank", "noopener,noreferrer");
   });
   document.querySelector("#closeMaintenanceButton").addEventListener("click", () => document.querySelector("#maintenanceDialog").close());
+  document.querySelector("#closeCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
+  document.querySelector("#cancelCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
+  document.querySelector("#centerForm").addEventListener("submit", submitCenterForm);
   document.querySelectorAll("[data-mobility-value]").forEach(btn => btn.addEventListener("click", () => {
     state.formMobility = btn.dataset.mobilityValue;
     if (state.formMobility === "FIXO") state.formAllowedCenters.clear();
@@ -1267,7 +1270,7 @@ function openNewAsset() {
   document.querySelector("#status").value = "ATIVO";
   renderFormAllowedCenters();
   document.querySelector("#assetDialog").showModal();
-  document.querySelector("#tipo").focus();
+  document.querySelector("#sigemSearch").focus();
 }
 
 function openEditAsset() {
@@ -1565,7 +1568,7 @@ async function openMaintenanceDialog(assetId = state.selectedAssetId) {
   if (!asset) return;
   state.selectedAssetId = asset.id;
   state.maintenanceAssetId = asset.id;
-  document.querySelector("#maintenanceAssetTitle").textContent = `${asset.id_interna} · ${asset.descricao}`;
+  document.querySelector("#maintenanceAssetTitle").textContent = `${asset.id_interna} · ${assetDisplayName(asset)}`;
   document.querySelector("#maintenanceContent").innerHTML = '<div class="loading">Carregando manutenções…</div>';
   document.querySelector("#maintenanceDialog").showModal();
   try {
@@ -1851,7 +1854,7 @@ function openAssetFromHash() {
 }
 
 function exportCsv(rows = filteredAssets()) {
-  const data = [["ID Interna","ID SES","Descrição","Item de referência","Tipo","Centro de Custo","Valor","Status"], ...rows.map(asset=>[asset.id_interna,asset.id_ses||"",asset.descricao,asset.descricoes_padrao?.descricao||"",typeName(asset.tipo_id),asset.centros_custo?.nome||"",asset.valor_aquisicao,asset.status])];
+  const data = [["ID Interna","ID SES","Descrição","Descrição complementar","Tipo","Centro de Custo","Valor","Status"], ...rows.map(asset=>[asset.id_interna,asset.id_ses||"",assetDisplayName(asset),asset.descricao||"",typeName(asset.tipo_id),asset.centros_custo?.nome||"",asset.valor_aquisicao,asset.status])];
   const csv=data.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(";")).join("\n");
   const url=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
   const a=document.createElement("a");a.href=url;a.download=`patrimonios-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);
@@ -1905,7 +1908,7 @@ function renderPublicAsset(asset) {
         <section class="public-hero">
           <div>
             <span class="public-eyebrow">Consulta pública · somente visualização</span>
-            <h1>${escapeHtml(asset.descricao)}</h1>
+            <h1>${escapeHtml(assetDisplayName(asset))}</h1>
             <div class="public-id-block"><span>ID interna</span><p class="public-id">${escapeHtml(asset.id_interna)}</p></div>
           </div>
           <div class="public-hero-status">
@@ -1919,8 +1922,9 @@ function renderPublicAsset(asset) {
             <h2>Identificação</h2>
             ${publicField("ID interna", asset.id_interna)}
             ${publicField("ID SES", asset.id_ses)}
+            ${publicField("Descrição SIGEM", sigemName)}
+            ${publicField("Descrição complementar", asset.descricao)}
             ${publicField("Tipo", asset.tipo || typeName(asset.tipo_id))}
-            ${publicField("Item de referência SIGEM", sigemName)}
             ${publicField("Marca/Modelo", asset.marca_modelo)}
           </article>
 
