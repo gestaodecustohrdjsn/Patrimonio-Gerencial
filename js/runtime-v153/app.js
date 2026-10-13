@@ -2,11 +2,12 @@ import { hasApiConfig } from "./lib/api.js";
 import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/utils.js";
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
-import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.5.6";
-import { searchSigem, listCatalogAdmin, updateCatalogType } from "./services/sigem.js?v=1.5.6";
+import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.5.7";
+import { searchSigem, listCatalogAdmin, updateCatalogType } from "./services/sigem.js?v=1.5.7";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
+import { listRecentHistory } from "./services/historico.js?v=1.5.7";
 
 const state = {
   currentView: "dashboard",
@@ -43,7 +44,10 @@ const state = {
   catalogAdminLoaded: false,
   catalogAdminLoading: false,
   catalogAdminQuery: "",
-  catalogAdminType: ""
+  catalogAdminType: "",
+  recentHistory: [],
+  dashboardHistoryExpanded: false,
+  settingsOpenCard: null
 };
 
 const appRoot = document.querySelector("#appRoot");
@@ -65,6 +69,7 @@ function shell() {
         <button class="nav-item active" data-view="dashboard">Visão geral</button>
         <button class="nav-item" data-view="patrimonios">Patrimônios</button>
         <button class="nav-item" data-view="centros">Centros de custo</button>
+        <button class="nav-item" data-view="catalogo">Catálogo SIGEM</button>
         <button class="nav-item" data-view="importacao">Importação</button>
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
@@ -222,12 +227,130 @@ function render() {
     case "patrimonios": renderAssets(); break;
     case "ficha": renderAssetDetail(); break;
     case "centros": renderCenters(); break;
+    case "catalogo": renderCatalog(); break;
     case "pesquisa": renderGlobalSearch(); break;
     case "importacao": renderImport(); break;
     case "etiquetas": renderLabels(); break;
     case "relatorios": renderReports(); break;
     case "configuracoes": renderSettings(); break;
     default: renderDashboard();
+  }
+}
+
+function historyActionLabel(event) {
+  const key = `${event.tabela || ""}:${event.operacao || ""}`;
+  if (key === "centros_custo:EDICAO_CADASTRAL") {
+    const before = String(event.detalhes?.ativo_antes || "");
+    const after = String(event.detalhes?.ativo_depois || "");
+    if (before === "true" && after === "false") return "Inativou centro de custo";
+    if (before === "false" && after === "true") return "Ativou centro de custo";
+  }
+  const labels = {
+    "patrimonios:CADASTRO": "Cadastrou patrimônio",
+    "patrimonios:EDICAO_CADASTRAL": "Editou patrimônio",
+    "patrimonios:MOVIMENTACAO": "Movimentou patrimônio",
+    "patrimonios:INATIVACAO": "Inativou patrimônio",
+    "patrimonios:REATIVACAO": "Reativou patrimônio",
+    "patrimonios:REMOCAO_LOGICA": "Removeu patrimônio",
+    "patrimonios:RESTAURACAO": "Restaurou patrimônio",
+    "patrimonios:MOBILIDADE_ALTERADA": "Alterou mobilidade",
+    "patrimonios:CENTRO_PERMITIDO_ADICIONADO": "Adicionou centro permitido",
+    "patrimonios:CENTRO_PERMITIDO_REMOVIDO": "Removeu centro permitido",
+    "patrimonios:MANUTENCAO_ABERTA": "Abriu manutenção",
+    "patrimonios:MANUTENCAO_CONCLUIDA": "Concluiu manutenção",
+    "centros_custo:CADASTRO": "Cadastrou centro de custo",
+    "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
+    "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
+    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação SIGEM"
+  };
+  return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
+}
+
+function historyEntityLabel(event) {
+  const entity = event.entidade || {};
+  if (entity.tipo === "patrimonio") {
+    const id = entity.id_interna ? `#${entity.id_interna}` : "Patrimônio";
+    return entity.nome ? `${id} · ${entity.nome}` : id;
+  }
+  if (entity.tipo === "centro") {
+    return [entity.codigo, entity.nome].filter(Boolean).join(" · ") || "Centro de custo";
+  }
+  if (entity.tipo === "sigem") return entity.nome || "Item SIGEM";
+  return "";
+}
+
+function historyDetailText(event) {
+  const d = event.detalhes || {};
+  if (event.operacao === "MOVIMENTACAO" && (d.origem_nome || d.destino_nome)) {
+    return `${d.origem_nome || "Origem"} → ${d.destino_nome || "Destino"}`;
+  }
+  if (event.operacao === "CLASSIFICACAO_SIGEM_ALTERADA" && (d.tipo_antes || d.tipo_depois)) {
+    const before = d.tipo_antes ? typeName(Number(d.tipo_antes)) : "Sem tipo";
+    const after = d.tipo_depois ? typeName(Number(d.tipo_depois)) : "Sem tipo";
+    return `${before} → ${after}`;
+  }
+  if (event.tabela === "centros_custo" && event.operacao === "EDICAO_CADASTRAL") {
+    const before = [d.codigo_antes, d.nome_antes].filter(Boolean).join(" · ");
+    const after = [d.codigo_depois, d.nome_depois].filter(Boolean).join(" · ");
+    if (before && after && before !== after) return `${before} → ${after}`;
+  }
+  if (event.operacao === "MANUTENCAO_ABERTA" && d.descricao) return d.descricao;
+  return "";
+}
+
+function historyDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function dashboardHistoryHtml() {
+  const source = state.recentHistory || [];
+  const limit = state.dashboardHistoryExpanded ? 30 : 10;
+  const events = source.slice(0, limit);
+  if (!events.length) return '<div class="empty">Nenhum evento registrado ainda.</div>';
+  return `
+    <div class="event-log">
+      ${events.map(event => {
+        const entity = historyEntityLabel(event);
+        const detail = historyDetailText(event);
+        return `<article class="event-row">
+          <div class="event-marker"></div>
+          <div class="event-content">
+            <div class="event-main"><strong>${escapeHtml(historyActionLabel(event))}</strong>${entity ? ` <span>· ${escapeHtml(entity)}</span>` : ""}</div>
+            ${detail ? `<div class="event-detail">${escapeHtml(detail)}</div>` : ""}
+            <div class="event-meta">${escapeHtml(historyDateTime(event.criado_em))} · ${escapeHtml(event.usuario?.nome || "Sistema")}</div>
+          </div>
+        </article>`;
+      }).join("")}
+    </div>
+    ${source.length > 10 ? `<div class="event-log-footer"><button class="ghost-button compact-button" data-action="toggle-history">${state.dashboardHistoryExpanded ? "Mostrar menos" : "Ver mais eventos"}</button></div>` : ""}
+  `;
+}
+
+function bindDashboardHistoryActions() {
+  document.querySelector('[data-action="toggle-history"]')?.addEventListener("click", () => {
+    state.dashboardHistoryExpanded = !state.dashboardHistoryExpanded;
+    const box = document.querySelector("#dashboardHistory");
+    if (box) {
+      box.innerHTML = dashboardHistoryHtml();
+      bindDashboardHistoryActions();
+    }
+  });
+}
+
+async function refreshDashboardHistory() {
+  try {
+    state.recentHistory = await listRecentHistory(30);
+    if (state.currentView !== "dashboard") return;
+    const box = document.querySelector("#dashboardHistory");
+    if (!box) return;
+    box.innerHTML = dashboardHistoryHtml();
+    bindDashboardHistoryActions();
+  } catch (error) {
+    const box = document.querySelector("#dashboardHistory");
+    if (box) box.innerHTML = `<div class="empty">Não foi possível carregar o histórico recente: ${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -244,8 +367,14 @@ function renderDashboard() {
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
       <article class="card value-card"><div><span class="muted">Valor total informado</span><div class="metric metric-money">${valueContent}</div></div><button class="ghost-button compact-button" data-action="toggle-value">${visibilityLabel}</button></article>
     </div>
-    ${assetsTable(visibleAssets.slice(0, 8), "Últimos patrimônios")}`;
+    ${assetsTable(visibleAssets.slice(0, 8), "Últimos patrimônios")}
+    <section class="panel dashboard-history-panel">
+      <div class="panel-header"><div><h2>Histórico recente do sistema</h2><small>Últimos eventos registrados no Patrimônio+.</small></div></div>
+      <div id="dashboardHistory">${state.recentHistory.length ? dashboardHistoryHtml() : '<div class="loading">Carregando histórico recente…</div>'}</div>
+    </section>`;
   bindDynamicActions();
+  bindDashboardHistoryActions();
+  refreshDashboardHistory();
 }
 
 
@@ -1014,19 +1143,19 @@ function printReport() {
   popup.document.close();
 }
 
-async function renderSettings() {
+async function renderCatalog() {
   const root = document.querySelector("#viewRoot");
   if (!canDeleteAssets()) {
     root.innerHTML = `
-      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
-      <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
+      <div class="page-header"><div><h1>Catálogo SIGEM</h1><p>Classificação e manutenção do catálogo de referência.</p></div></div>
+      <div class="placeholder">Somente administradores podem alterar o Catálogo SIGEM.</div>`;
     return;
   }
 
   if (!state.catalogAdminLoaded && !state.catalogAdminLoading) {
     state.catalogAdminLoading = true;
     root.innerHTML = `
-      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
+      <div class="page-header"><div><h1>Catálogo SIGEM</h1><p>Classificação e manutenção do catálogo de referência.</p></div></div>
       <div class="loading">Carregando catálogo SIGEM…</div>`;
     try {
       state.catalogAdminItems = await listCatalogAdmin();
@@ -1053,18 +1182,21 @@ async function renderSettings() {
 
   root.innerHTML = `
     <div class="page-header">
-      <div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div>
+      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação dos itens utilizados como referência patrimonial.</p></div>
     </div>
 
-    <div class="cards cards-three config-summary-cards">
+    <div class="cards cards-three catalog-summary-cards">
       <article class="card"><span class="muted">Equipamento Médico</span><div class="metric">${counts[1]}</div></article>
       <article class="card"><span class="muted">Mobiliário</span><div class="metric">${counts[2]}</div></article>
       <article class="card"><span class="muted">Informática</span><div class="metric">${counts[3]}</div></article>
     </div>
 
-    <section class="panel config-catalog-panel">
+    <section class="panel catalog-admin-panel">
       <div class="panel-header config-panel-header">
-        <div><h2>Classificação do Catálogo SIGEM</h2><small>Defina a qual Tipo cada item SIGEM pertence. Patrimônios vinculados e ainda alinhados à classificação anterior acompanham a alteração automaticamente.</small></div>
+        <div>
+          <h2>Itens do catálogo</h2>
+          <small>Altere a classificação quando necessário. Patrimônios vinculados e ainda alinhados ao Tipo anterior acompanham a alteração automaticamente.</small>
+        </div>
         <span class="badge">${state.catalogAdminItems.length} item(ns)</span>
       </div>
       <div class="config-toolbar">
@@ -1100,18 +1232,21 @@ async function renderSettings() {
       ${items.length ? "" : '<div class="empty">Nenhum item SIGEM corresponde aos filtros.</div>'}
     </section>
 
-    <section class="panel config-template-placeholder">
-      <div class="panel-header"><div><h2>Template da Relação Patrimonial</h2><small>Estrutura reservada para o template dinâmico de impressão. Vamos montar quando você enviar o modelo visual.</small></div></div>
+    <section class="panel catalog-update-preview">
+      <div class="panel-header">
+        <div><h2>Atualização do catálogo</h2><small>A importação inteligente, de-para, aliases, novos itens e histórico de atualizações entram na versão 1.5.8.</small></div>
+        <span class="badge">Próxima etapa</span>
+      </div>
     </section>
   `;
 
   document.querySelector("#catalogAdminSearch")?.addEventListener("input", debounce(event => {
     state.catalogAdminQuery = event.target.value;
-    renderSettings();
+    renderCatalog();
   }, 180));
   document.querySelector("#catalogAdminType")?.addEventListener("change", event => {
     state.catalogAdminType = event.target.value;
-    renderSettings();
+    renderCatalog();
   });
   document.querySelectorAll(".catalog-type-select").forEach(select => {
     select.addEventListener("change", () => changeCatalogType(select));
@@ -1144,12 +1279,57 @@ async function changeCatalogType(select) {
         : "Classificação SIGEM atualizada.",
       "success"
     );
-    renderSettings();
+    renderCatalog();
   } catch (error) {
     select.value = String(previous);
     toast(error.message, "error");
     select.disabled = false;
   }
+}
+
+function renderSettings() {
+  const root = document.querySelector("#viewRoot");
+  if (!canDeleteAssets()) {
+    root.innerHTML = `
+      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
+      <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
+    return;
+  }
+
+  const templateOpen = state.settingsOpenCard === "template";
+  root.innerHTML = `
+    <div class="page-header">
+      <div><h1>Configurações</h1><p>Personalize parâmetros gerais do Patrimônio+.</p></div>
+    </div>
+
+    <div class="settings-card-list">
+      <section class="settings-card ${templateOpen ? "is-open" : ""}">
+        <button class="settings-card-toggle" type="button" data-setting-card="template" aria-expanded="${templateOpen}">
+          <div class="settings-card-icon">RP</div>
+          <div class="settings-card-title">
+            <strong>Template da Relação Patrimonial</strong>
+            <span>Logo, cabeçalho, textos, campos e estrutura da impressão.</span>
+          </div>
+          <span class="settings-card-chevron">${templateOpen ? "−" : "+"}</span>
+        </button>
+        <div class="settings-card-content" ${templateOpen ? "" : "hidden"}>
+          <div class="settings-coming-soon">
+            <strong>Estrutura preparada.</strong>
+            <p>Quando você enviar o PDF ou imagem de referência, esta área receberá o editor visual do template com prévia da impressão.</p>
+            <span class="badge">Em preparação</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+
+  document.querySelectorAll("[data-setting-card]").forEach(button => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.settingCard;
+      state.settingsOpenCard = state.settingsOpenCard === key ? null : key;
+      renderSettings();
+    });
+  });
 }
 
 function renderCenters() {

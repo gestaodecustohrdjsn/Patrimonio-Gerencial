@@ -1,4 +1,4 @@
-# Patrimônio+ API 3.3.3 — portátil
+# Patrimônio+ API 3.3.4 — portátil
 
 Esta API não depende de Supabase Auth nem Neon Auth. A autenticação pertence ao próprio Patrimônio+ e fica armazenada em PostgreSQL padrão.
 
@@ -12,7 +12,7 @@ As migrations históricas necessárias para a API 3.3 estão em `database/004_au
 1. `npm install`
 2. `npm run check`
 3. `npx wrangler deploy`
-4. Confirme `/health` com `version: 3.3.3`.
+4. Confirme `/health` com `version: 3.3.4`.
 
 Os secrets `DATABASE_URL` e `SETUP_TOKEN` devem permanecer configurados no Worker e não devem ser colocados no repositório.
 
@@ -30,8 +30,13 @@ Uma divergência só é aceita quando o cliente envia `confirmar_tipo_divergente
 
 
 ## Gestão de catálogo e centros
-A API 3.3.3 adiciona:
+A API 3.3.4 adiciona:
 - administração da classificação dos itens SIGEM;
 - sincronização dos patrimônios vinculados que ainda seguem a classificação anterior;
 - cadastro, edição, ativação e inativação de centros de custo;
 - exclusão definitiva de centro somente quando não houver patrimônios, movimentações ou permissões vinculadas.
+
+
+## Histórico global
+A API 3.3.4 adiciona `GET /api/historico` para a Visão Geral.
+O endpoint retorna os eventos recentes já registrados em `historico_alteracoes`, com usuário, entidade e detalhes resumidos para exibição no dashboard.
