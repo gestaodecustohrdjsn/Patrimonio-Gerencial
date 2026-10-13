@@ -600,7 +600,7 @@ function renderAssetDetail(loadingHistory = false) {
 
 
 function detailEditFormHtml(asset) {
-  const centerOptions = state.centers.filter(c=>c.ativo).map(c=>`<option value="${c.id}" ${c.id===asset.centros_custo?.id?"selected":""}>${escapeHtml(c.nome)}</option>`).join("");
+  const centerOptions = state.centers.filter(c=>c.ativo || c.id===asset.centros_custo?.id).map(c=>`<option value="${c.id}" ${c.id===asset.centros_custo?.id?"selected":""}>${escapeHtml(c.nome)}${c.ativo ? "" : " (inativo)"}</option>`).join("");
   state.formMobility = asset.mobilidade || "FIXO";
   state.formAllowedCenters = currentAllowedCenterIds(asset);
   setTimeout(() => renderFormAllowedCenters(), 0);
@@ -1218,7 +1218,7 @@ async function submitCenterForm(event) {
   try {
     if (state.selectedCenterId) await updateCenter(state.selectedCenterId, payload);
     else await createCenter(payload);
-    state.centers = await listCenters();
+    [state.centers, state.assets] = await Promise.all([listCenters(), listAssets()]);
     document.querySelector("#centerDialog").close();
     toast(state.selectedCenterId ? "Centro de custo atualizado." : "Centro de custo cadastrado.", "success");
     state.selectedCenterId = null;
@@ -1241,7 +1241,7 @@ async function toggleCenter(centerId) {
   if (!window.confirm(`${next ? "Ativar" : "Inativar"} o centro de custo ${center.nome}?${detail}`)) return;
   try {
     await updateCenter(center.id, { ativo: next });
-    state.centers = await listCenters();
+    [state.centers, state.assets] = await Promise.all([listCenters(), listAssets()]);
     toast(`Centro de custo ${next ? "ativado" : "inativado"}.`, "success");
     renderCenters();
   } catch (error) {
@@ -1494,7 +1494,7 @@ function bindDynamicActions() {
 }
 
 function populateCenters(selectId = "centroCusto", selected = "") {
-  document.querySelector(`#${selectId}`).innerHTML = `<option value="">Selecione</option>${state.centers.filter((center) => center.ativo).map((center) => `<option value="${center.id}" ${center.id === selected ? "selected" : ""}>${escapeHtml(center.nome)}</option>`).join("")}`;
+  document.querySelector(`#${selectId}`).innerHTML = `<option value="">Selecione</option>${state.centers.filter((center) => center.ativo || center.id === selected).map((center) => `<option value="${center.id}" ${center.id === selected ? "selected" : ""}>${escapeHtml(center.nome)}${center.ativo ? "" : " (inativo)"}</option>`).join("")}`;
 }
 
 function resetAssetForm() {
