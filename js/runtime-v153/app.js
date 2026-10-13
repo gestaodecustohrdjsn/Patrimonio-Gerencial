@@ -29,6 +29,7 @@ const state = {
   assetFilters: {},
   labelFilters: {},
   labelSelected: new Set(),
+  reportFilters: { centro: "", q: "", tipo: "", status: "", aquisicao: "", conservacao: "", mobilidade: "", manutencao: "", ordenacao: "id" },
   detailEditMode: false,
   maintenance: [],
   maintenanceAssetId: null,
@@ -199,7 +200,7 @@ function render() {
     case "pesquisa": renderGlobalSearch(); break;
     case "importacao": renderImport(); break;
     case "etiquetas": renderLabels(); break;
-    case "relatorios": placeholder("Relatórios", "Exportações por filtros e seleção de colunas."); break;
+    case "relatorios": renderReports(); break;
     case "configuracoes": placeholder("Configurações", `Usuário conectado: ${escapeHtml(state.session?.user?.email || "")}.`); break;
     default: renderDashboard();
   }
@@ -769,6 +770,220 @@ function renderLabels() {
       </tr>`).join("")}</tbody></table></div>
     </section>`;
   bindDynamicActions();
+}
+
+
+function reportRows() {
+  const f = state.reportFilters;
+  if (!f.centro) return [];
+  const q = String(f.q || "").trim().toLowerCase();
+  const rows = state.assets
+    .filter(asset => !asset.removido && asset.centros_custo?.id === f.centro)
+    .filter(asset => {
+      if (q && ![asset.id_interna, asset.id_ses, asset.descricao, asset.marca_modelo, asset.descricoes_padrao?.descricao]
+        .some(value => String(value || "").toLowerCase().includes(q))) return false;
+      if (f.tipo && String(asset.tipo_id) !== String(f.tipo)) return false;
+      if (f.status && asset.status !== f.status) return false;
+      if (f.aquisicao && asset.tipo_aquisicao !== f.aquisicao) return false;
+      if (f.conservacao && asset.estado_conservacao !== f.conservacao) return false;
+      if (f.mobilidade && (asset.mobilidade || "FIXO") !== f.mobilidade) return false;
+      if (f.manutencao === "sim" && !asset.em_manutencao) return false;
+      if (f.manutencao === "nao" && asset.em_manutencao) return false;
+      return true;
+    });
+  return sortAssets(rows, f.ordenacao || "id");
+}
+
+function reportCenter() {
+  return state.centers.find(center => center.id === state.reportFilters.centro) || null;
+}
+
+function reportFilterSummary() {
+  const f = state.reportFilters;
+  const parts = [];
+  if (f.tipo) parts.push(`Tipo: ${typeName(Number(f.tipo))}`);
+  if (f.status) parts.push(`Status: ${f.status === "ATIVO" ? "Ativo" : "Inativo"}`);
+  if (f.aquisicao) parts.push(`Aquisição: ${acquisitionName(f.aquisicao)}`);
+  if (f.conservacao) parts.push(`Conservação: ${conservationName(f.conservacao)}`);
+  if (f.mobilidade) parts.push(`Mobilidade: ${f.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}`);
+  if (f.manutencao) parts.push(`Manutenção: ${f.manutencao === "sim" ? "Em manutenção" : "Fora de manutenção"}`);
+  if (String(f.q || "").trim()) parts.push(`Pesquisa: ${String(f.q).trim()}`);
+  return parts.length ? parts.join(" · ") : "Sem filtros adicionais";
+}
+
+function renderReports() {
+  const f = state.reportFilters;
+  const centerOptions = state.centers.map(center =>
+    `<option value="${center.id}" ${f.centro === center.id ? "selected" : ""}>${escapeHtml(center.nome)}${center.ativo ? "" : " (inativo)"}</option>`
+  ).join("");
+  const rows = reportRows();
+  const center = reportCenter();
+  const active = rows.filter(asset => asset.status === "ATIVO").length;
+  const mobile = rows.filter(asset => asset.mobilidade === "MOVEL").length;
+  const maintenance = rows.filter(asset => asset.em_manutencao).length;
+
+  document.querySelector("#viewRoot").innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Relação por Centro de Custo</h1>
+        <p>Gere uma relação operacional considerando a localização atual do patrimônio.</p>
+      </div>
+      <div class="header-actions">
+        <button class="ghost-button" data-action="export-report" ${rows.length ? "" : "disabled"}>Exportar CSV</button>
+        <button class="primary-button" data-action="print-report" ${rows.length ? "" : "disabled"}>Imprimir / Salvar PDF</button>
+      </div>
+    </div>
+
+    <section class="filter-panel report-filter-panel">
+      <div class="filter-panel-head">
+        <div><strong>Critérios da relação</strong><small>O Centro de Custo é obrigatório. Os demais filtros são opcionais e combináveis.</small></div>
+        <button class="ghost-button compact-button" data-action="clear-report-filters">Limpar filtros</button>
+      </div>
+      <div class="filter-grid report-filter-grid">
+        <label class="filter-wide">Centro de custo *
+          <select data-report-filter="centro"><option value="">Selecione</option>${centerOptions}</select>
+        </label>
+        <label class="filter-wide">Pesquisa
+          <input type="search" data-report-filter="q" value="${escapeHtml(f.q)}" placeholder="ID, SES, descrição, marca ou SIGEM">
+        </label>
+        <label>Tipo
+          <select data-report-filter="tipo"><option value="">Todos</option><option value="1" ${f.tipo==="1"?"selected":""}>Equipamento Médico</option><option value="2" ${f.tipo==="2"?"selected":""}>Mobiliário</option><option value="3" ${f.tipo==="3"?"selected":""}>Informática</option></select>
+        </label>
+        <label>Status
+          <select data-report-filter="status"><option value="">Todos</option><option value="ATIVO" ${f.status==="ATIVO"?"selected":""}>Ativo</option><option value="INATIVO" ${f.status==="INATIVO"?"selected":""}>Inativo</option></select>
+        </label>
+        <label>Mobilidade
+          <select data-report-filter="mobilidade"><option value="">Todos</option><option value="FIXO" ${f.mobilidade==="FIXO"?"selected":""}>Fixo</option><option value="MOVEL" ${f.mobilidade==="MOVEL"?"selected":""}>Móvel</option></select>
+        </label>
+        <label>Manutenção
+          <select data-report-filter="manutencao"><option value="">Todos</option><option value="sim" ${f.manutencao==="sim"?"selected":""}>Em manutenção</option><option value="nao" ${f.manutencao==="nao"?"selected":""}>Fora de manutenção</option></select>
+        </label>
+        <label>Aquisição
+          <select data-report-filter="aquisicao"><option value="">Todas</option><option value="COMPRA" ${f.aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${f.aquisicao==="DOACAO"?"selected":""}>Doação</option><option value="LOCACAO" ${f.aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${f.aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select>
+        </label>
+        <label>Conservação
+          <select data-report-filter="conservacao"><option value="">Todos</option><option value="PRODUTO_NOVO" ${f.conservacao==="PRODUTO_NOVO"?"selected":""}>Produto Novo</option><option value="BEM_CONSERVADO" ${f.conservacao==="BEM_CONSERVADO"?"selected":""}>Bem Conservado</option><option value="DESGASTADO" ${f.conservacao==="DESGASTADO"?"selected":""}>Desgastado</option><option value="INUTILIZAVEL" ${f.conservacao==="INUTILIZAVEL"?"selected":""}>Inutilizável</option></select>
+        </label>
+        <label>Ordenar por
+          <select data-report-filter="ordenacao"><option value="id" ${f.ordenacao==="id"?"selected":""}>ID interna</option><option value="descricao" ${f.ordenacao==="descricao"?"selected":""}>Descrição</option><option value="data" ${f.ordenacao==="data"?"selected":""}>Data de aquisição</option><option value="valor" ${f.ordenacao==="valor"?"selected":""}>Maior valor</option></select>
+        </label>
+      </div>
+    </section>
+
+    ${center ? `
+      <div class="cards report-summary-cards">
+        <article class="card"><span class="muted">Patrimônios na relação</span><div class="metric">${rows.length}</div></article>
+        <article class="card"><span class="muted">Ativos</span><div class="metric">${active}</div></article>
+        <article class="card"><span class="muted">Móveis</span><div class="metric">${mobile}</div></article>
+        <article class="card"><span class="muted">Em manutenção</span><div class="metric">${maintenance}</div></article>
+      </div>
+
+      <section class="panel report-preview-panel">
+        <div class="panel-header">
+          <div><h2>${escapeHtml(center.nome)}</h2><small>${escapeHtml(reportFilterSummary())}</small></div>
+          <span class="badge">${rows.length} item(ns)</span>
+        </div>
+        ${rows.length ? `<div class="table-wrap"><table class="report-table">
+          <thead><tr><th>ID interna</th><th>ID SES</th><th>Descrição</th><th>Tipo</th><th>Estado</th><th>Mobilidade</th><th>Status</th><th>Manutenção</th></tr></thead>
+          <tbody>${rows.map(asset => `<tr>
+            <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
+            <td>${escapeHtml(asset.id_ses || "—")}</td>
+            <td>${escapeHtml(asset.descricao)}</td>
+            <td>${escapeHtml(typeName(asset.tipo_id))}</td>
+            <td>${escapeHtml(conservationName(asset.estado_conservacao))}</td>
+            <td>${asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}</td>
+            <td class="${asset.status === "ATIVO" ? "status-active" : "status-inactive"}">${asset.status === "ATIVO" ? "Ativo" : "Inativo"}</td>
+            <td>${asset.em_manutencao ? '<span class="context-tag context-tag-maintenance">Em manutenção</span>' : "—"}</td>
+          </tr>`).join("")}</tbody>
+        </table></div>` : '<div class="empty">Nenhum patrimônio corresponde aos filtros selecionados.</div>'}
+      </section>
+    ` : '<div class="placeholder report-empty-state">Selecione um Centro de Custo para gerar a relação.</div>'}
+  `;
+
+  document.querySelectorAll("[data-report-filter]").forEach(control => {
+    const eventName = control.tagName === "INPUT" ? "input" : "change";
+    control.addEventListener(eventName, debounce(() => {
+      state.reportFilters[control.dataset.reportFilter] = control.value;
+      renderReports();
+    }, eventName === "input" ? 180 : 0));
+  });
+  document.querySelector('[data-action="clear-report-filters"]')?.addEventListener("click", () => {
+    state.reportFilters = { centro: "", q: "", tipo: "", status: "", aquisicao: "", conservacao: "", mobilidade: "", manutencao: "", ordenacao: "id" };
+    renderReports();
+  });
+  document.querySelector('[data-action="export-report"]')?.addEventListener("click", exportReportCsv);
+  document.querySelector('[data-action="print-report"]')?.addEventListener("click", printReport);
+}
+
+function exportReportCsv() {
+  const rows = reportRows();
+  const center = reportCenter();
+  if (!rows.length || !center) return;
+  const data = [
+    ["Centro de Custo", center.nome],
+    ["Filtros", reportFilterSummary()],
+    [],
+    ["ID Interna","ID SES","Descrição","Tipo","Estado de Conservação","Mobilidade","Status","Manutenção"],
+    ...rows.map(asset => [
+      asset.id_interna,
+      asset.id_ses || "",
+      asset.descricao,
+      typeName(asset.tipo_id),
+      conservationName(asset.estado_conservacao),
+      asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo",
+      asset.status === "ATIVO" ? "Ativo" : "Inativo",
+      asset.em_manutencao ? "Em manutenção" : ""
+    ])
+  ];
+  const csv = data.map(row => row.map(value => `"${String(value ?? "").replaceAll('"','""')}"`).join(";")).join("\n");
+  const url = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  const safeCenter = center.nome.replace(/[<>:"/\\|?*]+/g, "_").trim();
+  a.href = url;
+  a.download = `Relacao Patrimonial - ${safeCenter} - ${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function printReport() {
+  const rows = reportRows();
+  const center = reportCenter();
+  if (!rows.length || !center) return;
+  const popup = window.open("", "_blank", "width=1200,height=800");
+  if (!popup) { toast("O navegador bloqueou a janela de impressão.", "error"); return; }
+  const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+  const bodyRows = rows.map(asset => `<tr>
+    <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
+    <td>${escapeHtml(asset.id_ses || "—")}</td>
+    <td>${escapeHtml(asset.descricao)}</td>
+    <td>${escapeHtml(typeName(asset.tipo_id))}</td>
+    <td>${escapeHtml(conservationName(asset.estado_conservacao))}</td>
+    <td>${asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}</td>
+    <td>${asset.status === "ATIVO" ? "Ativo" : "Inativo"}</td>
+    <td>${asset.em_manutencao ? "Em manutenção" : "—"}</td>
+  </tr>`).join("");
+
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relação Patrimonial - ${escapeHtml(center.nome)}</title>
+    <style>
+      @page{size:A4 landscape;margin:10mm}
+      *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#17313d;margin:0;font-size:9pt}
+      header{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;border-bottom:2px solid #104861;padding-bottom:8px;margin-bottom:10px}
+      h1{font-size:16pt;margin:0 0 3px;color:#104861}h2{font-size:11pt;margin:0}.meta{text-align:right;color:#526a75;font-size:8pt}
+      .filters{margin:0 0 10px;color:#526a75;font-size:8pt}.count{font-weight:700;color:#104861}
+      table{border-collapse:collapse;width:100%;table-layout:fixed}th,td{border:1px solid #cfdde3;padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+      th{background:#edf5f8;font-size:7.5pt;text-transform:uppercase}tr{break-inside:avoid}
+      th:nth-child(1),td:nth-child(1){width:11%}th:nth-child(2),td:nth-child(2){width:9%}th:nth-child(3),td:nth-child(3){width:24%}
+      th:nth-child(4),td:nth-child(4){width:14%}th:nth-child(5),td:nth-child(5){width:14%}th:nth-child(6),td:nth-child(6){width:9%}
+      th:nth-child(7),td:nth-child(7){width:8%}th:nth-child(8),td:nth-child(8){width:11%}
+      footer{margin-top:10px;display:flex;justify-content:space-between;color:#6a7f88;font-size:8pt}
+    </style></head><body>
+      <header><div><h1>Relação Patrimonial por Centro de Custo</h1><h2>${escapeHtml(center.nome)}</h2></div><div class="meta">Gerado em ${escapeHtml(generatedAt)}<br><span class="count">${rows.length} patrimônio(s)</span></div></header>
+      <p class="filters">${escapeHtml(reportFilterSummary())}</p>
+      <table><thead><tr><th>ID interna</th><th>ID SES</th><th>Descrição</th><th>Tipo</th><th>Estado</th><th>Mobilidade</th><th>Status</th><th>Manutenção</th></tr></thead><tbody>${bodyRows}</tbody></table>
+      <footer><span>Patrimônio+</span><span>Centro atual dos bens no momento da emissão.</span></footer>
+      <script>window.addEventListener("load",()=>{window.print();});<\/script>
+    </body></html>`);
+  popup.document.close();
 }
 
 function renderCenters() {
