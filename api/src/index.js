@@ -59,7 +59,7 @@ async function hydrateAsset(sql, id) {
       p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
       exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
       json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
-      case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao) end as descricoes_padrao,
+      case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id) end as descricoes_padrao,
       coalesce((
         select json_agg(json_build_object('id',cp.id,'codigo',cp.codigo,'nome',cp.nome) order by cp.nome)
         from patrimonio_centros_permitidos pcp
@@ -87,7 +87,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.1",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.2",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -98,7 +98,7 @@ export default {
             p.criado_em,p.atualizado_em,
             exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
             json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
-            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao) end as descricoes_padrao,
+            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id) end as descricoes_padrao,
             coalesce((select json_agg(json_build_object('id',cp.id,'nome',cp.nome) order by cp.nome)
               from patrimonio_centros_permitidos pcp join centros_custo cp on cp.id=pcp.centro_custo_id
               where pcp.patrimonio_id=p.id),'[]'::json) as centros_permitidos
@@ -170,7 +170,7 @@ export default {
         const rows=await sql`select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
           exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
           json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) centros_custo,
-          case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao) end descricoes_padrao,
+          case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id) end descricoes_padrao,
           coalesce((select json_agg(json_build_object('id',cp.id,'codigo',cp.codigo,'nome',cp.nome) order by cp.nome)
             from patrimonio_centros_permitidos pcp join centros_custo cp on cp.id=pcp.centro_custo_id
             where pcp.patrimonio_id=p.id),'[]'::json) centros_permitidos
@@ -180,6 +180,14 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/patrimonios") {
         const b=await bodyJson(request);
         if(!b.tipo_id||!String(b.descricao||"").trim()||!b.tipo_aquisicao||!b.centro_custo_id) return responseJson({ok:false,error:"Tipo, descrição, aquisição e centro de custo são obrigatórios."},400,env,request);
+        if (b.descricao_padrao_id) {
+          const ref=await sql`select tipo_id from descricoes_padrao where id=${b.descricao_padrao_id}::uuid and ativo=true limit 1`;
+          if (!ref.length) return responseJson({ok:false,error:"Item SIGEM inválido ou inativo."},400,env,request);
+          const tipoSigem=Number(ref[0].tipo_id);
+          if (tipoSigem && Number(b.tipo_id)!==tipoSigem) {
+            return responseJson({ok:false,error:`No cadastro, o Tipo deve seguir o catálogo SIGEM. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
+          }
+        }
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
         const rows=await sql`insert into patrimonios(id_interna,id_ses,descricao,descricao_padrao_id,data_aquisicao,valor_aquisicao,nota_fiscal_numero,centro_custo_id,tipo_id,marca_modelo,status,tipo_aquisicao,estado_conservacao,mobilidade,criado_por,atualizado_por)
           values(null,${b.id_ses||null},${String(b.descricao).trim()},${b.descricao_padrao_id||null}::uuid,coalesce(${b.data_aquisicao||null}::date,current_date),coalesce(${b.valor_aquisicao??null},(select valor_padrao from descricoes_padrao where id=${b.descricao_padrao_id||null}::uuid)),${b.nota_fiscal_numero||null},${b.centro_custo_id}::uuid,${Number(b.tipo_id)},${b.marca_modelo||null},coalesce(${b.status||null}::status_patrimonio,'ATIVO'),${b.tipo_aquisicao}::tipo_aquisicao,coalesce(${b.estado_conservacao||null}::estado_conservacao,'BEM_CONSERVADO'),${mobility},${user.id}::uuid,${user.id}::uuid) returning id`;
@@ -212,6 +220,15 @@ export default {
 
         if(!next.descricao||!next.tipo_id||!next.tipo_aquisicao||!next.status||!next.estado_conservacao) {
           return responseJson({ok:false,error:"Dados obrigatórios do patrimônio não podem ficar vazios."},400,env,request);
+        }
+
+        if (next.descricao_padrao_id) {
+          const ref=await sql`select tipo_id from descricoes_padrao where id=${next.descricao_padrao_id}::uuid limit 1`;
+          if (!ref.length) return responseJson({ok:false,error:"Item SIGEM inválido ou inativo."},400,env,request);
+          const tipoSigem=Number(ref[0].tipo_id);
+          if (tipoSigem && Number(next.tipo_id)!==tipoSigem && b.confirmar_tipo_divergente!==true) {
+            return responseJson({ok:false,error:`O Tipo selecionado diverge do catálogo SIGEM. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
+          }
         }
 
         let nextValue=next.valor_aquisicao;

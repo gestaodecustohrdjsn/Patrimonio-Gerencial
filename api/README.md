@@ -1,4 +1,4 @@
-# Patrimônio+ API 3.3.1 — portátil
+# Patrimônio+ API 3.3.2 — portátil
 
 Esta API não depende de Supabase Auth nem Neon Auth. A autenticação pertence ao próprio Patrimônio+ e fica armazenada em PostgreSQL padrão.
 
@@ -12,7 +12,7 @@ As migrations históricas necessárias para a API 3.3 estão em `database/004_au
 1. `npm install`
 2. `npm run check`
 3. `npx wrangler deploy`
-4. Confirme `/health` com `version: 3.3.1`.
+4. Confirme `/health` com `version: 3.3.2`.
 
 Os secrets `DATABASE_URL` e `SETUP_TOKEN` devem permanecer configurados no Worker e não devem ser colocados no repositório.
 
@@ -22,3 +22,8 @@ Os secrets `DATABASE_URL` e `SETUP_TOKEN` devem permanecer configurados no Worke
 - Sessões expiram em 12 horas por padrão.
 - 5 tentativas erradas bloqueiam o login por 15 minutos.
 - Exclusão definitiva exige perfil ADMIN.
+
+
+## Tipo ↔ SIGEM
+Quando um patrimônio possui item SIGEM vinculado, a API compara o `tipo_id` informado com o `tipo_id` do catálogo.
+Uma divergência só é aceita quando o cliente envia `confirmar_tipo_divergente: true`, permitindo auditoria explícita da exceção.
