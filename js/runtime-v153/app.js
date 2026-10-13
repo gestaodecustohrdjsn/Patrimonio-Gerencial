@@ -3,7 +3,7 @@ import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/uti
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.5.7";
-import { searchSigem, listCatalogAdmin, updateCatalogType } from "./services/sigem.js?v=1.5.7";
+import { searchSigem, listCatalogAdmin, updateCatalogType, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/sigem.js?v=1.5.8";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
@@ -47,7 +47,21 @@ const state = {
   catalogAdminType: "",
   recentHistory: [],
   dashboardHistoryExpanded: false,
-  settingsOpenCard: null
+  settingsOpenCard: null,
+  catalogAliases: [],
+  catalogUpdates: [],
+  catalogUpdateContextLoaded: false,
+  catalogUpdateBusy: false,
+  catalogUpdateFileName: "",
+  catalogUpdateHeaders: [],
+  catalogUpdateRows: [],
+  catalogUpdateMapping: { nome: "", tipo: "", valor: "" },
+  catalogUpdateComplete: false,
+  catalogUpdateAnalysis: [],
+  catalogUpdateMissing: [],
+  catalogUpdateStage: "file",
+  catalogUpdateLastResult: null,
+  catalogUpdateDetail: null
 };
 
 const appRoot = document.querySelector("#appRoot");
@@ -191,6 +205,17 @@ function shell() {
       </div>
       <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelCenterButton">Cancelar</button><button type="submit" class="primary-button" id="saveCenterButton">Salvar centro</button></div>
     </form>
+  </dialog>
+
+  <dialog id="catalogUpdateDialog" class="catalog-update-dialog">
+    <div class="catalog-update-shell">
+      <div class="dialog-header catalog-update-header">
+        <button type="button" class="back-button" id="closeCatalogUpdateButton">← Fechar</button>
+        <h2>Atualizar Catálogo SIGEM</h2>
+        <p>Compare o novo arquivo com o catálogo atual, revise correspondências e só então confirme a atualização.</p>
+      </div>
+      <div id="catalogUpdateContent"></div>
+    </div>
   </dialog>`;
   bindStaticActions();
 }
@@ -1588,6 +1613,7 @@ function bindStaticActions() {
   document.querySelector("#closeCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
   document.querySelector("#cancelCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
   document.querySelector("#centerForm").addEventListener("submit", submitCenterForm);
+  document.querySelector("#closeCatalogUpdateButton").addEventListener("click", () => document.querySelector("#catalogUpdateDialog").close());
   document.querySelectorAll("[data-mobility-value]").forEach(btn => btn.addEventListener("click", () => {
     state.formMobility = btn.dataset.mobilityValue;
     if (state.formMobility === "FIXO") state.formAllowedCenters.clear();
