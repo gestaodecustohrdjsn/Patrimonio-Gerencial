@@ -866,3 +866,10 @@ button:disabled { opacity: .65; cursor: wait; }
 @media(max-width:520px){
   .report-summary-cards{grid-template-columns:1fr}
 }
+
+
+/* ===== Tipo vinculado ao SIGEM v1.5.5 ===== */
+.sigem-type-hint{display:block;margin-top:5px;color:var(--muted);font-size:12px;line-height:1.35}
+.sigem-type-hint.is-locked{color:var(--primary);font-weight:700}
+.sigem-type-hint.is-warning{color:#8a5b00;font-weight:700}
+#tipo:disabled{background:#eef4f6;color:#45606c;cursor:not-allowed}
