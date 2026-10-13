@@ -412,12 +412,12 @@ export default {
         const allowedActions=new Set(["EXATO","ALIAS","MESMO_ITEM","NOVO","DUPLICADO","IGNORAR","MANTER","INATIVAR","REATIVAR"]);
         const actions=rawActions.map((action,index)=>{
           const acao=String(action?.acao||"").trim().toUpperCase();
-          if(!allowedActions.has(acao)) throw new Error(`Ação inválida na linha ${index+1}.`);
+          if(!allowedActions.has(acao)) throw new Error(`VALIDATION:Ação inválida na linha ${index+1}.`);
           const tipoId=action?.tipo_id==null||action?.tipo_id===""?null:Number(action.tipo_id);
-          if(tipoId!==null&&![1,2,3].includes(tipoId)) throw new Error(`Tipo inválido na linha ${index+1}.`);
+          if(tipoId!==null&&![1,2,3].includes(tipoId)) throw new Error(`VALIDATION:Tipo inválido na linha ${index+1}.`);
           const valueRaw=action?.valor_padrao;
           const value=valueRaw===null||valueRaw===undefined||valueRaw===""?null:Number(valueRaw);
-          if(value!==null&&!Number.isFinite(value)) throw new Error(`Valor SIGEM inválido na linha ${index+1}.`);
+          if(value!==null&&!Number.isFinite(value)) throw new Error(`VALIDATION:Valor SIGEM inválido na linha ${index+1}.`);
           const similarityRaw=action?.similaridade;
           const similarity=similarityRaw===null||similarityRaw===undefined||similarityRaw===""?null:Number(similarityRaw);
           const oldName=String(action?.nome_anterior||"").trim();
@@ -678,6 +678,7 @@ export default {
     } catch(error) {
       console.error(error);
       const msg=String(error?.message||"");
+      if(msg.startsWith("VALIDATION:")) return responseJson({ok:false,error:msg.slice("VALIDATION:".length)},400,env,request);
       if(msg.includes("duplicate key")&&msg.includes("id_ses")) return responseJson({ok:false,error:"Este ID SES já está cadastrado."},409,env,request);
       return responseJson({ok:false,error:"Erro interno no serviço."},500,env,request);
     }
