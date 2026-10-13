@@ -1014,8 +1014,260 @@ function printReport() {
   popup.document.close();
 }
 
+async function renderSettings() {
+  const root = document.querySelector("#viewRoot");
+  if (!canDeleteAssets()) {
+    root.innerHTML = `
+      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
+      <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
+    return;
+  }
+
+  if (!state.catalogAdminLoaded && !state.catalogAdminLoading) {
+    state.catalogAdminLoading = true;
+    root.innerHTML = `
+      <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
+      <div class="loading">Carregando catálogo SIGEM…</div>`;
+    try {
+      state.catalogAdminItems = await listCatalogAdmin();
+      state.catalogAdminLoaded = true;
+    } catch (error) {
+      toast(`Não foi possível carregar o catálogo SIGEM: ${error.message}`, "error");
+    } finally {
+      state.catalogAdminLoading = false;
+    }
+  }
+
+  const q = normalizeText(state.catalogAdminQuery);
+  const typeFilter = String(state.catalogAdminType || "");
+  const items = state.catalogAdminItems.filter(item => {
+    if (q && !normalizeText(item.descricao).includes(q)) return false;
+    if (typeFilter && String(item.tipo_id) !== typeFilter) return false;
+    return true;
+  });
+  const counts = {
+    1: state.catalogAdminItems.filter(item => Number(item.tipo_id) === 1).length,
+    2: state.catalogAdminItems.filter(item => Number(item.tipo_id) === 2).length,
+    3: state.catalogAdminItems.filter(item => Number(item.tipo_id) === 3).length
+  };
+
+  root.innerHTML = `
+    <div class="page-header">
+      <div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div>
+    </div>
+
+    <div class="cards cards-three config-summary-cards">
+      <article class="card"><span class="muted">Equipamento Médico</span><div class="metric">${counts[1]}</div></article>
+      <article class="card"><span class="muted">Mobiliário</span><div class="metric">${counts[2]}</div></article>
+      <article class="card"><span class="muted">Informática</span><div class="metric">${counts[3]}</div></article>
+    </div>
+
+    <section class="panel config-catalog-panel">
+      <div class="panel-header config-panel-header">
+        <div><h2>Classificação do Catálogo SIGEM</h2><small>Defina a qual Tipo cada item SIGEM pertence. Patrimônios vinculados e ainda alinhados à classificação anterior acompanham a alteração automaticamente.</small></div>
+        <span class="badge">${state.catalogAdminItems.length} item(ns)</span>
+      </div>
+      <div class="config-toolbar">
+        <label class="config-search">Pesquisar item
+          <input type="search" id="catalogAdminSearch" value="${escapeHtml(state.catalogAdminQuery)}" placeholder="Digite parte da descrição SIGEM">
+        </label>
+        <label>Tipo
+          <select id="catalogAdminType">
+            <option value="">Todos</option>
+            <option value="1" ${typeFilter==="1"?"selected":""}>Equipamento Médico</option>
+            <option value="2" ${typeFilter==="2"?"selected":""}>Mobiliário</option>
+            <option value="3" ${typeFilter==="3"?"selected":""}>Informática</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap config-table-wrap">
+        <table>
+          <thead><tr><th>Descrição SIGEM</th><th>Tipo</th><th>Patrimônios vinculados</th><th>Status</th></tr></thead>
+          <tbody>${items.map(item => `<tr>
+            <td><strong>${escapeHtml(item.descricao)}</strong></td>
+            <td>
+              <select class="catalog-type-select" data-catalog-id="${item.id}" data-current-type="${item.tipo_id}">
+                <option value="1" ${Number(item.tipo_id)===1?"selected":""}>Equipamento Médico</option>
+                <option value="2" ${Number(item.tipo_id)===2?"selected":""}>Mobiliário</option>
+                <option value="3" ${Number(item.tipo_id)===3?"selected":""}>Informática</option>
+              </select>
+            </td>
+            <td>${Number(item.patrimonios_vinculados || 0)}</td>
+            <td class="${item.ativo ? "status-active" : "status-inactive"}">${item.ativo ? "Ativo" : "Inativo"}</td>
+          </tr>`).join("")}</tbody>
+        </table>
+      </div>
+      ${items.length ? "" : '<div class="empty">Nenhum item SIGEM corresponde aos filtros.</div>'}
+    </section>
+
+    <section class="panel config-template-placeholder">
+      <div class="panel-header"><div><h2>Template da Relação Patrimonial</h2><small>Estrutura reservada para o template dinâmico de impressão. Vamos montar quando você enviar o modelo visual.</small></div></div>
+    </section>
+  `;
+
+  document.querySelector("#catalogAdminSearch")?.addEventListener("input", debounce(event => {
+    state.catalogAdminQuery = event.target.value;
+    renderSettings();
+  }, 180));
+  document.querySelector("#catalogAdminType")?.addEventListener("change", event => {
+    state.catalogAdminType = event.target.value;
+    renderSettings();
+  });
+  document.querySelectorAll(".catalog-type-select").forEach(select => {
+    select.addEventListener("change", () => changeCatalogType(select));
+  });
+}
+
+async function changeCatalogType(select) {
+  const item = state.catalogAdminItems.find(row => row.id === select.dataset.catalogId);
+  if (!item) return;
+  const previous = Number(item.tipo_id);
+  const next = Number(select.value);
+  if (previous === next) return;
+  const ok = window.confirm(
+    `Alterar a classificação SIGEM?\n\n${item.descricao}\n\n${typeName(previous)} → ${typeName(next)}\n\nPatrimônios vinculados que ainda usam a classificação anterior também serão atualizados.`
+  );
+  if (!ok) {
+    select.value = String(previous);
+    return;
+  }
+  select.disabled = true;
+  try {
+    const result = await updateCatalogType(item.id, next);
+    item.tipo_id = Number(result.item?.tipo_id || next);
+    if (Number(result.patrimonios_sincronizados || 0) > 0) {
+      state.assets = await listAssets();
+    }
+    toast(
+      Number(result.patrimonios_sincronizados || 0) > 0
+        ? `Classificação atualizada. ${result.patrimonios_sincronizados} patrimônio(s) vinculado(s) também foram sincronizados.`
+        : "Classificação SIGEM atualizada.",
+      "success"
+    );
+    renderSettings();
+  } catch (error) {
+    select.value = String(previous);
+    toast(error.message, "error");
+    select.disabled = false;
+  }
+}
+
 function renderCenters() {
-  document.querySelector("#viewRoot").innerHTML = `<div class="page-header"><div><h1>Centros de custo</h1><p>Dados carregados diretamente do banco.</p></div></div><section class="panel"><div class="panel-header"><h2>${state.centers.length} centro(s)</h2></div><div class="table-wrap"><table><thead><tr><th>Código</th><th>Centro de custo</th><th>Status</th></tr></thead><tbody>${state.centers.map((center) => `<tr><td>${escapeHtml(center.codigo)}</td><td><strong>${escapeHtml(center.nome)}</strong></td><td class="${center.ativo ? "status-active" : "status-inactive"}">${center.ativo ? "Ativo" : "Inativo"}</td></tr>`).join("")}</tbody></table></div></section>`;
+  const canManage = canDeleteAssets();
+  const active = state.centers.filter(center => center.ativo).length;
+  document.querySelector("#viewRoot").innerHTML = `
+    <div class="page-header">
+      <div><h1>Centros de custo</h1><p>Cadastre e mantenha a estrutura de localização patrimonial.</p></div>
+      ${canManage ? '<button class="primary-button" data-action="new-center">+ Novo centro de custo</button>' : ""}
+    </div>
+    <div class="cards cards-three center-summary-cards">
+      <article class="card"><span class="muted">Total</span><div class="metric">${state.centers.length}</div></article>
+      <article class="card"><span class="muted">Ativos</span><div class="metric">${active}</div></article>
+      <article class="card"><span class="muted">Inativos</span><div class="metric">${state.centers.length-active}</div></article>
+    </div>
+    <section class="panel">
+      <div class="panel-header"><div><h2>Centros de custo</h2><small>Centros em uso podem ser inativados, mas a exclusão definitiva é bloqueada para preservar o histórico.</small></div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Código</th><th>Centro de custo</th><th>Patrimônios atuais</th><th>Status</th>${canManage?'<th class="actions-head">Ações</th>':""}</tr></thead>
+        <tbody>${state.centers.map(center => `<tr>
+          <td><strong>${escapeHtml(center.codigo)}</strong></td>
+          <td>${escapeHtml(center.nome)}</td>
+          <td>${Number(center.patrimonios || 0)}</td>
+          <td class="${center.ativo ? "status-active" : "status-inactive"}">${center.ativo ? "Ativo" : "Inativo"}</td>
+          ${canManage ? `<td><div class="center-actions">
+            <button class="ghost-button compact-button" data-action="edit-center" data-center-id="${center.id}">Editar</button>
+            <button class="ghost-button compact-button" data-action="toggle-center" data-center-id="${center.id}">${center.ativo ? "Inativar" : "Ativar"}</button>
+            <button class="danger-button compact-button" data-action="delete-center" data-center-id="${center.id}">Excluir</button>
+          </div></td>` : ""}
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </section>
+  `;
+
+  document.querySelector('[data-action="new-center"]')?.addEventListener("click", () => openCenterForm());
+  document.querySelectorAll('[data-action="edit-center"]').forEach(button => button.addEventListener("click", () => openCenterForm(button.dataset.centerId)));
+  document.querySelectorAll('[data-action="toggle-center"]').forEach(button => button.addEventListener("click", () => toggleCenter(button.dataset.centerId)));
+  document.querySelectorAll('[data-action="delete-center"]').forEach(button => button.addEventListener("click", () => removeCenter(button.dataset.centerId)));
+}
+
+function openCenterForm(centerId = null) {
+  const center = centerId ? state.centers.find(row => row.id === centerId) : null;
+  state.selectedCenterId = center?.id || null;
+  document.querySelector("#centerDialogTitle").textContent = center ? "Editar centro de custo" : "Novo centro de custo";
+  document.querySelector("#centerCode").value = center?.codigo || "";
+  document.querySelector("#centerName").value = center?.nome || "";
+  document.querySelector("#saveCenterButton").textContent = center ? "Salvar alterações" : "Cadastrar centro";
+  document.querySelector("#centerDialog").showModal();
+  document.querySelector("#centerCode").focus();
+}
+
+async function submitCenterForm(event) {
+  event.preventDefault();
+  if (!canDeleteAssets()) return;
+  const payload = {
+    codigo: document.querySelector("#centerCode").value.trim(),
+    nome: document.querySelector("#centerName").value.trim()
+  };
+  if (!payload.codigo || !payload.nome) {
+    toast("Informe código e nome do centro de custo.", "error");
+    return;
+  }
+  const button = document.querySelector("#saveCenterButton");
+  button.disabled = true;
+  button.textContent = "Salvando…";
+  try {
+    if (state.selectedCenterId) await updateCenter(state.selectedCenterId, payload);
+    else await createCenter(payload);
+    state.centers = await listCenters();
+    document.querySelector("#centerDialog").close();
+    toast(state.selectedCenterId ? "Centro de custo atualizado." : "Centro de custo cadastrado.", "success");
+    state.selectedCenterId = null;
+    renderCenters();
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = state.selectedCenterId ? "Salvar alterações" : "Cadastrar centro";
+  }
+}
+
+async function toggleCenter(centerId) {
+  const center = state.centers.find(row => row.id === centerId);
+  if (!center || !canDeleteAssets()) return;
+  const next = !center.ativo;
+  const detail = !next && Number(center.patrimonios || 0) > 0
+    ? `\n\n${center.patrimonios} patrimônio(s) permanecem vinculados ao centro, mas ele deixará de aparecer para novos cadastros e movimentações.`
+    : "";
+  if (!window.confirm(`${next ? "Ativar" : "Inativar"} o centro de custo ${center.nome}?${detail}`)) return;
+  try {
+    await updateCenter(center.id, { ativo: next });
+    state.centers = await listCenters();
+    toast(`Centro de custo ${next ? "ativado" : "inativado"}.`, "success");
+    renderCenters();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function removeCenter(centerId) {
+  const center = state.centers.find(row => row.id === centerId);
+  if (!center || !canDeleteAssets()) return;
+  const confirmation = window.prompt(
+    `Exclusão definitiva de "${center.nome}".\n\nIsso só será permitido se o centro nunca tiver sido usado.\nDigite exatamente o código para confirmar: ${center.codigo}`
+  );
+  if (confirmation === null) return;
+  if (confirmation.trim() !== String(center.codigo)) {
+    toast("Confirmação inválida.", "error");
+    return;
+  }
+  try {
+    await deleteCenter(center.id, confirmation.trim());
+    state.centers = await listCenters();
+    toast("Centro de custo excluído definitivamente.", "success");
+    renderCenters();
+  } catch (error) {
+    toast(error.message, "error");
+  }
 }
 
 function normalizeText(value) {
