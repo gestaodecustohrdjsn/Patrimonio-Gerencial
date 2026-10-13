@@ -138,7 +138,7 @@ begin
       if v_nome = '' then
         raise exception 'Ação % exige nome', v_tipo_acao;
       end if;
-      if v_tipo_id not in (1,2,3) then
+      if v_tipo_id is null or v_tipo_id not in (1,2,3) then
         raise exception 'Ação % exige Tipo válido', v_tipo_acao;
       end if;
     end if;
