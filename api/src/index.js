@@ -192,7 +192,9 @@ export default {
               'codigo_antes',h.dados_anteriores->>'codigo',
               'codigo_depois',h.dados_novos->>'codigo',
               'nome_antes',h.dados_anteriores->>'nome',
-              'nome_depois',h.dados_novos->>'nome'
+              'nome_depois',h.dados_novos->>'nome',
+              'ativo_antes',h.dados_anteriores->>'ativo',
+              'ativo_depois',h.dados_novos->>'ativo'
             ) as detalhes
           from historico_alteracoes h
           left join usuarios u on u.id=h.usuario_id
