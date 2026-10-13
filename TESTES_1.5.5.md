@@ -23,7 +23,8 @@
 
 ## Proteção da API
 
-A API 3.3.2 deve rejeitar uma divergência Tipo x SIGEM sem `confirmar_tipo_divergente: true`.
+No cadastro novo, a API 3.3.2 deve rejeitar qualquer divergência Tipo x SIGEM.
+Na edição, a divergência só pode ser gravada com `confirmar_tipo_divergente: true`.
 Não há migration de banco nesta versão.
 
 ## CSV da Relação Patrimonial
