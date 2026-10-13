@@ -285,28 +285,48 @@ export default {
         const tipoAnterior=current.tipo_id==null?null:Number(current.tipo_id);
         if(tipoAnterior===novoTipo) return responseJson({ok:true,item:current,patrimonios_sincronizados:0},200,env,request);
 
-        const rows=await sql`
-          update descricoes_padrao set tipo_id=${novoTipo}
-          where id=${catalogMatch[1]}::uuid
-          returning id,descricao,valor_padrao,tipo_id,ativo
-        `;
-        const synced=await sql`
-          update patrimonios
-          set tipo_id=${novoTipo},atualizado_por=${user.id}::uuid
-          where descricao_padrao_id=${catalogMatch[1]}::uuid
-            and tipo_id is not distinct from ${tipoAnterior}
-          returning id
-        `;
-        await sql`
-          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
-          values(
-            'descricoes_padrao',${catalogMatch[1]}::uuid,'CLASSIFICACAO_SIGEM_ALTERADA',
-            jsonb_build_object('tipo_id',${tipoAnterior}::integer),
-            jsonb_build_object('tipo_id',${novoTipo}::integer),
-            ${user.id}::uuid
+        const result=await sql`
+          with atual as (
+            select id,tipo_id
+            from descricoes_padrao
+            where id=${catalogMatch[1]}::uuid
+            for update
+          ),
+          catalogo as (
+            update descricoes_padrao d
+            set tipo_id=${novoTipo}
+            from atual a
+            where d.id=a.id
+            returning d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,a.tipo_id as tipo_anterior
+          ),
+          sincronizados as (
+            update patrimonios p
+            set tipo_id=${novoTipo},atualizado_por=${user.id}::uuid
+            from catalogo c
+            where p.descricao_padrao_id=c.id
+              and p.tipo_id is not distinct from c.tipo_anterior
+            returning p.id
+          ),
+          log_catalogo as (
+            insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+            select
+              'descricoes_padrao',c.id,'CLASSIFICACAO_SIGEM_ALTERADA',
+              jsonb_build_object('tipo_id',c.tipo_anterior),
+              jsonb_build_object('tipo_id',c.tipo_id),
+              ${user.id}::uuid
+            from catalogo c
+            returning id
           )
+          select
+            c.id,c.descricao,c.valor_padrao,c.tipo_id,c.ativo,
+            (select count(*)::int from sincronizados) as patrimonios_sincronizados
+          from catalogo c
         `;
-        return responseJson({ok:true,item:rows[0],patrimonios_sincronizados:synced.length},200,env,request);
+        return responseJson({
+          ok:true,
+          item:result[0],
+          patrimonios_sincronizados:Number(result[0]?.patrimonios_sincronizados||0)
+        },200,env,request);
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo") {
