@@ -52,6 +52,16 @@ function requireRole(user, roles) {
   return user && roles.includes(user.perfil);
 }
 
+function normalizeCatalogText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 async function hydrateAsset(sql, id) {
   const rows = await sql`
     select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,
@@ -87,7 +97,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.4",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.5",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -181,6 +191,10 @@ export default {
                 'tipo','sigem',
                 'nome',coalesce(dp.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao')
               )
+              when h.tabela='catalogo_sigem_atualizacoes' then jsonb_build_object(
+                'tipo','catalog_update',
+                'nome',h.dados_novos->>'nome_arquivo'
+              )
               else jsonb_build_object('tipo',h.tabela)
             end as entidade,
             jsonb_build_object(
@@ -194,7 +208,16 @@ export default {
               'nome_antes',h.dados_anteriores->>'nome',
               'nome_depois',h.dados_novos->>'nome',
               'ativo_antes',h.dados_anteriores->>'ativo',
-              'ativo_depois',h.dados_novos->>'ativo'
+              'ativo_depois',h.dados_novos->>'ativo',
+              'quantidade_arquivo',h.dados_novos->>'quantidade_arquivo',
+              'correspondencias_exatas',h.dados_novos->>'correspondencias_exatas',
+              'correspondencias_alias',h.dados_novos->>'correspondencias_alias',
+              'correspondencias_confirmadas',h.dados_novos->>'correspondencias_confirmadas',
+              'novos_itens',h.dados_novos->>'novos_itens',
+              'duplicados_adicionados',h.dados_novos->>'duplicados_adicionados',
+              'ignorados',h.dados_novos->>'ignorados',
+              'inativados',h.dados_novos->>'inativados',
+              'reativados',h.dados_novos->>'reativados'
             ) as detalhes
           from historico_alteracoes h
           left join usuarios u on u.id=h.usuario_id
@@ -328,6 +351,98 @@ export default {
           order by d.descricao
         `;
         return responseJson({ok:true,itens:rows},200,env,request);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/catalogo/atualizacoes/contexto") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o Catálogo SIGEM."},403,env,request);
+        const aliases=await sql`
+          select a.id,a.alias_original,a.alias_normalizado,a.descricao_padrao_id,a.criado_em,
+            d.descricao as item_catalogo_nome,d.tipo_id,d.ativo
+          from catalogo_sigem_aliases a
+          join descricoes_padrao d on d.id=a.descricao_padrao_id
+          order by a.alias_original
+        `;
+        const atualizacoes=await sql`
+          select a.id,a.nome_arquivo,a.catalogo_completo,a.quantidade_arquivo,
+            a.correspondencias_exatas,a.correspondencias_alias,a.correspondencias_confirmadas,
+            a.novos_itens,a.duplicados_adicionados,a.ignorados,a.inativados,a.reativados,
+            a.criado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
+          from catalogo_sigem_atualizacoes a
+          left join usuarios u on u.id=a.usuario_id
+          order by a.criado_em desc
+          limit 20
+        `;
+        return responseJson({ok:true,aliases,atualizacoes},200,env,request);
+      }
+
+      const catalogUpdateDetail=url.pathname.match(/^\/api\/catalogo\/atualizacoes\/([0-9a-f-]{36})$/i);
+      if(catalogUpdateDetail && request.method === "GET") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações do Catálogo SIGEM."},403,env,request);
+        const atualizacoes=await sql`
+          select a.*,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
+          from catalogo_sigem_atualizacoes a
+          left join usuarios u on u.id=a.usuario_id
+          where a.id=${catalogUpdateDetail[1]}::uuid
+          limit 1
+        `;
+        if(!atualizacoes.length) return responseJson({ok:false,error:"Atualização de catálogo não encontrada."},404,env,request);
+        const itens=await sql`
+          select id,acao,nome_arquivo,item_catalogo_id,item_catalogo_nome,tipo_id,similaridade,detalhes,criado_em
+          from catalogo_sigem_atualizacao_itens
+          where atualizacao_id=${catalogUpdateDetail[1]}::uuid
+          order by id
+        `;
+        return responseJson({ok:true,atualizacao:atualizacoes[0],itens},200,env,request);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/catalogo/atualizacoes/aplicar") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o Catálogo SIGEM."},403,env,request);
+        const b=await bodyJson(request);
+        const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
+        const quantidadeArquivo=Number(b.quantidade_arquivo||0);
+        const catalogoCompleto=Boolean(b.catalogo_completo);
+        const rawActions=Array.isArray(b.acoes)?b.acoes:[];
+
+        if(!nomeArquivo) return responseJson({ok:false,error:"Nome do arquivo é obrigatório."},400,env,request);
+        if(!Number.isInteger(quantidadeArquivo)||quantidadeArquivo<1||quantidadeArquivo>10000) return responseJson({ok:false,error:"Quantidade de itens do arquivo inválida."},400,env,request);
+        if(!rawActions.length||rawActions.length>20000) return responseJson({ok:false,error:"Plano de atualização vazio ou grande demais."},400,env,request);
+
+        const allowedActions=new Set(["EXATO","ALIAS","MESMO_ITEM","NOVO","DUPLICADO","IGNORAR","MANTER","INATIVAR","REATIVAR"]);
+        const actions=rawActions.map((action,index)=>{
+          const acao=String(action?.acao||"").trim().toUpperCase();
+          if(!allowedActions.has(acao)) throw new Error(`VALIDATION:Ação inválida na linha ${index+1}.`);
+          const tipoId=action?.tipo_id==null||action?.tipo_id===""?null:Number(action.tipo_id);
+          if(tipoId!==null&&![1,2,3].includes(tipoId)) throw new Error(`VALIDATION:Tipo inválido na linha ${index+1}.`);
+          const valueRaw=action?.valor_padrao;
+          const value=valueRaw===null||valueRaw===undefined||valueRaw===""?null:Number(valueRaw);
+          if(value!==null&&!Number.isFinite(value)) throw new Error(`VALIDATION:Valor SIGEM inválido na linha ${index+1}.`);
+          const similarityRaw=action?.similaridade;
+          const similarity=similarityRaw===null||similarityRaw===undefined||similarityRaw===""?null:Number(similarityRaw);
+          const oldName=String(action?.nome_anterior||"").trim();
+          return {
+            acao,
+            nome:String(action?.nome||"").trim().slice(0,500),
+            item_id:action?.item_id?String(action.item_id):null,
+            tipo_id:tipoId,
+            valor_padrao:value,
+            similaridade:similarity===null?null:Math.max(0,Math.min(1,similarity)),
+            reativar:Boolean(action?.reativar),
+            alias_anterior_normalizado:acao==="MESMO_ITEM"&&oldName?normalizeCatalogText(oldName):null
+          };
+        });
+
+        const rows=await sql`
+          select aplicar_atualizacao_catalogo_sigem_api(
+            ${nomeArquivo},
+            ${catalogoCompleto},
+            ${quantidadeArquivo},
+            ${JSON.stringify(actions)}::jsonb,
+            ${user.id}::uuid
+          ) as resultado
+        `;
+        return responseJson({ok:true,resultado:rows[0].resultado},200,env,request);
       }
 
       const catalogMatch=url.pathname.match(/^\/api\/catalogo\/([0-9a-f-]{36})$/i);
@@ -563,6 +678,7 @@ export default {
     } catch(error) {
       console.error(error);
       const msg=String(error?.message||"");
+      if(msg.startsWith("VALIDATION:")) return responseJson({ok:false,error:msg.slice("VALIDATION:".length)},400,env,request);
       if(msg.includes("duplicate key")&&msg.includes("id_ses")) return responseJson({ok:false,error:"Este ID SES já está cadastrado."},409,env,request);
       return responseJson({ok:false,error:"Erro interno no serviço."},500,env,request);
     }

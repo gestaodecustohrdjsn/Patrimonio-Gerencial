@@ -3,7 +3,7 @@ import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/uti
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.5.7";
-import { searchSigem, listCatalogAdmin, updateCatalogType } from "./services/sigem.js?v=1.5.7";
+import { searchSigem, listCatalogAdmin, updateCatalogType, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/sigem.js?v=1.5.8";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
@@ -47,7 +47,21 @@ const state = {
   catalogAdminType: "",
   recentHistory: [],
   dashboardHistoryExpanded: false,
-  settingsOpenCard: null
+  settingsOpenCard: null,
+  catalogAliases: [],
+  catalogUpdates: [],
+  catalogUpdateContextLoaded: false,
+  catalogUpdateBusy: false,
+  catalogUpdateFileName: "",
+  catalogUpdateHeaders: [],
+  catalogUpdateRows: [],
+  catalogUpdateMapping: { nome: "", tipo: "", valor: "" },
+  catalogUpdateComplete: false,
+  catalogUpdateAnalysis: [],
+  catalogUpdateMissing: [],
+  catalogUpdateStage: "file",
+  catalogUpdateLastResult: null,
+  catalogUpdateDetail: null
 };
 
 const appRoot = document.querySelector("#appRoot");
@@ -191,6 +205,17 @@ function shell() {
       </div>
       <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelCenterButton">Cancelar</button><button type="submit" class="primary-button" id="saveCenterButton">Salvar centro</button></div>
     </form>
+  </dialog>
+
+  <dialog id="catalogUpdateDialog" class="catalog-update-dialog">
+    <div class="catalog-update-shell">
+      <div class="dialog-header catalog-update-header">
+        <button type="button" class="back-button" id="closeCatalogUpdateButton">← Fechar</button>
+        <h2>Atualizar Catálogo SIGEM</h2>
+        <p>Compare o novo arquivo com o catálogo atual, revise correspondências e só então confirme a atualização.</p>
+      </div>
+      <div id="catalogUpdateContent"></div>
+    </div>
   </dialog>`;
   bindStaticActions();
 }
@@ -261,7 +286,8 @@ function historyActionLabel(event) {
     "centros_custo:CADASTRO": "Cadastrou centro de custo",
     "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
     "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
-    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação SIGEM"
+    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação SIGEM",
+    "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou Catálogo SIGEM"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -276,6 +302,7 @@ function historyEntityLabel(event) {
     return [entity.codigo, entity.nome].filter(Boolean).join(" · ") || "Centro de custo";
   }
   if (entity.tipo === "sigem") return entity.nome || "Item SIGEM";
+  if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
   return "";
 }
 
@@ -295,6 +322,14 @@ function historyDetailText(event) {
     if (before && after && before !== after) return `${before} → ${after}`;
   }
   if (event.operacao === "MANUTENCAO_ABERTA" && d.descricao) return d.descricao;
+  if (event.operacao === "CATALOGO_SIGEM_ATUALIZADO") {
+    const parts = [];
+    if (Number(d.novos_itens || 0)) parts.push(`${d.novos_itens} novo(s)`);
+    if (Number(d.correspondencias_confirmadas || 0)) parts.push(`${d.correspondencias_confirmadas} de-para confirmado(s)`);
+    if (Number(d.inativados || 0)) parts.push(`${d.inativados} inativado(s)`);
+    if (Number(d.reativados || 0)) parts.push(`${d.reativados} reativado(s)`);
+    return parts.length ? parts.join(" · ") : `${d.quantidade_arquivo || 0} item(ns) analisado(s)`;
+  }
   return "";
 }
 
@@ -1143,6 +1178,798 @@ function printReport() {
   popup.document.close();
 }
 
+
+async function ensureCatalogUpdateContext(force = false) {
+  if (state.catalogUpdateContextLoaded && !force) return;
+  const context = await listCatalogUpdateContext();
+  state.catalogAliases = context.aliases || [];
+  state.catalogUpdates = context.atualizacoes || [];
+  state.catalogUpdateContextLoaded = true;
+}
+
+function resetCatalogUpdate() {
+  state.catalogUpdateBusy = false;
+  state.catalogUpdateFileName = "";
+  state.catalogUpdateHeaders = [];
+  state.catalogUpdateRows = [];
+  state.catalogUpdateMapping = { nome: "", tipo: "", valor: "" };
+  state.catalogUpdateComplete = false;
+  state.catalogUpdateAnalysis = [];
+  state.catalogUpdateMissing = [];
+  state.catalogUpdateStage = "file";
+  state.catalogUpdateLastResult = null;
+}
+
+async function openCatalogUpdate() {
+  try {
+    await ensureCatalogUpdateContext();
+  } catch (error) {
+    toast(`Não foi possível carregar o contexto do catálogo: ${error.message}`, "error");
+    return;
+  }
+  resetCatalogUpdate();
+  const dialog = document.querySelector("#catalogUpdateDialog");
+  dialog.showModal();
+  renderCatalogUpdateDialog();
+}
+
+async function readCatalogCsvFile(file) {
+  const buffer = await file.arrayBuffer();
+  let text = "";
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    text = new TextDecoder("windows-1252").decode(buffer);
+  }
+  return text.replace(/^\uFEFF/, "");
+}
+
+function guessCatalogUpdateMapping(headers) {
+  const normalized = headers.map(header => ({ header, key: normalizeText(header) }));
+  const find = aliases => normalized.find(item => aliases.some(alias => item.key === alias || item.key.includes(alias)))?.header || "";
+  return {
+    nome: find(["nome do item","descricao sigem","descricao","item","material","equipamento"]),
+    tipo: find(["categoria","classificacao","tipo"]),
+    valor: find(["valor padrao","valor sigem","valor","preco"])
+  };
+}
+
+function catalogUpdateMappingOptions(selected) {
+  return `<option value="">Não usar</option>${state.catalogUpdateHeaders.map(header =>
+    `<option value="${escapeHtml(header)}" ${header===selected?"selected":""}>${escapeHtml(header)}</option>`
+  ).join("")}`;
+}
+
+function parseCatalogType(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const number = Number(raw);
+  if ([1,2,3].includes(number)) return number;
+  const normalized = normalizeText(raw);
+  if (/equipamento medico|medico|hospitalar|mmh/.test(normalized)) return 1;
+  if (/mobiliario|moveis|movel/.test(normalized)) return 2;
+  if (/informatica|computador|notebook|ti\b/.test(normalized)) return 3;
+  return null;
+}
+
+function parseCatalogValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const number = normalizeMoney(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
+function catalogBigrams(value) {
+  const text = ` ${normalizeText(value)} `;
+  const out = [];
+  for (let i=0;i<text.length-1;i++) out.push(text.slice(i,i+2));
+  return out;
+}
+
+function catalogNameSimilarity(a, b) {
+  const left = normalizeText(a);
+  const right = normalizeText(b);
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+
+  const aBigrams = catalogBigrams(left);
+  const bBigrams = catalogBigrams(right);
+  const counts = new Map();
+  for (const gram of aBigrams) counts.set(gram,(counts.get(gram)||0)+1);
+  let matches = 0;
+  for (const gram of bBigrams) {
+    const available = counts.get(gram)||0;
+    if (available>0) {
+      matches++;
+      counts.set(gram,available-1);
+    }
+  }
+  const dice = (2*matches)/(aBigrams.length+bBigrams.length || 1);
+  const aTokens = new Set(left.split(" ").filter(Boolean));
+  const bTokens = new Set(right.split(" ").filter(Boolean));
+  const intersection = [...aTokens].filter(token=>bTokens.has(token)).length;
+  const union = new Set([...aTokens,...bTokens]).size || 1;
+  const jaccard = intersection/union;
+  let score = dice*0.68 + jaccard*0.32;
+  if (left.includes(right) || right.includes(left)) {
+    const ratio = Math.min(left.length,right.length)/Math.max(left.length,right.length);
+    score = Math.max(score,0.72+ratio*0.22);
+  }
+  return Math.max(0,Math.min(1,score));
+}
+
+function catalogCandidateList(name, limit = 3) {
+  return state.catalogAdminItems
+    .map(item => ({ item, score: catalogNameSimilarity(name,item.descricao) }))
+    .filter(entry => entry.score >= 0.68)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,limit);
+}
+
+function analyzeCatalogUpdate() {
+  const nameHeader = state.catalogUpdateMapping.nome;
+  if (!nameHeader) {
+    toast("Selecione a coluna que contém o nome/descrição SIGEM.", "error");
+    return;
+  }
+
+  const exactMap = new Map();
+  for (const item of state.catalogAdminItems) {
+    const key = normalizeText(item.descricao);
+    if (!exactMap.has(key)) exactMap.set(key,[]);
+    exactMap.get(key).push(item);
+  }
+  const aliasMap = new Map(state.catalogAliases.map(alias => [alias.alias_normalizado,alias]));
+  const seenFile = new Map();
+
+  state.catalogUpdateAnalysis = state.catalogUpdateRows.map((row,index)=>{
+    const name = String(row[nameHeader] ?? "").trim();
+    const normalized = normalizeText(name);
+    const importedType = state.catalogUpdateMapping.tipo ? parseCatalogType(row[state.catalogUpdateMapping.tipo]) : null;
+    const value = state.catalogUpdateMapping.valor ? parseCatalogValue(row[state.catalogUpdateMapping.valor]) : null;
+    const base = {
+      index,
+      line:index+2,
+      name,
+      normalized,
+      importedType,
+      value,
+      kind:"",
+      action:"",
+      finalType:importedType,
+      selectedItemId:null,
+      candidates:[],
+      matchedItem:null,
+      typeConflict:false
+    };
+
+    if (!normalized) {
+      return { ...base, kind:"invalid", action:"ignore" };
+    }
+
+    if (seenFile.has(normalized)) {
+      return {
+        ...base,
+        kind:"file_duplicate",
+        action:"ignore",
+        duplicateOfLine:seenFile.get(normalized)+2
+      };
+    }
+    seenFile.set(normalized,index);
+
+    const exact = exactMap.get(normalized) || [];
+    if (exact.length === 1) {
+      const item = exact[0];
+      return {
+        ...base,
+        kind:"exact",
+        action:"skip",
+        matchedItem:item,
+        selectedItemId:item.id,
+        finalType:importedType || Number(item.tipo_id),
+        typeConflict:Boolean(importedType && Number(item.tipo_id)!==importedType)
+      };
+    }
+    if (exact.length > 1) {
+      return {
+        ...base,
+        kind:"similar",
+        action:"",
+        candidates:exact.map(item=>({item,score:1})),
+        selectedItemId:exact[0].id,
+        finalType:importedType || Number(exact[0].tipo_id),
+        ambiguousExact:true
+      };
+    }
+
+    const alias = aliasMap.get(normalized);
+    if (alias) {
+      const item = state.catalogAdminItems.find(current=>current.id===alias.descricao_padrao_id);
+      if (item) {
+        return {
+          ...base,
+          kind:"alias",
+          action:"skip",
+          matchedItem:item,
+          selectedItemId:item.id,
+          finalType:importedType || Number(item.tipo_id),
+          typeConflict:Boolean(importedType && Number(item.tipo_id)!==importedType)
+        };
+      }
+    }
+
+    const candidates = catalogCandidateList(name,3);
+    if (candidates.length) {
+      return {
+        ...base,
+        kind:"similar",
+        action:"",
+        candidates,
+        selectedItemId:candidates[0].item.id,
+        finalType:importedType || Number(candidates[0].item.tipo_id)
+      };
+    }
+
+    return { ...base, kind:"new", action:"new", finalType:importedType };
+  });
+
+  state.catalogUpdateStage = "review";
+  recalculateCatalogMissing();
+  renderCatalogUpdateDialog();
+}
+
+function catalogMatchedIds() {
+  const ids = new Set();
+  for (const row of state.catalogUpdateAnalysis) {
+    if ((row.kind==="exact" || row.kind==="alias") && row.matchedItem?.id) ids.add(row.matchedItem.id);
+    if (row.kind==="similar" && row.action==="same" && row.selectedItemId) ids.add(row.selectedItemId);
+  }
+  return ids;
+}
+
+function recalculateCatalogMissing() {
+  if (!state.catalogUpdateComplete) {
+    state.catalogUpdateMissing = [];
+    return;
+  }
+  const matched = catalogMatchedIds();
+  const previousActions = new Map((state.catalogUpdateMissing||[]).map(item=>[item.id,item.action]));
+  state.catalogUpdateMissing = state.catalogAdminItems
+    .filter(item=>item.ativo && !matched.has(item.id))
+    .map(item=>({
+      ...item,
+      action:previousActions.get(item.id)||"keep"
+    }));
+}
+
+function catalogUpdateReviewCounts() {
+  const rows = state.catalogUpdateAnalysis;
+  return {
+    exact:rows.filter(row=>row.kind==="exact").length,
+    alias:rows.filter(row=>row.kind==="alias").length,
+    similar:rows.filter(row=>row.kind==="similar").length,
+    new:rows.filter(row=>row.kind==="new").length,
+    fileDuplicate:rows.filter(row=>row.kind==="file_duplicate").length,
+    invalid:rows.filter(row=>row.kind==="invalid").length,
+    unresolved:rows.filter(row=>row.kind==="similar"&&!row.action).length,
+    typeWarnings:rows.filter(row=>row.typeConflict).length
+  };
+}
+
+function catalogTypeSelect(value, rowIndex, disabled = false) {
+  const current = Number(value||0);
+  return `<select class="catalog-update-type" data-row-index="${rowIndex}" ${disabled?"disabled":""}>
+    <option value="">Selecione</option>
+    <option value="1" ${current===1?"selected":""}>Equipamento Médico</option>
+    <option value="2" ${current===2?"selected":""}>Mobiliário</option>
+    <option value="3" ${current===3?"selected":""}>Informática</option>
+  </select>`;
+}
+
+function catalogCandidateSelect(row) {
+  const candidates = row.candidates || [];
+  return `<select class="catalog-update-candidate" data-row-index="${row.index}">
+    ${candidates.map(candidate => {
+      const item = candidate.item;
+      const pct = Math.round(candidate.score*100);
+      return `<option value="${item.id}" ${item.id===row.selectedItemId?"selected":""}>${escapeHtml(item.descricao)} · ${pct}%</option>`;
+    }).join("")}
+  </select>`;
+}
+
+function catalogReviewRowHtml(row) {
+  const importedTypeLabel = row.importedType ? typeName(row.importedType) : "Não informado";
+
+  if (row.kind==="similar") {
+    return `<tr>
+      <td>${row.line}</td>
+      <td><strong>${escapeHtml(row.name)}</strong>${row.ambiguousExact?'<small class="row-note warning-text">Há mais de um item com este mesmo nome no catálogo.</small>':""}</td>
+      <td>${catalogCandidateSelect(row)}</td>
+      <td>
+        <select class="catalog-update-action" data-row-index="${row.index}">
+          <option value="" ${!row.action?"selected":""}>Revisar…</option>
+          <option value="same" ${row.action==="same"?"selected":""}>É o mesmo item</option>
+          <option value="new" ${row.action==="new"?"selected":""}>É um item novo</option>
+          <option value="ignore" ${row.action==="ignore"?"selected":""}>Ignorar</option>
+        </select>
+      </td>
+      <td>${catalogTypeSelect(row.finalType,row.index,row.action==="ignore")}</td>
+      <td>${escapeHtml(importedTypeLabel)}</td>
+    </tr>`;
+  }
+
+  if (row.kind==="new") {
+    return `<tr>
+      <td>${row.line}</td>
+      <td><strong>${escapeHtml(row.name)}</strong><small class="row-note">Nenhuma correspondência semelhante encontrada.</small></td>
+      <td>—</td>
+      <td>
+        <select class="catalog-update-action" data-row-index="${row.index}">
+          <option value="new" ${row.action==="new"?"selected":""}>Adicionar item</option>
+          <option value="ignore" ${row.action==="ignore"?"selected":""}>Ignorar</option>
+        </select>
+      </td>
+      <td>${catalogTypeSelect(row.finalType,row.index,row.action==="ignore")}</td>
+      <td>${escapeHtml(importedTypeLabel)}</td>
+    </tr>`;
+  }
+
+  if (row.kind==="file_duplicate") {
+    return `<tr>
+      <td>${row.line}</td>
+      <td><strong>${escapeHtml(row.name)}</strong><small class="row-note warning-text">Repetido no próprio arquivo (primeira ocorrência na linha ${row.duplicateOfLine}).</small></td>
+      <td>—</td>
+      <td>
+        <select class="catalog-update-action" data-row-index="${row.index}">
+          <option value="ignore" ${row.action==="ignore"?"selected":""}>Não adicionar</option>
+          <option value="duplicate" ${row.action==="duplicate"?"selected":""}>Adicionar mesmo assim</option>
+        </select>
+      </td>
+      <td>${catalogTypeSelect(row.finalType,row.index,row.action!=="duplicate")}</td>
+      <td>${escapeHtml(importedTypeLabel)}</td>
+    </tr>`;
+  }
+
+  if (row.kind==="invalid") {
+    return `<tr><td>${row.line}</td><td colspan="5"><span class="validation-error">Linha sem descrição SIGEM. Será ignorada.</span></td></tr>`;
+  }
+  return "";
+}
+
+function catalogExistingRowHtml(row) {
+  const item = row.matchedItem;
+  const source = row.kind==="alias" ? "Alias conhecido" : "Correspondência exata";
+  const inactive = item && !item.ativo;
+  return `<tr>
+    <td>${row.line}</td>
+    <td><strong>${escapeHtml(row.name)}</strong></td>
+    <td>${escapeHtml(item?.descricao || "—")}</td>
+    <td>${source}${inactive?' · <span class="warning-text">item inativo será reativado</span>':""}${row.typeConflict?'<small class="row-note warning-text">O Tipo do arquivo difere do Tipo atual; o cadastro atual será preservado.</small>':""}</td>
+    <td>
+      <select class="catalog-update-action" data-row-index="${row.index}">
+        <option value="skip" ${row.action==="skip"?"selected":""}>Não adicionar novamente</option>
+        <option value="duplicate" ${row.action==="duplicate"?"selected":""}>Adicionar mesmo assim</option>
+      </select>
+    </td>
+    <td>${catalogTypeSelect(row.finalType,row.index,row.action!=="duplicate")}</td>
+  </tr>`;
+}
+
+function catalogMissingRowsHtml() {
+  if (!state.catalogUpdateComplete) return "";
+  if (!state.catalogUpdateMissing.length) {
+    return `<section class="catalog-review-section">
+      <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Todos os itens ativos atuais foram reconhecidos no arquivo.</p></div><span class="badge">0</span></div>
+    </section>`;
+  }
+  return `<section class="catalog-review-section">
+    <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Nada é inativado automaticamente. Escolha explicitamente quando necessário.</p></div><span class="badge">${state.catalogUpdateMissing.length}</span></div>
+    <div class="table-wrap catalog-review-table"><table>
+      <thead><tr><th>Item atual</th><th>Tipo</th><th>Patrimônios</th><th>Ação</th></tr></thead>
+      <tbody>${state.catalogUpdateMissing.map(item=>`<tr>
+        <td><strong>${escapeHtml(item.descricao)}</strong></td>
+        <td>${escapeHtml(typeName(item.tipo_id))}</td>
+        <td>${Number(item.patrimonios_vinculados||0)}</td>
+        <td><select class="catalog-missing-action" data-item-id="${item.id}">
+          <option value="keep" ${item.action==="keep"?"selected":""}>Manter ativo</option>
+          <option value="inactive" ${item.action==="inactive"?"selected":""}>Inativar</option>
+        </select></td>
+      </tr>`).join("")}</tbody>
+    </table></div>
+  </section>`;
+}
+
+function buildCatalogUpdatePlan() {
+  const errors = [];
+  const actions = [];
+
+  for (const row of state.catalogUpdateAnalysis) {
+    if (row.kind==="invalid") {
+      actions.push({ acao:"IGNORAR", nome:row.name, tipo_id:row.finalType, valor_padrao:row.value });
+      continue;
+    }
+
+    if (row.kind==="exact" || row.kind==="alias") {
+      if (row.action==="duplicate") {
+        const typeId = Number(row.finalType||row.importedType||row.matchedItem?.tipo_id);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do item duplicado.`);
+        else actions.push({ acao:"DUPLICADO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
+      } else {
+        actions.push({
+          acao:row.kind==="alias"?"ALIAS":"EXATO",
+          nome:row.name,
+          item_id:row.matchedItem?.id,
+          reativar:Boolean(row.matchedItem && !row.matchedItem.ativo)
+        });
+      }
+      continue;
+    }
+
+    if (row.kind==="file_duplicate") {
+      if (row.action==="duplicate") {
+        const typeId = Number(row.finalType||row.importedType);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do item duplicado.`);
+        else actions.push({ acao:"DUPLICADO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
+      } else {
+        actions.push({ acao:"IGNORAR", nome:row.name, tipo_id:row.importedType, valor_padrao:row.value });
+      }
+      continue;
+    }
+
+    if (row.kind==="new") {
+      if (row.action==="ignore") {
+        actions.push({ acao:"IGNORAR", nome:row.name, tipo_id:row.importedType, valor_padrao:row.value });
+      } else {
+        const typeId = Number(row.finalType||row.importedType);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do novo item.`);
+        else actions.push({ acao:"NOVO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
+      }
+      continue;
+    }
+
+    if (row.kind==="similar") {
+      if (!row.action) {
+        errors.push(`Linha ${row.line}: confirme se o item semelhante é o mesmo, novo ou deve ser ignorado.`);
+        continue;
+      }
+      if (row.action==="ignore") {
+        actions.push({
+          acao:"IGNORAR",
+          nome:row.name,
+          item_id:row.selectedItemId,
+          tipo_id:row.importedType,
+          valor_padrao:row.value,
+          similaridade:(row.candidates.find(candidate=>candidate.item.id===row.selectedItemId)?.score ?? null)
+        });
+        continue;
+      }
+      const candidate = row.candidates.find(entry=>entry.item.id===row.selectedItemId);
+      if (row.action==="same") {
+        if (!candidate) {
+          errors.push(`Linha ${row.line}: selecione o item correspondente.`);
+          continue;
+        }
+        const typeId = Number(row.finalType||row.importedType||candidate.item.tipo_id);
+        if (![1,2,3].includes(typeId)) {
+          errors.push(`Linha ${row.line}: defina o Tipo da correspondência.`);
+          continue;
+        }
+        actions.push({
+          acao:"MESMO_ITEM",
+          nome:row.name,
+          item_id:candidate.item.id,
+          nome_anterior:candidate.item.descricao,
+          tipo_id:typeId,
+          valor_padrao:row.value,
+          similaridade:candidate.score
+        });
+      } else if (row.action==="new") {
+        const typeId = Number(row.finalType||row.importedType);
+        if (![1,2,3].includes(typeId)) errors.push(`Linha ${row.line}: defina o Tipo do novo item.`);
+        else actions.push({ acao:"NOVO", nome:row.name, tipo_id:typeId, valor_padrao:row.value });
+      }
+    }
+  }
+
+  if (state.catalogUpdateComplete) {
+    for (const item of state.catalogUpdateMissing) {
+      actions.push({
+        acao:item.action==="inactive"?"INATIVAR":"MANTER",
+        nome:item.descricao,
+        item_id:item.id
+      });
+    }
+  }
+
+  return { errors, actions };
+}
+
+function catalogFinalSummary() {
+  const { errors, actions } = buildCatalogUpdatePlan();
+  const count = action => actions.filter(item=>item.acao===action).length;
+  return {
+    errors,
+    actions,
+    exact:count("EXATO"),
+    alias:count("ALIAS"),
+    same:count("MESMO_ITEM"),
+    added:count("NOVO"),
+    duplicates:count("DUPLICADO"),
+    ignored:count("IGNORAR"),
+    inactive:count("INATIVAR"),
+    kept:count("MANTER")
+  };
+}
+
+function renderCatalogUpdateDialog() {
+  const root = document.querySelector("#catalogUpdateContent");
+  if (!root) return;
+
+  if (state.catalogUpdateStage==="file" || state.catalogUpdateStage==="mapping") {
+    const hasFile = state.catalogUpdateRows.length>0;
+    root.innerHTML = `
+      <div class="catalog-wizard">
+        <section class="catalog-step">
+          <div class="step-title"><span>1</span><div><h3>Selecionar nova lista SIGEM</h3><p>CSV em UTF-8 ou Windows-1252, separado por vírgula ou ponto e vírgula.</p></div></div>
+          <label class="file-drop catalog-file-drop">
+            <input id="catalogUpdateFile" type="file" accept=".csv,text/csv">
+            <strong>${state.catalogUpdateFileName || "Escolher arquivo CSV"}</strong>
+            <small>${hasFile ? `${state.catalogUpdateRows.length} linha(s) encontradas` : "Nenhum arquivo selecionado"}</small>
+          </label>
+        </section>
+
+        ${hasFile ? `<section class="catalog-step">
+          <div class="step-title"><span>2</span><div><h3>Mapear colunas</h3><p>Descrição é obrigatória. Tipo e valor são opcionais, mas ajudam na inclusão dos novos itens.</p></div></div>
+          <div class="mapping-grid">
+            <label>Descrição/Nome SIGEM *<select data-catalog-map="nome">${catalogUpdateMappingOptions(state.catalogUpdateMapping.nome)}</select></label>
+            <label>Tipo/Classificação<select data-catalog-map="tipo">${catalogUpdateMappingOptions(state.catalogUpdateMapping.tipo)}</select></label>
+            <label>Valor SIGEM<select data-catalog-map="valor">${catalogUpdateMappingOptions(state.catalogUpdateMapping.valor)}</select></label>
+          </div>
+          <label class="catalog-complete-check">
+            <input id="catalogUpdateComplete" type="checkbox" ${state.catalogUpdateComplete?"checked":""}>
+            <span><strong>Este arquivo representa o catálogo completo.</strong><small>Somente marque se itens ausentes realmente puderem ser revisados para inativação. Nada será inativado automaticamente.</small></span>
+          </label>
+          <div class="import-actions"><button class="primary-button" data-action="analyze-catalog-update">Comparar com catálogo atual</button></div>
+        </section>` : ""}
+      </div>`;
+
+    document.querySelector("#catalogUpdateFile")?.addEventListener("change", handleCatalogUpdateFile);
+    document.querySelectorAll("[data-catalog-map]").forEach(select=>select.addEventListener("change",()=>{
+      state.catalogUpdateMapping[select.dataset.catalogMap]=select.value;
+    }));
+    document.querySelector("#catalogUpdateComplete")?.addEventListener("change",event=>{
+      state.catalogUpdateComplete=event.target.checked;
+    });
+    document.querySelector('[data-action="analyze-catalog-update"]')?.addEventListener("click",analyzeCatalogUpdate);
+    return;
+  }
+
+  if (state.catalogUpdateStage==="review") {
+    const counts = catalogUpdateReviewCounts();
+    const existing = state.catalogUpdateAnalysis.filter(row=>row.kind==="exact"||row.kind==="alias");
+    const reviewRows = state.catalogUpdateAnalysis.filter(row=>["similar","new","file_duplicate","invalid"].includes(row.kind));
+    const final = catalogFinalSummary();
+
+    root.innerHTML = `
+      <div class="catalog-wizard">
+        <section class="catalog-step catalog-review-summary">
+          <div class="step-title"><span>3</span><div><h3>Revisar comparação</h3><p>Nenhuma alteração foi gravada. Revise principalmente correspondências semelhantes e itens novos.</p></div></div>
+          <div class="import-summary catalog-summary-grid">
+            <article><strong>${counts.exact}</strong><span>Exatos</span></article>
+            <article><strong>${counts.alias}</strong><span>Via de-para</span></article>
+            <article><strong>${counts.similar}</strong><span>Semelhantes</span></article>
+            <article><strong>${counts.new}</strong><span>Novos</span></article>
+            <article><strong>${counts.fileDuplicate}</strong><span>Duplicados no arquivo</span></article>
+            <article><strong>${counts.unresolved}</strong><span>Pendentes</span></article>
+          </div>
+          ${counts.typeWarnings? `<div class="catalog-alert warning"><strong>${counts.typeWarnings} divergência(s) de Tipo em itens já existentes.</strong><span>O Tipo atual do catálogo será preservado, a menos que você adicione uma cópia nova.</span></div>`:""}
+        </section>
+
+        ${reviewRows.length ? `<section class="catalog-review-section">
+          <div class="section-heading"><div><h3>Itens que exigem revisão</h3><p>Escolha a ação e confirme o Tipo quando necessário.</p></div><span class="badge">${reviewRows.length}</span></div>
+          <div class="table-wrap catalog-review-table"><table>
+            <thead><tr><th>Linha</th><th>Arquivo</th><th>Possível correspondência</th><th>Ação</th><th>Tipo final</th><th>Tipo no arquivo</th></tr></thead>
+            <tbody>${reviewRows.map(catalogReviewRowHtml).join("")}</tbody>
+          </table></div>
+        </section>` : ""}
+
+        <details class="catalog-existing-details">
+          <summary>Itens já encontrados no catálogo (${existing.length})</summary>
+          <div class="table-wrap catalog-review-table"><table>
+            <thead><tr><th>Linha</th><th>Arquivo</th><th>Catálogo atual</th><th>Correspondência</th><th>Ação</th><th>Tipo se duplicar</th></tr></thead>
+            <tbody>${existing.map(catalogExistingRowHtml).join("")}</tbody>
+          </table></div>
+        </details>
+
+        ${catalogMissingRowsHtml()}
+
+        <section class="catalog-review-section catalog-final-preview">
+          <div class="section-heading"><div><h3>Prévia final</h3><p>Este é o plano que será enviado ao banco.</p></div></div>
+          <div class="catalog-final-grid">
+            <span><strong>${final.exact}</strong> exatos</span>
+            <span><strong>${final.alias}</strong> de-paras</span>
+            <span><strong>${final.same}</strong> correspondências confirmadas</span>
+            <span><strong>${final.added}</strong> novos</span>
+            <span><strong>${final.duplicates}</strong> duplicados autorizados</span>
+            <span><strong>${final.ignored}</strong> ignorados</span>
+            <span><strong>${final.inactive}</strong> a inativar</span>
+          </div>
+          ${final.errors.length ? `<div class="catalog-alert error"><strong>Existem ${final.errors.length} pendência(s).</strong><ul>${final.errors.slice(0,12).map(error=>`<li>${escapeHtml(error)}</li>`).join("")}</ul>${final.errors.length>12?'<span>Revise as demais linhas pendentes acima.</span>':""}</div>` : '<div class="catalog-alert success"><strong>Plano pronto para confirmação.</strong><span>A aplicação final será transacional: se algo falhar, nada fica parcialmente gravado.</span></div>'}
+          <div class="catalog-review-actions">
+            <button class="ghost-button" data-action="restart-catalog-update">Trocar arquivo</button>
+            <button class="primary-button" data-action="confirm-catalog-update" ${final.errors.length||state.catalogUpdateBusy?"disabled":""}>${state.catalogUpdateBusy?"Aplicando…":"Confirmar atualização"}</button>
+          </div>
+        </section>
+      </div>`;
+
+    bindCatalogReviewEvents();
+  }
+}
+
+function bindCatalogReviewEvents() {
+  document.querySelectorAll(".catalog-update-action").forEach(select=>select.addEventListener("change",()=>{
+    const row=state.catalogUpdateAnalysis[Number(select.dataset.rowIndex)];
+    if (!row) return;
+    row.action=select.value;
+    if (row.kind==="similar" && row.action==="same") {
+      const candidate=row.candidates.find(entry=>entry.item.id===row.selectedItemId);
+      if (!row.importedType && candidate) row.finalType=Number(candidate.item.tipo_id);
+    }
+    recalculateCatalogMissing();
+    renderCatalogUpdateDialog();
+  }));
+
+  document.querySelectorAll(".catalog-update-candidate").forEach(select=>select.addEventListener("change",()=>{
+    const row=state.catalogUpdateAnalysis[Number(select.dataset.rowIndex)];
+    if (!row) return;
+    row.selectedItemId=select.value;
+    const candidate=row.candidates.find(entry=>entry.item.id===select.value);
+    if (!row.importedType && candidate) row.finalType=Number(candidate.item.tipo_id);
+    recalculateCatalogMissing();
+    renderCatalogUpdateDialog();
+  }));
+
+  document.querySelectorAll(".catalog-update-type").forEach(select=>select.addEventListener("change",()=>{
+    const row=state.catalogUpdateAnalysis[Number(select.dataset.rowIndex)];
+    if (!row) return;
+    row.finalType=select.value?Number(select.value):null;
+    renderCatalogUpdateDialog();
+  }));
+
+  document.querySelectorAll(".catalog-missing-action").forEach(select=>select.addEventListener("change",()=>{
+    const item=state.catalogUpdateMissing.find(entry=>entry.id===select.dataset.itemId);
+    if (!item) return;
+    item.action=select.value;
+    renderCatalogUpdateDialog();
+  }));
+
+  document.querySelector('[data-action="restart-catalog-update"]')?.addEventListener("click",()=>{
+    resetCatalogUpdate();
+    renderCatalogUpdateDialog();
+  });
+  document.querySelector('[data-action="confirm-catalog-update"]')?.addEventListener("click",confirmCatalogUpdate);
+}
+
+async function handleCatalogUpdateFile(event) {
+  const file=event.target.files?.[0];
+  if (!file) return;
+  try {
+    const text=await readCatalogCsvFile(file);
+    const parsed=parseCsv(text);
+    state.catalogUpdateFileName=file.name;
+    state.catalogUpdateHeaders=parsed.headers;
+    state.catalogUpdateRows=parsed.rows;
+    state.catalogUpdateMapping=guessCatalogUpdateMapping(parsed.headers);
+    state.catalogUpdateAnalysis=[];
+    state.catalogUpdateMissing=[];
+    state.catalogUpdateStage="mapping";
+    renderCatalogUpdateDialog();
+  } catch (error) {
+    toast(`Não foi possível ler o arquivo: ${error.message}`,"error");
+  }
+}
+
+async function confirmCatalogUpdate() {
+  const final=catalogFinalSummary();
+  if (final.errors.length) {
+    toast("Revise as pendências antes de confirmar.","error");
+    return;
+  }
+  const message = [
+    "Confirmar atualização do Catálogo SIGEM?",
+    "",
+    `Arquivo: ${state.catalogUpdateFileName}`,
+    `Novos itens: ${final.added}`,
+    `Correspondências confirmadas: ${final.same}`,
+    `Duplicados autorizados: ${final.duplicates}`,
+    `Itens a inativar: ${final.inactive}`,
+    "",
+    "A operação será gravada no histórico."
+  ].join("\\n");
+  if (!window.confirm(message)) return;
+
+  state.catalogUpdateBusy=true;
+  renderCatalogUpdateDialog();
+  try {
+    const result=await applyCatalogUpdate({
+      nome_arquivo:state.catalogUpdateFileName,
+      catalogo_completo:state.catalogUpdateComplete,
+      quantidade_arquivo:state.catalogUpdateRows.length,
+      acoes:final.actions
+    });
+    state.catalogUpdateLastResult=result;
+    state.catalogAdminItems=await listCatalogAdmin();
+    state.catalogAdminLoaded=true;
+    await ensureCatalogUpdateContext(true);
+    state.assets=await listAssets();
+    state.recentHistory=[];
+    document.querySelector("#catalogUpdateDialog").close();
+    toast("Catálogo SIGEM atualizado com sucesso.","success");
+    renderCatalog();
+  } catch (error) {
+    toast(`Atualização não aplicada: ${error.message}`,"error");
+    state.catalogUpdateBusy=false;
+    renderCatalogUpdateDialog();
+  }
+}
+
+async function openCatalogUpdateDetail(id) {
+  try {
+    state.catalogUpdateDetail=await getCatalogUpdateDetail(id);
+    renderCatalog();
+  } catch (error) {
+    toast(`Não foi possível abrir os detalhes: ${error.message}`,"error");
+  }
+}
+
+function catalogUpdateHistoryHtml() {
+  const updates=state.catalogUpdates||[];
+  if (!updates.length) return '<div class="empty">Nenhuma atualização de catálogo registrada ainda.</div>';
+  return `<div class="table-wrap"><table class="catalog-history-table">
+    <thead><tr><th>Data</th><th>Arquivo</th><th>Usuário</th><th>Itens</th><th>Novos</th><th>De-para</th><th>Inativados</th><th></th></tr></thead>
+    <tbody>${updates.map(update=>`<tr>
+      <td>${escapeHtml(historyDateTime(update.criado_em))}</td>
+      <td><strong>${escapeHtml(update.nome_arquivo)}</strong></td>
+      <td>${escapeHtml(update.usuario?.nome||"Sistema")}</td>
+      <td>${Number(update.quantidade_arquivo||0)}</td>
+      <td>${Number(update.novos_itens||0)}</td>
+      <td>${Number(update.correspondencias_confirmadas||0)+Number(update.correspondencias_alias||0)}</td>
+      <td>${Number(update.inativados||0)}</td>
+      <td><button class="ghost-button compact-button" data-catalog-update-detail="${update.id}">Detalhes</button></td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function catalogUpdateDetailHtml() {
+  const detail=state.catalogUpdateDetail;
+  if (!detail?.atualizacao) return "";
+  const update=detail.atualizacao;
+  const items=detail.itens||[];
+  const counts=items.reduce((acc,item)=>{
+    acc[item.acao]=(acc[item.acao]||0)+1;
+    return acc;
+  },{});
+  return `<section class="panel catalog-update-detail-panel">
+    <div class="panel-header">
+      <div><h2>Detalhes da atualização</h2><small>${escapeHtml(update.nome_arquivo)} · ${escapeHtml(historyDateTime(update.criado_em))}</small></div>
+      <button class="ghost-button compact-button" data-action="close-catalog-detail">Fechar</button>
+    </div>
+    <div class="catalog-detail-summary">
+      ${Object.entries(counts).map(([key,value])=>`<span><strong>${value}</strong> ${escapeHtml(key.replaceAll("_"," ").toLowerCase())}</span>`).join("")}
+    </div>
+    <div class="table-wrap catalog-detail-items"><table>
+      <thead><tr><th>Ação</th><th>Nome no arquivo</th><th>Item final</th><th>Tipo</th><th>Similaridade</th></tr></thead>
+      <tbody>${items.map(item=>`<tr>
+        <td>${escapeHtml(item.acao)}</td>
+        <td>${escapeHtml(item.nome_arquivo)}</td>
+        <td>${escapeHtml(item.item_catalogo_nome||"—")}</td>
+        <td>${escapeHtml(item.tipo_id?typeName(item.tipo_id):"—")}</td>
+        <td>${item.similaridade!=null?`${Math.round(Number(item.similaridade)*100)}%`:"—"}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>
+  </section>`;
+}
+
 async function renderCatalog() {
   const root = document.querySelector("#viewRoot");
   if (!canDeleteAssets()) {
@@ -1167,6 +1994,14 @@ async function renderCatalog() {
     }
   }
 
+  if (!state.catalogUpdateContextLoaded) {
+    try {
+      await ensureCatalogUpdateContext();
+    } catch (error) {
+      toast(`Não foi possível carregar o histórico de atualizações: ${error.message}`, "error");
+    }
+  }
+
   const q = normalizeText(state.catalogAdminQuery);
   const typeFilter = String(state.catalogAdminType || "");
   const items = state.catalogAdminItems.filter(item => {
@@ -1182,7 +2017,8 @@ async function renderCatalog() {
 
   root.innerHTML = `
     <div class="page-header">
-      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação dos itens utilizados como referência patrimonial.</p></div>
+      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação e mantenha a lista oficial sincronizada.</p></div>
+      <button class="primary-button" data-action="update-catalog">Atualizar catálogo</button>
     </div>
 
     <div class="cards cards-three catalog-summary-cards">
@@ -1232,14 +2068,20 @@ async function renderCatalog() {
       ${items.length ? "" : '<div class="empty">Nenhum item SIGEM corresponde aos filtros.</div>'}
     </section>
 
-    <section class="panel catalog-update-preview">
+    <section class="panel catalog-update-history-panel">
       <div class="panel-header">
-        <div><h2>Atualização do catálogo</h2><small>A importação inteligente, de-para, aliases, novos itens e histórico de atualizações entram na versão 1.5.8.</small></div>
-        <span class="badge">Próxima etapa</span>
+        <div><h2>Histórico de atualizações</h2><small>Arquivos processados, inclusões, de-paras e inativações ficam registrados aqui.</small></div>
+        <span class="badge">${state.catalogUpdates.length} registro(s)</span>
       </div>
+      ${catalogUpdateHistoryHtml()}
     </section>
+
+    ${catalogUpdateDetailHtml()}
   `;
 
+  document.querySelector('[data-action="update-catalog"]')?.addEventListener("click", openCatalogUpdate);
+  document.querySelectorAll("[data-catalog-update-detail]").forEach(button=>button.addEventListener("click",()=>openCatalogUpdateDetail(button.dataset.catalogUpdateDetail)));
+  document.querySelector('[data-action="close-catalog-detail"]')?.addEventListener("click",()=>{ state.catalogUpdateDetail=null; renderCatalog(); });
   document.querySelector("#catalogAdminSearch")?.addEventListener("input", debounce(event => {
     state.catalogAdminQuery = event.target.value;
     renderCatalog();
@@ -1588,6 +2430,7 @@ function bindStaticActions() {
   document.querySelector("#closeCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
   document.querySelector("#cancelCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
   document.querySelector("#centerForm").addEventListener("submit", submitCenterForm);
+  document.querySelector("#closeCatalogUpdateButton").addEventListener("click", () => document.querySelector("#catalogUpdateDialog").close());
   document.querySelectorAll("[data-mobility-value]").forEach(btn => btn.addEventListener("click", () => {
     state.formMobility = btn.dataset.mobilityValue;
     if (state.formMobility === "FIXO") state.formAllowedCenters.clear();
