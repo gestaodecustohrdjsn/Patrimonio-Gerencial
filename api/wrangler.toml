@@ -1,0 +1,8 @@
+name = "patrimonio-api"
+main = "src/index.js"
+compatibility_date = "2026-08-26"
+
+[vars]
+ALLOWED_ORIGIN = "https://gestaodecustohrdjsn.github.io"
+SESSION_HOURS = "12"
+PASSWORD_ITERATIONS = "310000"
