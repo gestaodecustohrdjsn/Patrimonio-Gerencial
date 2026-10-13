@@ -184,8 +184,8 @@ export default {
           const ref=await sql`select tipo_id from descricoes_padrao where id=${b.descricao_padrao_id}::uuid and ativo=true limit 1`;
           if (!ref.length) return responseJson({ok:false,error:"Item SIGEM inválido ou inativo."},400,env,request);
           const tipoSigem=Number(ref[0].tipo_id);
-          if (tipoSigem && Number(b.tipo_id)!==tipoSigem && b.confirmar_tipo_divergente!==true) {
-            return responseJson({ok:false,error:`O Tipo selecionado diverge do catálogo SIGEM. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
+          if (tipoSigem && Number(b.tipo_id)!==tipoSigem) {
+            return responseJson({ok:false,error:`No cadastro, o Tipo deve seguir o catálogo SIGEM. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
           }
         }
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
@@ -223,7 +223,7 @@ export default {
         }
 
         if (next.descricao_padrao_id) {
-          const ref=await sql`select tipo_id from descricoes_padrao where id=${next.descricao_padrao_id}::uuid and ativo=true limit 1`;
+          const ref=await sql`select tipo_id from descricoes_padrao where id=${next.descricao_padrao_id}::uuid limit 1`;
           if (!ref.length) return responseJson({ok:false,error:"Item SIGEM inválido ou inativo."},400,env,request);
           const tipoSigem=Number(ref[0].tipo_id);
           if (tipoSigem && Number(next.tipo_id)!==tipoSigem && b.confirmar_tipo_divergente!==true) {
