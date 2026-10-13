@@ -239,6 +239,12 @@ function render() {
 
 function historyActionLabel(event) {
   const key = `${event.tabela || ""}:${event.operacao || ""}`;
+  if (key === "centros_custo:EDICAO_CADASTRAL") {
+    const before = String(event.detalhes?.ativo_antes || "");
+    const after = String(event.detalhes?.ativo_depois || "");
+    if (before === "true" && after === "false") return "Inativou centro de custo";
+    if (before === "false" && after === "true") return "Ativou centro de custo";
+  }
   const labels = {
     "patrimonios:CADASTRO": "Cadastrou patrimônio",
     "patrimonios:EDICAO_CADASTRAL": "Editou patrimônio",
