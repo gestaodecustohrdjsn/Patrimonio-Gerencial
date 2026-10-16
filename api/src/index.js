@@ -473,7 +473,7 @@ export default {
         }
 
         const rows=await sql`
-          select aplicar_atualizacao_catalogo_sigem_api(
+          select aplicar_atualizacao_catalogo_sigem_v2_api(
             ${nomeArquivo},
             ${catalogoCompleto},
             ${quantidadeArquivo},
@@ -514,8 +514,8 @@ export default {
           if(valor===null) fonte=null;
           const duplicate=await sql`select id from descricoes_padrao where id<>${catalogMatch[1]}::uuid and lower(btrim(descricao))=lower(btrim(${descricao})) limit 1`;
           if(duplicate.length) return responseJson({ok:false,error:"Já existe outro item com esta descrição no Catálogo."},409,env,request);
-        } else if(has("descricao")||has("valor_padrao")||has("fonte_valor")) {
-          return responseJson({ok:false,error:"Descrição e valor de itens SIGEM são alterados somente pela atualização da base SIGEM."},409,env,request);
+        } else if(has("descricao")||has("valor_padrao")||has("fonte_valor")||has("ativo")) {
+          return responseJson({ok:false,error:"Descrição, valor e status de itens SIGEM são alterados somente pela atualização da base SIGEM."},409,env,request);
         }
 
         const tipoAnterior=Number(current.tipo_id);
