@@ -311,6 +311,9 @@ function historyActionLabel(event) {
     "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
     "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
     "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação do Catálogo",
+    "descricoes_padrao:ITEM_CATALOGO_CADASTRADO": "Adicionou item ao Catálogo",
+    "descricoes_padrao:ITEM_CATALOGO_EDITADO": "Editou item do Catálogo",
+    "descricoes_padrao:ITEM_CATALOGO_EXCLUIDO": "Excluiu item do Catálogo",
     "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
@@ -325,7 +328,7 @@ function historyEntityLabel(event) {
   if (entity.tipo === "centro") {
     return [entity.codigo, entity.nome].filter(Boolean).join(" · ") || "Centro de custo";
   }
-  if (entity.tipo === "sigem") return entity.nome || "Item do Catálogo";
+  if (entity.tipo === "catalog_item") return entity.nome || "Item do Catálogo";
   if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
   return "";
 }
