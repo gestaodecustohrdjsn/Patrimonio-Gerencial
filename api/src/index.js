@@ -383,10 +383,10 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo/atualizacoes/contexto") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o Catálogo SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o base SIGEM."},403,env,request);
         const aliases=await sql`
           select a.id,a.alias_original,a.alias_normalizado,a.descricao_padrao_id,a.criado_em,
-            d.descricao as item_catalogo_nome,d.tipo_id,d.ativo
+            d.descricao as item_catalogo_nome,d.tipo_id,d.ativo,d.origem_catalogo as origem
           from catalogo_sigem_aliases a
           join descricoes_padrao d on d.id=a.descricao_padrao_id
           order by a.alias_original
@@ -407,7 +407,7 @@ export default {
 
       const catalogUpdateDetail=url.pathname.match(/^\/api\/catalogo\/atualizacoes\/([0-9a-f-]{36})$/i);
       if(catalogUpdateDetail && request.method === "GET") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações do Catálogo SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações do base SIGEM."},403,env,request);
         const atualizacoes=await sql`
           select a.*,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
@@ -427,7 +427,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/catalogo/atualizacoes/aplicar") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o Catálogo SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o base SIGEM."},403,env,request);
         const b=await bodyJson(request);
         const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
         const quantidadeArquivo=Number(b.quantidade_arquivo||0);
@@ -461,6 +461,15 @@ export default {
             alias_anterior_normalizado:acao==="MESMO_ITEM"&&oldName?normalizeCatalogText(oldName):null
           };
         });
+
+        const targetIds=[...new Set(actions.map(a=>a.item_id).filter(Boolean))];
+        if(targetIds.length) {
+          const refs=await sql`select id,origem_catalogo from descricoes_padrao where id=any(${targetIds}::uuid[])`;
+          if(refs.length!==targetIds.length) return responseJson({ok:false,error:"O plano referencia item inexistente no Catálogo."},409,env,request);
+          if(refs.some(row=>row.origem_catalogo!=="SIGEM")) {
+            return responseJson({ok:false,error:"A atualização da base SIGEM não pode alterar itens de Catálogo Próprio."},409,env,request);
+          }
+        }
 
         const rows=await sql`
           select aplicar_atualizacao_catalogo_sigem_api(
