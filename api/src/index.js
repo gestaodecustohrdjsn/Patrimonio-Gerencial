@@ -589,8 +589,7 @@ export default {
           from patrimonios p join centros_custo c on c.id=p.centro_custo_id left join descricoes_padrao d on d.id=p.descricao_padrao_id order by p.criado_em desc limit 5000`;
         return responseJson({ok:true,patrimonios:rows},200,env,request);
       }
-      if (request.method === "POST" && url.pathname === "/api/patrimonios") {
-        const b=await bodyJson(request);
+      if (request.method === "POST" && url.pathname === "/api/patrimonios") {\n        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para cadastrar patrimônios."},403,env,request);\n        const b=await bodyJson(request);
         if(!b.tipo_id||!String(b.descricao||"").trim()||!b.tipo_aquisicao||!b.centro_custo_id) return responseJson({ok:false,error:"Tipo, descrição, aquisição e centro de custo são obrigatórios."},400,env,request);
         if (b.descricao_padrao_id) {
           const ref=await sql`select tipo_id from descricoes_padrao where id=${b.descricao_padrao_id}::uuid and ativo=true limit 1`;
