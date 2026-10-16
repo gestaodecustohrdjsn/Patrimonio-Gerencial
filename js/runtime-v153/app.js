@@ -1627,6 +1627,7 @@ function buildCatalogUpdatePlan() {
           acao:row.kind==="alias"?"ALIAS":"EXATO",
           nome:row.name,
           item_id:row.matchedItem?.id,
+          valor_padrao:row.value,
           reativar:Boolean(row.matchedItem && !row.matchedItem.ativo)
         });
       }
