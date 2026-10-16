@@ -86,7 +86,7 @@ function shell() {
         <button class="nav-item" data-view="patrimonios">Patrimônios</button>
         <button class="nav-item" data-view="centros">Centros de custo</button>
         <button class="nav-item" data-view="catalogo">Catálogo</button>
-        <button class="nav-item" data-view="importacao">Importação</button>
+        ${canEditAssets() ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
         <button class="nav-item" data-view="configuracoes">Configurações</button>
@@ -94,7 +94,7 @@ function shell() {
       <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
     </aside>
     <main class="main">
-      <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div><button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button></header>
+      <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div>${canEditAssets() ? '<button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>' : ""}</header>
       <section id="viewRoot" class="content"><div class="loading">Carregando dados…</div></section>
     </main>
   </div>
@@ -423,7 +423,7 @@ function renderDashboard() {
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
   const visibilityLabel = state.showDashboardValue ? "Ocultar valor" : "Mostrar valor";
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div><button class="primary-button" data-action="new">+ Cadastrar patrimônio</button></div>
+    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div>${canEditAssets() ? '<button class="primary-button" data-action="new">+ Cadastrar patrimônio</button>' : ""}</div>
     <div class="cards cards-three">
       <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${visibleAssets.length}</div></article>
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
@@ -709,7 +709,7 @@ function renderAssets() {
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header">
       <div><h1>${state.showRemoved ? "Patrimônios removidos" : "Patrimônios"}</h1><p>Painel operacional para consulta e gestão rápida do acervo.</p></div>
-      <div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver ativos" : "Ver removidos"}</button><button class="primary-button" data-action="new">+ Novo patrimônio</button></div>
+      <div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver ativos" : "Ver removidos"}</button>${canEditAssets() ? '<button class="primary-button" data-action="new">+ Novo patrimônio</button>' : ""}</div>
     </div>
     ${filterPanelHtml("assetFilters", "Pesquisa e filtros")}
     <section class="panel">
@@ -2497,6 +2497,10 @@ function mappingOptions(selected) {
 }
 
 function renderImport() {
+  if (!canEditAssets()) {
+    document.querySelector("#viewRoot").innerHTML = '<div class="page-header"><div><h1>Importação</h1><p>Importação patrimonial em lote.</p></div></div><div class="placeholder">Seu perfil possui acesso somente para consulta.</div>';
+    return;
+  }
   const hasFile = state.importRows.length > 0;
   const counts = state.importValidated.reduce((a, r) => { a[r.level] = (a[r.level] || 0) + 1; return a; }, {});
   document.querySelector("#viewRoot").innerHTML = `
@@ -2562,7 +2566,7 @@ function placeholder(title, description) {
 
 function bindStaticActions() {
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.currentView = button.dataset.view; document.querySelector("#sidebar").classList.remove("open"); render(); }));
-  document.querySelector("#quickAddButton").addEventListener("click", openNewAsset);
+  document.querySelector("#quickAddButton")?.addEventListener("click", openNewAsset);
   document.querySelector("#menuButton").addEventListener("click", () => document.querySelector("#sidebar").classList.toggle("open"));
   document.querySelector("#logoutButton").addEventListener("click", async () => { try { await signOut(); } catch (error) { toast(error.message, "error"); } });
   document.querySelector("#closeDialogButton").addEventListener("click", closeDialog);
