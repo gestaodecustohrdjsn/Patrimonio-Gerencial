@@ -15,6 +15,7 @@ SET origem_catalogo=coalesce(origem_catalogo,'SIGEM'),
 
 ALTER TABLE descricoes_padrao ALTER COLUMN origem_catalogo SET DEFAULT 'SIGEM';
 ALTER TABLE descricoes_padrao ALTER COLUMN origem_catalogo SET NOT NULL;
+ALTER TABLE descricoes_padrao ALTER COLUMN fonte_valor SET DEFAULT 'SIGEM';
 
 DO $$
 BEGIN
