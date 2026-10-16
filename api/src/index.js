@@ -69,7 +69,7 @@ async function hydrateAsset(sql, id) {
       p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
       exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
       json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
-      case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id) end as descricoes_padrao,
+      case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor) end as descricoes_padrao,
       coalesce((
         select json_agg(json_build_object('id',cp.id,'codigo',cp.codigo,'nome',cp.nome) order by cp.nome)
         from patrimonio_centros_permitidos pcp
@@ -97,7 +97,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.3.5",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.4.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -108,7 +108,7 @@ export default {
             p.criado_em,p.atualizado_em,
             exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
             json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
-            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id) end as descricoes_padrao,
+            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor) end as descricoes_padrao,
             coalesce((select json_agg(json_build_object('id',cp.id,'nome',cp.nome) order by cp.nome)
               from patrimonio_centros_permitidos pcp join centros_custo cp on cp.id=pcp.centro_custo_id
               where pcp.patrimonio_id=p.id),'[]'::json) as centros_permitidos
@@ -188,8 +188,9 @@ export default {
                 'nome',coalesce(cc.nome,h.dados_novos->>'nome',h.dados_anteriores->>'nome')
               )
               when h.tabela='descricoes_padrao' then jsonb_build_object(
-                'tipo','sigem',
-                'nome',coalesce(dp.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao')
+                'tipo','catalog_item',
+                'nome',coalesce(dp.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao'),
+                'origem',coalesce(dp.origem_catalogo,h.dados_novos->>'origem',h.dados_anteriores->>'origem')
               )
               when h.tabela='catalogo_sigem_atualizacoes' then jsonb_build_object(
                 'tipo','catalog_update',
@@ -343,9 +344,9 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo/admin") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem gerenciar a classificação SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem gerenciar o Catálogo."},403,env,request);
         const rows=await sql`
-          select d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,
+          select d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,d.origem_catalogo as origem,d.fonte_valor,d.atualizado_em,
             (select count(*)::int from patrimonios p where p.descricao_padrao_id=d.id and p.removido=false) as patrimonios_vinculados
           from descricoes_padrao d
           order by d.descricao
@@ -353,11 +354,40 @@ export default {
         return responseJson({ok:true,itens:rows},200,env,request);
       }
 
+      if (request.method === "POST" && url.pathname === "/api/catalogo") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem adicionar itens ao Catálogo."},403,env,request);
+        const b=await bodyJson(request);
+        const descricao=String(b.descricao||"").trim();
+        const tipoId=Number(b.tipo_id);
+        const valorRaw=b.valor_padrao;
+        const valor=valorRaw===null||valorRaw===undefined||valorRaw===""?null:Number(valorRaw);
+        const fonte=String(b.fonte_valor||"COTACAO_PROPRIA").trim().toUpperCase();
+        if(!descricao) return responseJson({ok:false,error:"Descrição do item é obrigatória."},400,env,request);
+        if(descricao.length>500) return responseJson({ok:false,error:"Descrição do item é grande demais."},400,env,request);
+        if(![1,2,3].includes(tipoId)) return responseJson({ok:false,error:"Tipo do item é obrigatório."},400,env,request);
+        if(valor!==null&&(!Number.isFinite(valor)||valor<0)) return responseJson({ok:false,error:"Valor de referência inválido."},400,env,request);
+        if(!["COTACAO_PROPRIA","NOTA_FISCAL","OUTRA"].includes(fonte)) return responseJson({ok:false,error:"Fonte do valor inválida para item próprio."},400,env,request);
+        const duplicate=await sql`select id,descricao,origem_catalogo from descricoes_padrao where lower(btrim(descricao))=lower(btrim(${descricao})) limit 1`;
+        if(duplicate.length) return responseJson({ok:false,error:"Já existe um item com esta descrição no Catálogo.",existente:duplicate[0]},409,env,request);
+        const rows=await sql`
+          insert into descricoes_padrao(descricao,valor_padrao,tipo_id,ativo,origem_catalogo,fonte_valor,atualizado_em)
+          values(${descricao},${valor},${tipoId},true,'PROPRIO',${valor===null?null:fonte},now())
+          returning id,descricao,valor_padrao,tipo_id,ativo,origem_catalogo as origem,fonte_valor,atualizado_em
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
+          values('descricoes_padrao',${rows[0].id}::uuid,'ITEM_CATALOGO_CADASTRADO',
+            jsonb_build_object('descricao',${descricao}::text,'tipo_id',${tipoId}::integer,'valor_padrao',${valor}::numeric,'origem','PROPRIO','fonte_valor',${valor===null?null:fonte}::text),
+            ${user.id}::uuid)
+        `;
+        return responseJson({ok:true,item:rows[0]},201,env,request);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/catalogo/atualizacoes/contexto") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o Catálogo SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
         const aliases=await sql`
           select a.id,a.alias_original,a.alias_normalizado,a.descricao_padrao_id,a.criado_em,
-            d.descricao as item_catalogo_nome,d.tipo_id,d.ativo
+            d.descricao as item_catalogo_nome,d.tipo_id,d.ativo,d.origem_catalogo as origem
           from catalogo_sigem_aliases a
           join descricoes_padrao d on d.id=a.descricao_padrao_id
           order by a.alias_original
@@ -378,7 +408,7 @@ export default {
 
       const catalogUpdateDetail=url.pathname.match(/^\/api\/catalogo\/atualizacoes\/([0-9a-f-]{36})$/i);
       if(catalogUpdateDetail && request.method === "GET") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações do Catálogo SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações da base SIGEM."},403,env,request);
         const atualizacoes=await sql`
           select a.*,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
@@ -398,7 +428,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/catalogo/atualizacoes/aplicar") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o Catálogo SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
         const b=await bodyJson(request);
         const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
         const quantidadeArquivo=Number(b.quantidade_arquivo||0);
@@ -433,8 +463,17 @@ export default {
           };
         });
 
+        const targetIds=[...new Set(actions.map(a=>a.item_id).filter(Boolean))];
+        if(targetIds.length) {
+          const refs=await sql`select id,origem_catalogo from descricoes_padrao where id=any(${targetIds}::uuid[])`;
+          if(refs.length!==targetIds.length) return responseJson({ok:false,error:"O plano referencia item inexistente no Catálogo."},409,env,request);
+          if(refs.some(row=>row.origem_catalogo!=="SIGEM")) {
+            return responseJson({ok:false,error:"A atualização da base SIGEM não pode alterar itens de Catálogo Próprio."},409,env,request);
+          }
+        }
+
         const rows=await sql`
-          select aplicar_atualizacao_catalogo_sigem_api(
+          select aplicar_atualizacao_catalogo_sigem_v2_api(
             ${nomeArquivo},
             ${catalogoCompleto},
             ${quantidadeArquivo},
@@ -447,71 +486,104 @@ export default {
 
       const catalogMatch=url.pathname.match(/^\/api\/catalogo\/([0-9a-f-]{36})$/i);
       if(catalogMatch && request.method === "PATCH") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem alterar a classificação SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem editar itens do Catálogo."},403,env,request);
         const b=await bodyJson(request);
-        const novoTipo=Number(b.tipo_id);
-        if(![1,2,3].includes(novoTipo)) return responseJson({ok:false,error:"Tipo SIGEM inválido."},400,env,request);
-        const currentRows=await sql`select id,descricao,valor_padrao,tipo_id,ativo from descricoes_padrao where id=${catalogMatch[1]}::uuid limit 1`;
+        const currentRows=await sql`select id,descricao,valor_padrao,tipo_id,ativo,origem_catalogo,fonte_valor from descricoes_padrao where id=${catalogMatch[1]}::uuid limit 1`;
         const current=currentRows[0];
-        if(!current) return responseJson({ok:false,error:"Item SIGEM não encontrado."},404,env,request);
-        const tipoAnterior=current.tipo_id==null?null:Number(current.tipo_id);
-        if(tipoAnterior===novoTipo) return responseJson({ok:true,item:current,patrimonios_sincronizados:0},200,env,request);
+        if(!current) return responseJson({ok:false,error:"Item do Catálogo não encontrado."},404,env,request);
+        const has=(key)=>Object.prototype.hasOwnProperty.call(b,key);
+        const novoTipo=has("tipo_id")?Number(b.tipo_id):Number(current.tipo_id);
+        const ativo=has("ativo")?Boolean(b.ativo):Boolean(current.ativo);
+        if(![1,2,3].includes(novoTipo)) return responseJson({ok:false,error:"Tipo do Catálogo inválido."},400,env,request);
 
+        let descricao=current.descricao;
+        let valor=current.valor_padrao;
+        let fonte=current.fonte_valor;
+
+        if(current.origem_catalogo==="PROPRIO") {
+          if(has("descricao")) descricao=String(b.descricao||"").trim();
+          if(!descricao) return responseJson({ok:false,error:"Descrição do item é obrigatória."},400,env,request);
+          if(has("valor_padrao")) {
+            valor=b.valor_padrao===null||b.valor_padrao===""?null:Number(b.valor_padrao);
+            if(valor!==null&&(!Number.isFinite(valor)||valor<0)) return responseJson({ok:false,error:"Valor de referência inválido."},400,env,request);
+          }
+          if(has("fonte_valor")) {
+            fonte=String(b.fonte_valor||"").trim().toUpperCase()||null;
+            if(fonte&&!["COTACAO_PROPRIA","NOTA_FISCAL","OUTRA"].includes(fonte)) return responseJson({ok:false,error:"Fonte do valor inválida."},400,env,request);
+          }
+          if(valor===null) fonte=null;
+          const duplicate=await sql`select id from descricoes_padrao where id<>${catalogMatch[1]}::uuid and lower(btrim(descricao))=lower(btrim(${descricao})) limit 1`;
+          if(duplicate.length) return responseJson({ok:false,error:"Já existe outro item com esta descrição no Catálogo."},409,env,request);
+        } else if(has("descricao")||has("valor_padrao")||has("fonte_valor")||has("ativo")) {
+          return responseJson({ok:false,error:"Descrição, valor e status de itens SIGEM são alterados somente pela atualização da base SIGEM."},409,env,request);
+        }
+
+        const tipoAnterior=Number(current.tipo_id);
         const result=await sql`
-          with atual as (
-            select id,tipo_id
-            from descricoes_padrao
+          with catalogo as (
+            update descricoes_padrao
+            set descricao=${descricao},tipo_id=${novoTipo},valor_padrao=${valor},ativo=${ativo},fonte_valor=${fonte},atualizado_em=now()
             where id=${catalogMatch[1]}::uuid
-            for update
-          ),
-          catalogo as (
-            update descricoes_padrao d
-            set tipo_id=${novoTipo}
-            from atual a
-            where d.id=a.id
-            returning d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,a.tipo_id as tipo_anterior
+            returning id,descricao,valor_padrao,tipo_id,ativo,origem_catalogo as origem,fonte_valor,atualizado_em
           ),
           sincronizados as (
-            update patrimonios p
+            update patrimonios
             set tipo_id=${novoTipo},atualizado_por=${user.id}::uuid
-            from catalogo c
-            where p.descricao_padrao_id=c.id
-              and p.tipo_id is not distinct from c.tipo_anterior
-            returning p.id
+            where descricao_padrao_id=${catalogMatch[1]}::uuid
+              and tipo_id is not distinct from ${tipoAnterior}
+            returning id
           ),
           log_catalogo as (
             insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
-            select
-              'descricoes_padrao',c.id,'CLASSIFICACAO_SIGEM_ALTERADA',
-              jsonb_build_object('tipo_id',c.tipo_anterior),
-              jsonb_build_object('tipo_id',c.tipo_id),
+            values(
+              'descricoes_padrao',${catalogMatch[1]}::uuid,'ITEM_CATALOGO_EDITADO',
+              jsonb_build_object('descricao',${current.descricao}::text,'tipo_id',${tipoAnterior}::integer,'valor_padrao',${current.valor_padrao}::numeric,'ativo',${Boolean(current.ativo)}::boolean,'origem',${current.origem_catalogo}::text,'fonte_valor',${current.fonte_valor}::text),
+              jsonb_build_object('descricao',${descricao}::text,'tipo_id',${novoTipo}::integer,'valor_padrao',${valor}::numeric,'ativo',${ativo}::boolean,'origem',${current.origem_catalogo}::text,'fonte_valor',${fonte}::text),
               ${user.id}::uuid
-            from catalogo c
+            )
             returning id
           )
-          select
-            c.id,c.descricao,c.valor_padrao,c.tipo_id,c.ativo,
-            (select count(*)::int from sincronizados) as patrimonios_sincronizados
-          from catalogo c
+          select c.*,(select count(*)::int from sincronizados) as patrimonios_sincronizados from catalogo c
         `;
-        return responseJson({
-          ok:true,
-          item:result[0],
-          patrimonios_sincronizados:Number(result[0]?.patrimonios_sincronizados||0)
-        },200,env,request);
+        return responseJson({ok:true,item:result[0],patrimonios_sincronizados:Number(result[0]?.patrimonios_sincronizados||0)},200,env,request);
+      }
+
+      if(catalogMatch && request.method === "DELETE") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem excluir itens próprios do Catálogo."},403,env,request);
+        const b=await bodyJson(request);
+        const rows=await sql`select id,descricao,origem_catalogo,ativo from descricoes_padrao where id=${catalogMatch[1]}::uuid limit 1`;
+        const current=rows[0];
+        if(!current) return responseJson({ok:false,error:"Item do Catálogo não encontrado."},404,env,request);
+        if(current.origem_catalogo!=="PROPRIO") return responseJson({ok:false,error:"Itens de origem SIGEM não podem ser excluídos manualmente. Inative-os somente pelo fluxo da base SIGEM."},409,env,request);
+        if(String(b.confirmation||"").trim()!==current.descricao) return responseJson({ok:false,error:"Confirmação inválida. Digite exatamente a descrição do item."},400,env,request);
+        const refs=await sql`
+          select
+            (select count(*)::int from patrimonios where descricao_padrao_id=${catalogMatch[1]}::uuid) as patrimonios,
+            (select count(*)::int from catalogo_sigem_aliases where descricao_padrao_id=${catalogMatch[1]}::uuid) as aliases,
+            (select count(*)::int from catalogo_sigem_atualizacao_itens where item_catalogo_id=${catalogMatch[1]}::uuid) as atualizacoes
+        `;
+        const used=Number(refs[0].patrimonios||0)+Number(refs[0].aliases||0)+Number(refs[0].atualizacoes||0);
+        if(used>0) return responseJson({ok:false,error:"Este item já possui vínculos ou histórico. Inative-o em vez de excluir.",referencias:refs[0]},409,env,request);
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,usuario_id)
+          values('descricoes_padrao',${catalogMatch[1]}::uuid,'ITEM_CATALOGO_EXCLUIDO',
+            jsonb_build_object('descricao',${current.descricao}::text,'origem','PROPRIO'),${user.id}::uuid)
+        `;
+        await sql`delete from descricoes_padrao where id=${catalogMatch[1]}::uuid`;
+        return responseJson({ok:true},200,env,request);
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo") {
         const q=(url.searchParams.get("q")||"").trim(); const limit=Math.min(50,Math.max(1,Number(url.searchParams.get("limit")||20)));
         if(q.length<2) return responseJson({ok:true,itens:[]},200,env,request);
-        const rows=await sql`select id,descricao,valor_padrao,tipo_id from descricoes_padrao where ativo=true and descricao ilike ${'%'+q+'%'} order by descricao limit ${limit}`;
+        const rows=await sql`select id,descricao,valor_padrao,tipo_id,origem_catalogo as origem,fonte_valor from descricoes_padrao where ativo=true and descricao ilike ${'%'+q+'%'} order by descricao limit ${limit}`;
         return responseJson({ok:true,itens:rows},200,env,request);
       }
       if (request.method === "GET" && url.pathname === "/api/patrimonios") {
         const rows=await sql`select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
           exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
           json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) centros_custo,
-          case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id) end descricoes_padrao,
+          case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor) end descricoes_padrao,
           coalesce((select json_agg(json_build_object('id',cp.id,'codigo',cp.codigo,'nome',cp.nome) order by cp.nome)
             from patrimonio_centros_permitidos pcp join centros_custo cp on cp.id=pcp.centro_custo_id
             where pcp.patrimonio_id=p.id),'[]'::json) centros_permitidos
@@ -519,14 +591,15 @@ export default {
         return responseJson({ok:true,patrimonios:rows},200,env,request);
       }
       if (request.method === "POST" && url.pathname === "/api/patrimonios") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para cadastrar patrimônios."},403,env,request);
         const b=await bodyJson(request);
         if(!b.tipo_id||!String(b.descricao||"").trim()||!b.tipo_aquisicao||!b.centro_custo_id) return responseJson({ok:false,error:"Tipo, descrição, aquisição e centro de custo são obrigatórios."},400,env,request);
         if (b.descricao_padrao_id) {
           const ref=await sql`select tipo_id from descricoes_padrao where id=${b.descricao_padrao_id}::uuid and ativo=true limit 1`;
-          if (!ref.length) return responseJson({ok:false,error:"Item SIGEM inválido ou inativo."},400,env,request);
+          if (!ref.length) return responseJson({ok:false,error:"Item do Catálogo inválido ou inativo."},400,env,request);
           const tipoSigem=Number(ref[0].tipo_id);
           if (tipoSigem && Number(b.tipo_id)!==tipoSigem) {
-            return responseJson({ok:false,error:`No cadastro, o Tipo deve seguir o catálogo SIGEM. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
+            return responseJson({ok:false,error:`No cadastro, o Tipo deve seguir o item do Catálogo. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
           }
         }
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
@@ -565,10 +638,10 @@ export default {
 
         if (next.descricao_padrao_id) {
           const ref=await sql`select tipo_id from descricoes_padrao where id=${next.descricao_padrao_id}::uuid limit 1`;
-          if (!ref.length) return responseJson({ok:false,error:"Item SIGEM inválido ou inativo."},400,env,request);
+          if (!ref.length) return responseJson({ok:false,error:"Item do Catálogo inválido ou inativo."},400,env,request);
           const tipoSigem=Number(ref[0].tipo_id);
           if (tipoSigem && Number(next.tipo_id)!==tipoSigem && b.confirmar_tipo_divergente!==true) {
-            return responseJson({ok:false,error:`O Tipo selecionado diverge do catálogo SIGEM. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
+            return responseJson({ok:false,error:`O Tipo selecionado diverge do item do Catálogo. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
           }
         }
 

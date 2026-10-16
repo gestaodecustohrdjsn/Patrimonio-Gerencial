@@ -1,4 +1,4 @@
-# Patrimônio+ API 3.3.5 — portátil
+# Patrimônio+ API 3.4.0 — portátil
 
 Esta API não depende de Supabase Auth nem Neon Auth. A autenticação pertence ao próprio Patrimônio+ e fica armazenada em PostgreSQL padrão.
 
@@ -12,7 +12,7 @@ As migrations históricas necessárias para a API 3.3 estão em `database/004_au
 1. `npm install`
 2. `npm run check`
 3. `npx wrangler deploy`
-4. Confirme `/health` com `version: 3.3.5`.
+4. Confirme `/health` com `version: 3.4.0`.
 
 Os secrets `DATABASE_URL` e `SETUP_TOKEN` devem permanecer configurados no Worker e não devem ser colocados no repositório.
 
@@ -30,7 +30,7 @@ Uma divergência só é aceita quando o cliente envia `confirmar_tipo_divergente
 
 
 ## Gestão de catálogo e centros
-A API 3.3.5 adiciona:
+A API 3.4.0 adiciona:
 - administração da classificação dos itens SIGEM;
 - sincronização dos patrimônios vinculados que ainda seguem a classificação anterior;
 - cadastro, edição, ativação e inativação de centros de custo;
@@ -38,12 +38,12 @@ A API 3.3.5 adiciona:
 
 
 ## Histórico global
-A API 3.3.5 adiciona `GET /api/historico` para a Visão Geral.
+A API 3.4.0 adiciona `GET /api/historico` para a Visão Geral.
 O endpoint retorna os eventos recentes já registrados em `historico_alteracoes`, com usuário, entidade e detalhes resumidos para exibição no dashboard.
 
 
 ## Atualizador inteligente do Catálogo SIGEM
-A API 3.3.5 adiciona o fluxo de atualização controlada do catálogo:
+A API 3.4.0 adiciona o fluxo de atualização controlada do catálogo:
 - aliases/de-paras persistentes;
 - histórico resumido e detalhado das atualizações;
 - aplicação transacional do plano revisado;
@@ -51,4 +51,33 @@ A API 3.3.5 adiciona o fluxo de atualização controlada do catálogo:
 - confirmação de itens semelhantes;
 - reativação e inativação controladas.
 
-A migration `008_catalogo_sigem_atualizacoes.sql` deve ser aplicada antes da publicação da API 3.3.5.
+A migration `008_catalogo_sigem_atualizacoes.sql` deve ser aplicada antes da publicação da API 3.4.0.
+
+
+## Catálogo Geral 1.6.0
+
+A API 3.4.0 substitui o conceito operacional de "Catálogo SIGEM" por um Catálogo único.
+
+Cada item passa a informar:
+- descrição;
+- Tipo;
+- valor de referência;
+- origem: SIGEM ou Catálogo Próprio;
+- fonte do valor;
+- status ativo/inativo.
+
+Regras principais:
+- a atualização automática continua sendo específica da fonte SIGEM;
+- itens próprios não podem ser alterados pela atualização SIGEM;
+- itens próprios podem ser cadastrados, editados, ativados/inativados e, quando nunca utilizados, excluídos;
+- novos patrimônios herdam o Tipo do item selecionado no Catálogo;
+- alterações de Tipo sincronizam patrimônios vinculados que ainda seguem a classificação anterior;
+- cadastro de patrimônio pela API é restrito a ADMIN e AUXILIAR.
+
+A migration `009_catalogo_geral_base_oficial.sql` aplica a base oficial conferida em 16/10/2026:
+- 821 itens;
+- 814 SIGEM;
+- 7 Catálogo Próprio — HRPP;
+- 582 Equipamento Médico;
+- 199 Mobiliário;
+- 40 Equipamento de Informática.

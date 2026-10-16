@@ -983,3 +983,14 @@ button:disabled { opacity: .65; cursor: wait; }
   .catalog-review-actions{flex-direction:column}
   .catalog-review-actions button{width:100%}
 }
+
+
+/* ===== Catálogo Geral v1.6.0 ===== */
+.catalog-origin-cards{margin-bottom:12px}
+.catalog-toolbar-three{grid-template-columns:minmax(280px,2fr) minmax(170px,.8fr) minmax(190px,1fr)}
+.catalog-origin-badge{white-space:nowrap}
+.catalog-origin-badge.is-own{background:#eef7f2;border-color:#bfdccb;color:#236644}
+.catalog-admin-panel .center-actions .muted{font-size:12px;white-space:nowrap}
+@media(max-width:900px){
+  .catalog-toolbar-three{grid-template-columns:1fr}
+}
