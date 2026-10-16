@@ -3,7 +3,7 @@ import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/uti
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.5.7";
-import { searchSigem, listCatalogAdmin, updateCatalogType, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/sigem.js?v=1.5.8";
+import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/sigem.js?v=1.6.0";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
@@ -45,6 +45,8 @@ const state = {
   catalogAdminLoading: false,
   catalogAdminQuery: "",
   catalogAdminType: "",
+  catalogAdminOrigin: "",
+  selectedCatalogItemId: null,
   recentHistory: [],
   dashboardHistoryExpanded: false,
   settingsOpenCard: null,
@@ -211,11 +213,33 @@ function shell() {
     <div class="catalog-update-shell">
       <div class="dialog-header catalog-update-header">
         <button type="button" class="back-button" id="closeCatalogUpdateButton">← Fechar</button>
-        <h2>Atualizar Catálogo SIGEM</h2>
-        <p>Compare o novo arquivo com o catálogo atual, revise correspondências e só então confirme a atualização.</p>
+        <h2>Atualizar base SIGEM</h2>
+        <p>Compare a nova lista SIGEM com os itens de origem SIGEM do Catálogo. Itens próprios do HRPP não são alterados por este fluxo.</p>
       </div>
       <div id="catalogUpdateContent"></div>
     </div>
+  </dialog>
+
+  <dialog id="catalogItemDialog" class="operation-dialog">
+    <form method="dialog" id="catalogItemForm">
+      <div class="dialog-header">
+        <button type="button" class="back-button" id="closeCatalogItemButton">← Voltar</button>
+        <h2 id="catalogItemDialogTitle">Novo item do Catálogo</h2>
+        <p>Itens cadastrados aqui recebem origem Catálogo Próprio — HRPP.</p>
+      </div>
+      <div class="operation-layout">
+        <section class="operation-section">
+          <div class="form-grid">
+            <label class="full">Descrição do item *<input id="catalogItemDescription" required maxlength="500" autocomplete="off" placeholder="Ex.: Bisturi elétrico modelo X"></label>
+            <label>Tipo *<select id="catalogItemType" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select></label>
+            <label>Valor de referência<input id="catalogItemValue" inputmode="decimal" placeholder="R$ 0,00"></label>
+            <label>Fonte do valor<select id="catalogItemValueSource"><option value="COTACAO_PROPRIA">Cotação própria</option><option value="NOTA_FISCAL">Nota Fiscal</option><option value="OUTRA">Outra</option></select></label>
+            <label>Origem<input value="Catálogo Próprio — HRPP" readonly tabindex="-1"></label>
+          </div>
+        </section>
+      </div>
+      <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelCatalogItemButton">Cancelar</button><button type="submit" class="primary-button" id="saveCatalogItemButton">Salvar item</button></div>
+    </form>
   </dialog>`;
   bindStaticActions();
 }
@@ -2431,6 +2455,9 @@ function bindStaticActions() {
   document.querySelector("#cancelCenterButton").addEventListener("click", () => document.querySelector("#centerDialog").close());
   document.querySelector("#centerForm").addEventListener("submit", submitCenterForm);
   document.querySelector("#closeCatalogUpdateButton").addEventListener("click", () => document.querySelector("#catalogUpdateDialog").close());
+  document.querySelector("#closeCatalogItemButton").addEventListener("click", () => document.querySelector("#catalogItemDialog").close());
+  document.querySelector("#cancelCatalogItemButton").addEventListener("click", () => document.querySelector("#catalogItemDialog").close());
+  document.querySelector("#catalogItemForm").addEventListener("submit", submitCatalogItemForm);
   document.querySelectorAll("[data-mobility-value]").forEach(btn => btn.addEventListener("click", () => {
     state.formMobility = btn.dataset.mobilityValue;
     if (state.formMobility === "FIXO") state.formAllowedCenters.clear();
