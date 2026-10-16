@@ -1994,25 +1994,38 @@ function catalogUpdateDetailHtml() {
   </section>`;
 }
 
+function catalogOriginName(value) {
+  return value === "PROPRIO" ? "Catálogo Próprio — HRPP" : "SIGEM";
+}
+
+function catalogValueSourceName(value) {
+  return ({
+    SIGEM: "SIGEM",
+    COTACAO_PROPRIA: "Cotação própria",
+    NOTA_FISCAL: "Nota Fiscal",
+    OUTRA: "Outra"
+  })[String(value || "")] || "—";
+}
+
 async function renderCatalog() {
   const root = document.querySelector("#viewRoot");
   if (!canDeleteAssets()) {
     root.innerHTML = `
-      <div class="page-header"><div><h1>Catálogo SIGEM</h1><p>Classificação e manutenção do catálogo de referência.</p></div></div>
-      <div class="placeholder">Somente administradores podem alterar o Catálogo SIGEM.</div>`;
+      <div class="page-header"><div><h1>Catálogo</h1><p>Itens de referência para o cadastro patrimonial.</p></div></div>
+      <div class="placeholder">Somente administradores podem alterar o Catálogo.</div>`;
     return;
   }
 
   if (!state.catalogAdminLoaded && !state.catalogAdminLoading) {
     state.catalogAdminLoading = true;
     root.innerHTML = `
-      <div class="page-header"><div><h1>Catálogo SIGEM</h1><p>Classificação e manutenção do catálogo de referência.</p></div></div>
-      <div class="loading">Carregando catálogo SIGEM…</div>`;
+      <div class="page-header"><div><h1>Catálogo</h1><p>Itens de referência para o cadastro patrimonial.</p></div></div>
+      <div class="loading">Carregando Catálogo…</div>`;
     try {
       state.catalogAdminItems = await listCatalogAdmin();
       state.catalogAdminLoaded = true;
     } catch (error) {
-      toast(`Não foi possível carregar o catálogo SIGEM: ${error.message}`, "error");
+      toast(`Não foi possível carregar o Catálogo: ${error.message}`, "error");
     } finally {
       state.catalogAdminLoading = false;
     }
@@ -2022,18 +2035,23 @@ async function renderCatalog() {
     try {
       await ensureCatalogUpdateContext();
     } catch (error) {
-      toast(`Não foi possível carregar o histórico de atualizações: ${error.message}`, "error");
+      toast(`Não foi possível carregar o histórico de atualizações SIGEM: ${error.message}`, "error");
     }
   }
 
   const q = normalizeText(state.catalogAdminQuery);
   const typeFilter = String(state.catalogAdminType || "");
+  const originFilter = String(state.catalogAdminOrigin || "");
   const items = state.catalogAdminItems.filter(item => {
     if (q && !normalizeText(item.descricao).includes(q)) return false;
     if (typeFilter && String(item.tipo_id) !== typeFilter) return false;
+    if (originFilter && String(item.origem) !== originFilter) return false;
     return true;
   });
   const counts = {
+    total: state.catalogAdminItems.length,
+    sigem: state.catalogAdminItems.filter(item => item.origem === "SIGEM").length,
+    proprio: state.catalogAdminItems.filter(item => item.origem === "PROPRIO").length,
     1: state.catalogAdminItems.filter(item => Number(item.tipo_id) === 1).length,
     2: state.catalogAdminItems.filter(item => Number(item.tipo_id) === 2).length,
     3: state.catalogAdminItems.filter(item => Number(item.tipo_id) === 3).length
@@ -2041,8 +2059,17 @@ async function renderCatalog() {
 
   root.innerHTML = `
     <div class="page-header">
-      <div><h1>Catálogo SIGEM</h1><p>Gerencie a classificação e mantenha a lista oficial sincronizada.</p></div>
-      <button class="primary-button" data-action="update-catalog">Atualizar catálogo</button>
+      <div><h1>Catálogo</h1><p>Base única de itens de referência: SIGEM + itens próprios do HRPP.</p></div>
+      <div class="header-actions">
+        <button class="ghost-button" data-action="update-catalog">Atualizar base SIGEM</button>
+        <button class="primary-button" data-action="new-catalog-item">+ Adicionar item</button>
+      </div>
+    </div>
+
+    <div class="cards cards-three catalog-origin-cards">
+      <article class="card"><span class="muted">Total do Catálogo</span><div class="metric">${counts.total}</div></article>
+      <article class="card"><span class="muted">Origem SIGEM</span><div class="metric">${counts.sigem}</div></article>
+      <article class="card"><span class="muted">Catálogo Próprio</span><div class="metric">${counts.proprio}</div></article>
     </div>
 
     <div class="cards cards-three catalog-summary-cards">
@@ -2054,14 +2081,21 @@ async function renderCatalog() {
     <section class="panel catalog-admin-panel">
       <div class="panel-header config-panel-header">
         <div>
-          <h2>Itens do catálogo</h2>
-          <small>Altere a classificação quando necessário. Patrimônios vinculados e ainda alinhados ao Tipo anterior acompanham a alteração automaticamente.</small>
+          <h2>Itens do Catálogo</h2>
+          <small>O Tipo é herdado pelos novos patrimônios. Itens SIGEM têm nome e valor atualizados pela base SIGEM; itens próprios podem ser editados aqui.</small>
         </div>
-        <span class="badge">${state.catalogAdminItems.length} item(ns)</span>
+        <span class="badge">${items.length} de ${state.catalogAdminItems.length}</span>
       </div>
-      <div class="config-toolbar">
+      <div class="config-toolbar catalog-toolbar-three">
         <label class="config-search">Pesquisar item
-          <input type="search" id="catalogAdminSearch" value="${escapeHtml(state.catalogAdminQuery)}" placeholder="Digite parte da descrição SIGEM">
+          <input type="search" id="catalogAdminSearch" value="${escapeHtml(state.catalogAdminQuery)}" placeholder="Digite parte da descrição">
+        </label>
+        <label>Origem
+          <select id="catalogAdminOrigin">
+            <option value="">Todas</option>
+            <option value="SIGEM" ${originFilter==="SIGEM"?"selected":""}>SIGEM</option>
+            <option value="PROPRIO" ${originFilter==="PROPRIO"?"selected":""}>Catálogo Próprio</option>
+          </select>
         </label>
         <label>Tipo
           <select id="catalogAdminType">
@@ -2074,9 +2108,10 @@ async function renderCatalog() {
       </div>
       <div class="table-wrap config-table-wrap">
         <table>
-          <thead><tr><th>Descrição SIGEM</th><th>Tipo</th><th>Patrimônios vinculados</th><th>Status</th></tr></thead>
+          <thead><tr><th>Item</th><th>Origem</th><th>Tipo</th><th>Valor de referência</th><th>Patrimônios</th><th>Status</th><th class="actions-head">Ações</th></tr></thead>
           <tbody>${items.map(item => `<tr>
-            <td><strong>${escapeHtml(item.descricao)}</strong></td>
+            <td><strong>${escapeHtml(item.descricao)}</strong><small class="row-note">${escapeHtml(catalogValueSourceName(item.fonte_valor))}</small></td>
+            <td><span class="badge catalog-origin-badge ${item.origem==="PROPRIO"?"is-own":""}">${escapeHtml(catalogOriginName(item.origem))}</span></td>
             <td>
               <select class="catalog-type-select" data-catalog-id="${item.id}" data-current-type="${item.tipo_id}">
                 <option value="1" ${Number(item.tipo_id)===1?"selected":""}>Equipamento Médico</option>
@@ -2084,17 +2119,25 @@ async function renderCatalog() {
                 <option value="3" ${Number(item.tipo_id)===3?"selected":""}>Informática</option>
               </select>
             </td>
+            <td>${money(item.valor_padrao)}</td>
             <td>${Number(item.patrimonios_vinculados || 0)}</td>
             <td class="${item.ativo ? "status-active" : "status-inactive"}">${item.ativo ? "Ativo" : "Inativo"}</td>
+            <td><div class="center-actions">
+              ${item.origem==="PROPRIO" ? `
+                <button class="ghost-button compact-button" data-action="edit-catalog-item" data-catalog-id="${item.id}">Editar</button>
+                <button class="ghost-button compact-button" data-action="toggle-catalog-item" data-catalog-id="${item.id}">${item.ativo ? "Inativar" : "Ativar"}</button>
+                <button class="danger-button compact-button" data-action="delete-catalog-item" data-catalog-id="${item.id}">Excluir</button>
+              ` : '<span class="muted">Gerido pela base SIGEM</span>'}
+            </div></td>
           </tr>`).join("")}</tbody>
         </table>
       </div>
-      ${items.length ? "" : '<div class="empty">Nenhum item SIGEM corresponde aos filtros.</div>'}
+      ${items.length ? "" : '<div class="empty">Nenhum item corresponde aos filtros.</div>'}
     </section>
 
     <section class="panel catalog-update-history-panel">
       <div class="panel-header">
-        <div><h2>Histórico de atualizações</h2><small>Arquivos processados, inclusões, de-paras e inativações ficam registrados aqui.</small></div>
+        <div><h2>Histórico de atualizações SIGEM</h2><small>Somente atualizações da fonte SIGEM aparecem aqui. Itens próprios possuem histórico pelo log geral do sistema.</small></div>
         <span class="badge">${state.catalogUpdates.length} registro(s)</span>
       </div>
       ${catalogUpdateHistoryHtml()}
@@ -2104,12 +2147,20 @@ async function renderCatalog() {
   `;
 
   document.querySelector('[data-action="update-catalog"]')?.addEventListener("click", openCatalogUpdate);
+  document.querySelector('[data-action="new-catalog-item"]')?.addEventListener("click", () => openCatalogItemForm());
+  document.querySelectorAll('[data-action="edit-catalog-item"]').forEach(button=>button.addEventListener("click",()=>openCatalogItemForm(button.dataset.catalogId)));
+  document.querySelectorAll('[data-action="toggle-catalog-item"]').forEach(button=>button.addEventListener("click",()=>toggleCatalogItem(button.dataset.catalogId)));
+  document.querySelectorAll('[data-action="delete-catalog-item"]').forEach(button=>button.addEventListener("click",()=>removeCatalogItem(button.dataset.catalogId)));
   document.querySelectorAll("[data-catalog-update-detail]").forEach(button=>button.addEventListener("click",()=>openCatalogUpdateDetail(button.dataset.catalogUpdateDetail)));
   document.querySelector('[data-action="close-catalog-detail"]')?.addEventListener("click",()=>{ state.catalogUpdateDetail=null; renderCatalog(); });
   document.querySelector("#catalogAdminSearch")?.addEventListener("input", debounce(event => {
     state.catalogAdminQuery = event.target.value;
     renderCatalog();
   }, 180));
+  document.querySelector("#catalogAdminOrigin")?.addEventListener("change", event => {
+    state.catalogAdminOrigin = event.target.value;
+    renderCatalog();
+  });
   document.querySelector("#catalogAdminType")?.addEventListener("change", event => {
     state.catalogAdminType = event.target.value;
     renderCatalog();
@@ -2117,6 +2168,87 @@ async function renderCatalog() {
   document.querySelectorAll(".catalog-type-select").forEach(select => {
     select.addEventListener("change", () => changeCatalogType(select));
   });
+}
+
+function openCatalogItemForm(itemId = null) {
+  const item = itemId ? state.catalogAdminItems.find(row=>row.id===itemId) : null;
+  if(item && item.origem!=="PROPRIO") {
+    toast("Itens SIGEM são editados pelo fluxo da base SIGEM.", "error");
+    return;
+  }
+  state.selectedCatalogItemId=item?.id || null;
+  document.querySelector("#catalogItemDialogTitle").textContent=item?"Editar item próprio":"Novo item do Catálogo";
+  document.querySelector("#catalogItemDescription").value=item?.descricao || "";
+  document.querySelector("#catalogItemType").value=item?.tipo_id ? String(item.tipo_id) : "";
+  document.querySelector("#catalogItemValue").value=item?.valor_padrao!=null ? Number(item.valor_padrao).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}) : "";
+  document.querySelector("#catalogItemValueSource").value=item?.fonte_valor || "COTACAO_PROPRIA";
+  document.querySelector("#saveCatalogItemButton").textContent=item?"Salvar alterações":"Adicionar ao Catálogo";
+  document.querySelector("#catalogItemDialog").showModal();
+  document.querySelector("#catalogItemDescription").focus();
+}
+
+async function submitCatalogItemForm(event) {
+  event.preventDefault();
+  const descricao=document.querySelector("#catalogItemDescription").value.trim();
+  const tipoId=Number(document.querySelector("#catalogItemType").value);
+  const rawValue=document.querySelector("#catalogItemValue").value.trim();
+  const valor=rawValue ? normalizeMoney(rawValue) : null;
+  const fonte=document.querySelector("#catalogItemValueSource").value;
+  if(!descricao || ![1,2,3].includes(tipoId)) {
+    toast("Informe descrição e Tipo do item.", "error");
+    return;
+  }
+  if(valor!==null && (!Number.isFinite(valor)||valor<0)) {
+    toast("Valor de referência inválido.", "error");
+    return;
+  }
+  const button=document.querySelector("#saveCatalogItemButton");
+  button.disabled=true;
+  button.textContent="Salvando…";
+  try {
+    if(state.selectedCatalogItemId) {
+      await updateCatalogItem(state.selectedCatalogItemId,{descricao,tipo_id:tipoId,valor_padrao:valor,fonte_valor:fonte});
+    } else {
+      await createCatalogItem({descricao,tipo_id:tipoId,valor_padrao:valor,fonte_valor:fonte});
+    }
+    state.catalogAdminItems=await listCatalogAdmin();
+    state.catalogAdminLoaded=true;
+    document.querySelector("#catalogItemDialog").close();
+    toast(state.selectedCatalogItemId?"Item atualizado.":"Item adicionado ao Catálogo.","success");
+    state.selectedCatalogItemId=null;
+    renderCatalog();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    button.disabled=false;
+    button.textContent=state.selectedCatalogItemId?"Salvar alterações":"Adicionar ao Catálogo";
+  }
+}
+
+async function toggleCatalogItem(itemId) {
+  const item=state.catalogAdminItems.find(row=>row.id===itemId);
+  if(!item || item.origem!=="PROPRIO") return;
+  const next=!item.ativo;
+  if(!window.confirm(`${next?"Ativar":"Inativar"} "${item.descricao}"?`)) return;
+  try {
+    await updateCatalogItem(item.id,{ativo:next});
+    state.catalogAdminItems=await listCatalogAdmin();
+    toast(`Item ${next?"ativado":"inativado"}.`,"success");
+    renderCatalog();
+  } catch(error) { toast(error.message,"error"); }
+}
+
+async function removeCatalogItem(itemId) {
+  const item=state.catalogAdminItems.find(row=>row.id===itemId);
+  if(!item || item.origem!=="PROPRIO") return;
+  const confirmation=window.prompt(`Exclusão definitiva de item próprio.\n\nSó será permitida se ele nunca tiver sido usado.\nDigite exatamente a descrição:\n${item.descricao}`);
+  if(confirmation===null) return;
+  try {
+    await deleteCatalogItem(item.id,confirmation.trim());
+    state.catalogAdminItems=await listCatalogAdmin();
+    toast("Item próprio excluído definitivamente.","success");
+    renderCatalog();
+  } catch(error) { toast(error.message,"error"); }
 }
 
 async function changeCatalogType(select) {
