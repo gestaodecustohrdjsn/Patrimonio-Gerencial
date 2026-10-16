@@ -908,6 +908,56 @@ BEGIN
   IF EXISTS (SELECT 1 FROM descricoes_padrao WHERE origem_catalogo NOT IN ('SIGEM','PROPRIO')) THEN RAISE EXCEPTION 'Origem inválida'; END IF;
 END $$;
 
+
+-- Wrapper v2 do updater SIGEM:
+-- atualiza o valor de referência dos itens já reconhecidos por EXATO/ALIAS
+-- antes de delegar a aplicação transacional ao motor da migration 008.
+create or replace function aplicar_atualizacao_catalogo_sigem_v2_api(
+  p_nome_arquivo text,
+  p_catalogo_completo boolean,
+  p_quantidade_arquivo integer,
+  p_acoes jsonb,
+  p_usuario_id uuid
+)
+returns jsonb
+language plpgsql
+as $
+declare
+  v_acao jsonb;
+  v_tipo_acao text;
+  v_item_id uuid;
+  v_valor numeric;
+begin
+  if jsonb_typeof(p_acoes) <> 'array' then
+    raise exception 'Plano de atualização inválido';
+  end if;
+
+  for v_acao in select value from jsonb_array_elements(p_acoes)
+  loop
+    v_tipo_acao := upper(coalesce(v_acao->>'acao',''));
+    v_item_id := nullif(v_acao->>'item_id','')::uuid;
+    v_valor := nullif(v_acao->>'valor_padrao','')::numeric;
+
+    if v_tipo_acao in ('EXATO','ALIAS') and v_item_id is not null and v_valor is not null then
+      update descricoes_padrao
+      set valor_padrao=v_valor,
+          fonte_valor='SIGEM',
+          atualizado_em=now()
+      where id=v_item_id
+        and origem_catalogo='SIGEM';
+    end if;
+  end loop;
+
+  return aplicar_atualizacao_catalogo_sigem_api(
+    p_nome_arquivo,
+    p_catalogo_completo,
+    p_quantidade_arquivo,
+    p_acoes,
+    p_usuario_id
+  );
+end;
+$;
+
 COMMIT;
 
 SELECT
