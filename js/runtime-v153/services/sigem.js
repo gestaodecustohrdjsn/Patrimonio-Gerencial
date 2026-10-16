@@ -1,6 +1,6 @@
 import { apiRequest } from "../lib/api.js";
 
-export async function searchSigem(term, limit = 20) {
+export async function searchCatalog(term, limit = 20) {
   const text = term.trim();
   if (text.length < 2) return [];
   const params = new URLSearchParams({ q: text, limit: String(limit) });
@@ -19,6 +19,23 @@ export async function updateCatalogType(id, tipoId) {
     body: { tipo_id: Number(tipoId) }
   });
   return data;
+}
+
+export async function createCatalogItem(payload) {
+  const data = await apiRequest("/api/catalogo", { method: "POST", body: payload });
+  return data.item;
+}
+
+export async function updateCatalogItem(id, payload) {
+  const data = await apiRequest(`/api/catalogo/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
+  return data;
+}
+
+export async function deleteCatalogItem(id, confirmation) {
+  return apiRequest(`/api/catalogo/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: { confirmation }
+  });
 }
 
 
