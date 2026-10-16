@@ -384,7 +384,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo/atualizacoes/contexto") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o base SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
         const aliases=await sql`
           select a.id,a.alias_original,a.alias_normalizado,a.descricao_padrao_id,a.criado_em,
             d.descricao as item_catalogo_nome,d.tipo_id,d.ativo,d.origem_catalogo as origem
@@ -408,7 +408,7 @@ export default {
 
       const catalogUpdateDetail=url.pathname.match(/^\/api\/catalogo\/atualizacoes\/([0-9a-f-]{36})$/i);
       if(catalogUpdateDetail && request.method === "GET") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações do base SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações da base SIGEM."},403,env,request);
         const atualizacoes=await sql`
           select a.*,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
@@ -428,7 +428,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/catalogo/atualizacoes/aplicar") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar o base SIGEM."},403,env,request);
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
         const b=await bodyJson(request);
         const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
         const quantidadeArquivo=Number(b.quantidade_arquivo||0);
