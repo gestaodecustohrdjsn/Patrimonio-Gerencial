@@ -85,7 +85,7 @@ function shell() {
         <button class="nav-item active" data-view="dashboard">Visão geral</button>
         <button class="nav-item" data-view="patrimonios">Patrimônios</button>
         <button class="nav-item" data-view="centros">Centros de custo</button>
-        <button class="nav-item" data-view="catalogo">Catálogo SIGEM</button>
+        <button class="nav-item" data-view="catalogo">Catálogo</button>
         <button class="nav-item" data-view="importacao">Importação</button>
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
@@ -104,7 +104,7 @@ function shell() {
       <div class="dialog-header"><button type="button" class="back-button" id="closeDialogButton">← Voltar</button><h2 id="assetDialogTitle">Novo patrimônio</h2><p id="assetDialogSubtitle">A ID interna será gerada automaticamente pelo banco.</p></div>
 
       <fieldset class="form-section"><legend>Identificação</legend><div class="form-grid">
-        <label class="full sigem-field"><span class="field-title">Item do Catálogo <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do catálogo SIGEM"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
+        <label class="full sigem-field"><span class="field-title">Item do Catálogo <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do Catálogo"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
         <label class="full">Descrição complementar *<input id="descricao" required maxlength="180" placeholder="Ex.: preta com rodinhas"></label>
         <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item do Catálogo, o Tipo é definido manualmente.</small></label>
         <label>ID SES<input id="idSes" maxlength="50"></label>
@@ -518,13 +518,13 @@ function filterPanelHtml(key, title = "Filtros") {
   return `<section class="filter-panel">
     <div class="filter-panel-head"><div><strong>${title}</strong><small>Combine quantos filtros quiser.</small></div><button class="ghost-button compact-button" data-action="clear-filters" data-filter-key="${key}">Limpar filtros</button></div>
     <div class="filter-grid">
-      <label class="filter-wide">Pesquisa<input type="search" data-filter-key="${key}" data-filter-field="q" value="${escapeHtml(f.q)}" placeholder="ID, descrição, SES, marca ou SIGEM"></label>
+      <label class="filter-wide">Pesquisa<input type="search" data-filter-key="${key}" data-filter-field="q" value="${escapeHtml(f.q)}" placeholder="ID, descrição, SES, marca ou Catálogo"></label>
       <label>Centro de custo<select data-filter-key="${key}" data-filter-field="centro"><option value="">Todos</option>${centerOptions}</select></label>
       <label>Tipo<select data-filter-key="${key}" data-filter-field="tipo"><option value="">Todos</option><option value="1" ${f.tipo==="1"?"selected":""}>Equipamento Médico</option><option value="2" ${f.tipo==="2"?"selected":""}>Mobiliário</option><option value="3" ${f.tipo==="3"?"selected":""}>Informática</option></select></label>
       <label>Status<select data-filter-key="${key}" data-filter-field="status"><option value="">Todos</option><option value="ATIVO" ${f.status==="ATIVO"?"selected":""}>Ativo</option><option value="INATIVO" ${f.status==="INATIVO"?"selected":""}>Inativo</option></select></label>
       <label>Aquisição<select data-filter-key="${key}" data-filter-field="aquisicao"><option value="">Todas</option><option value="COMPRA" ${f.aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${f.aquisicao==="DOACAO"?"selected":""}>Doação</option><option value="LOCACAO" ${f.aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${f.aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select></label>
       <label>Conservação<select data-filter-key="${key}" data-filter-field="conservacao"><option value="">Todos</option><option value="PRODUTO_NOVO" ${f.conservacao==="PRODUTO_NOVO"?"selected":""}>Produto Novo</option><option value="BEM_CONSERVADO" ${f.conservacao==="BEM_CONSERVADO"?"selected":""}>Bem Conservado</option><option value="DESGASTADO" ${f.conservacao==="DESGASTADO"?"selected":""}>Desgastado</option><option value="INUTILIZAVEL" ${f.conservacao==="INUTILIZAVEL"?"selected":""}>Inutilizável</option></select></label>
-      <label>Vínculo SIGEM<select data-filter-key="${key}" data-filter-field="sigem"><option value="">Todos</option><option value="sim" ${f.sigem==="sim"?"selected":""}>Com SIGEM</option><option value="nao" ${f.sigem==="nao"?"selected":""}>Sem SIGEM</option></select></label>
+      <label>Vínculo com Catálogo<select data-filter-key="${key}" data-filter-field="sigem"><option value="">Todos</option><option value="sim" ${f.sigem==="sim"?"selected":""}>Com Catálogo</option><option value="nao" ${f.sigem==="nao"?"selected":""}>Sem Catálogo</option></select></label>
       <label>Valor<select data-filter-key="${key}" data-filter-field="valor"><option value="">Todos</option><option value="sim" ${f.valor==="sim"?"selected":""}>Com valor</option><option value="nao" ${f.valor==="nao"?"selected":""}>Sem valor</option></select></label>
       <label>ID SES<select data-filter-key="${key}" data-filter-field="idSes"><option value="">Todos</option><option value="sim" ${f.idSes==="sim"?"selected":""}>Com ID SES</option><option value="nao" ${f.idSes==="nao"?"selected":""}>Sem ID SES</option></select></label>
       <label>Aquisição de<div class="date-shell"><input type="date" data-filter-key="${key}" data-filter-field="dataDe" value="${escapeHtml(f.dataDe)}"></div></label>
@@ -799,7 +799,7 @@ function detailEditFormHtml(asset) {
           <label>ID interna<input value="${escapeHtml(asset.id_interna)}" disabled></label>
           <label>ID SES<input name="id_ses" value="${escapeHtml(asset.id_ses || "")}"></label>
           <label class="full">Descrição complementar *<input name="descricao" required value="${escapeHtml(asset.descricao)}"></label>
-          <label>Tipo *<select name="tipo_id" required><option value="1" ${asset.tipo_id==1?"selected":""}>Equipamento Médico</option><option value="2" ${asset.tipo_id==2?"selected":""}>Mobiliário</option><option value="3" ${asset.tipo_id==3?"selected":""}>Informática</option></select>${asset.descricoes_padrao?.tipo_id ? `<small class="sigem-type-hint ${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?"is-warning":""}">SIGEM: ${escapeHtml(typeName(asset.descricoes_padrao.tipo_id))}${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?" · Tipo atual diferente":""}</small>` : '<small class="sigem-type-hint">Sem Tipo SIGEM disponível para conferência.</small>'}</label>
+          <label>Tipo *<select name="tipo_id" required><option value="1" ${asset.tipo_id==1?"selected":""}>Equipamento Médico</option><option value="2" ${asset.tipo_id==2?"selected":""}>Mobiliário</option><option value="3" ${asset.tipo_id==3?"selected":""}>Informática</option></select>${asset.descricoes_padrao?.tipo_id ? `<small class="sigem-type-hint ${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?"is-warning":""}">Catálogo: ${escapeHtml(typeName(asset.descricoes_padrao.tipo_id))}${Number(asset.tipo_id)!==Number(asset.descricoes_padrao.tipo_id)?" · Tipo atual diferente":""}</small>` : '<small class="sigem-type-hint">Sem Tipo do Catálogo disponível para conferência.</small>'}</label>
           <label>Marca/Modelo<input name="marca_modelo" value="${escapeHtml(asset.marca_modelo || "")}"></label>
         </div>
       </article>
@@ -1062,7 +1062,7 @@ function renderReports() {
           <select data-report-filter="centro"><option value="">Selecione</option>${centerOptions}</select>
         </label>
         <label class="filter-wide">Pesquisa
-          <input type="search" data-report-filter="q" value="${escapeHtml(f.q)}" placeholder="ID, SES, descrição, marca ou SIGEM">
+          <input type="search" data-report-filter="q" value="${escapeHtml(f.q)}" placeholder="ID, SES, descrição, marca ou Catálogo">
         </label>
         <label>Tipo
           <select data-report-filter="tipo"><option value="">Todos</option><option value="1" ${f.tipo==="1"?"selected":""}>Equipamento Médico</option><option value="2" ${f.tipo==="2"?"selected":""}>Mobiliário</option><option value="3" ${f.tipo==="3"?"selected":""}>Informática</option></select>
@@ -1901,7 +1901,7 @@ async function confirmCatalogUpdate() {
     return;
   }
   const message = [
-    "Confirmar atualização do Catálogo SIGEM?",
+    "Confirmar atualização da base SIGEM?",
     "",
     `Arquivo: ${state.catalogUpdateFileName}`,
     `Novos itens: ${final.added}`,
@@ -1929,7 +1929,7 @@ async function confirmCatalogUpdate() {
     state.assets=await listAssets();
     state.recentHistory=[];
     document.querySelector("#catalogUpdateDialog").close();
-    toast("Catálogo SIGEM atualizado com sucesso.","success");
+    toast("Base SIGEM atualizada com sucesso.","success");
     renderCatalog();
   } catch (error) {
     toast(`Atualização não aplicada: ${error.message}`,"error");
