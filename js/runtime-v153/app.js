@@ -104,9 +104,9 @@ function shell() {
       <div class="dialog-header"><button type="button" class="back-button" id="closeDialogButton">← Voltar</button><h2 id="assetDialogTitle">Novo patrimônio</h2><p id="assetDialogSubtitle">A ID interna será gerada automaticamente pelo banco.</p></div>
 
       <fieldset class="form-section"><legend>Identificação</legend><div class="form-grid">
-        <label class="full sigem-field"><span class="field-title">Descrição SIGEM <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do catálogo SIGEM"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
+        <label class="full sigem-field"><span class="field-title">Item do Catálogo <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do catálogo SIGEM"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
         <label class="full">Descrição complementar *<input id="descricao" required maxlength="180" placeholder="Ex.: preta com rodinhas"></label>
-        <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item SIGEM, o Tipo é definido manualmente.</small></label>
+        <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item do Catálogo, o Tipo é definido manualmente.</small></label>
         <label>ID SES<input id="idSes" maxlength="50"></label>
       </div></fieldset>
 
@@ -114,7 +114,7 @@ function shell() {
         <label>Data de aquisição *<input id="dataAquisicao" type="date" required><small>Preenchida automaticamente com a data atual.</small></label>
         <label>Aquisição *<select id="aquisicao" required><option value="">Selecione</option><option value="COMPRA">Compra</option><option value="DOACAO">Doação</option><option value="LOCACAO">Locação</option><option value="CONTRATO_GESTAO">Contrato de Gestão</option></select></label>
         <label><span class="field-title">Valor de aquisição <span class="optional-note">(Opcional)</span></span><input id="valor" inputmode="decimal" placeholder="R$ 0,00"></label>
-        <label>Valor de referência SIGEM<input id="valorSigem" readonly tabindex="-1" placeholder="—"></label>
+        <label>Valor de referência do Catálogo<input id="valorSigem" readonly tabindex="-1" placeholder="—"></label>
         <label>Nº Nota Fiscal<input id="notaFiscal" maxlength="60"></label>
         <label>Marca/Modelo<input id="marcaModelo" maxlength="120"></label>
       </div></fieldset>
@@ -310,8 +310,8 @@ function historyActionLabel(event) {
     "centros_custo:CADASTRO": "Cadastrou centro de custo",
     "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
     "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
-    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação SIGEM",
-    "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou Catálogo SIGEM"
+    "descricoes_padrao:CLASSIFICACAO_SIGEM_ALTERADA": "Alterou classificação do Catálogo",
+    "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -325,7 +325,7 @@ function historyEntityLabel(event) {
   if (entity.tipo === "centro") {
     return [entity.codigo, entity.nome].filter(Boolean).join(" · ") || "Centro de custo";
   }
-  if (entity.tipo === "sigem") return entity.nome || "Item SIGEM";
+  if (entity.tipo === "sigem") return entity.nome || "Item do Catálogo";
   if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
   return "";
 }
@@ -774,7 +774,7 @@ function renderAssetDetail(loadingHistory = false) {
 
     ${state.detailEditMode && editAllowed ? detailEditFormHtml(asset) : `
       <section class="detail-grid">
-        ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Descrição SIGEM", asset.descricoes_padrao?.descricao || "—"], ["Descrição complementar", asset.descricao || "—"], ["Tipo", typeName(asset.tipo_id)], ["Marca/Modelo", asset.marca_modelo || "—"]])}
+        ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Item do Catálogo", asset.descricoes_padrao?.descricao || "—"], ["Descrição complementar", asset.descricao || "—"], ["Tipo", typeName(asset.tipo_id)], ["Marca/Modelo", asset.marca_modelo || "—"]])}
         ${detailCard("Aquisição e valores", [["Data de aquisição", formatDate(asset.data_aquisicao)], ["Tipo de aquisição", acquisitionName(asset.tipo_aquisicao)], ["Valor de aquisição", money(asset.valor_aquisicao)], ["Nota fiscal", asset.nota_fiscal_numero || "—"]])}
         ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ...(asset.mobilidade === "MOVEL" ? [["Mobilidade", "Móvel"]] : []), ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")], ...(asset.em_manutencao ? [["Condição operacional", "Em manutenção"]] : []), ...(asset.mobilidade === "MOVEL" ? [["Centros permitidos", allowedCentersDisplay(asset)]] : [])])}
       </section>`}
@@ -1324,6 +1324,7 @@ function catalogNameSimilarity(a, b) {
 
 function catalogCandidateList(name, limit = 3) {
   return state.catalogAdminItems
+    .filter(item => item.origem === "SIGEM")
     .map(item => ({ item, score: catalogNameSimilarity(name,item.descricao) }))
     .filter(entry => entry.score >= 0.68)
     .sort((a,b)=>b.score-a.score)
@@ -1338,12 +1339,12 @@ function analyzeCatalogUpdate() {
   }
 
   const exactMap = new Map();
-  for (const item of state.catalogAdminItems) {
+  for (const item of state.catalogAdminItems.filter(item => item.origem === "SIGEM")) {
     const key = normalizeText(item.descricao);
     if (!exactMap.has(key)) exactMap.set(key,[]);
     exactMap.get(key).push(item);
   }
-  const aliasMap = new Map(state.catalogAliases.map(alias => [alias.alias_normalizado,alias]));
+  const aliasMap = new Map(state.catalogAliases.filter(alias => !alias.origem || alias.origem === "SIGEM").map(alias => [alias.alias_normalizado,alias]));
   const seenFile = new Map();
 
   state.catalogUpdateAnalysis = state.catalogUpdateRows.map((row,index)=>{
@@ -1459,7 +1460,7 @@ function recalculateCatalogMissing() {
   const matched = catalogMatchedIds();
   const previousActions = new Map((state.catalogUpdateMissing||[]).map(item=>[item.id,item.action]));
   state.catalogUpdateMissing = state.catalogAdminItems
-    .filter(item=>item.ativo && !matched.has(item.id))
+    .filter(item=>item.origem === "SIGEM" && item.ativo && !matched.has(item.id))
     .map(item=>({
       ...item,
       action:previousActions.get(item.id)||"keep"
@@ -1583,11 +1584,11 @@ function catalogMissingRowsHtml() {
   if (!state.catalogUpdateComplete) return "";
   if (!state.catalogUpdateMissing.length) {
     return `<section class="catalog-review-section">
-      <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Todos os itens ativos atuais foram reconhecidos no arquivo.</p></div><span class="badge">0</span></div>
+      <div class="section-heading"><div><h3>Itens SIGEM ausentes do novo arquivo</h3><p>Todos os itens SIGEM ativos atuais foram reconhecidos no arquivo.</p></div><span class="badge">0</span></div>
     </section>`;
   }
   return `<section class="catalog-review-section">
-    <div class="section-heading"><div><h3>Itens ausentes do novo arquivo</h3><p>Nada é inativado automaticamente. Escolha explicitamente quando necessário.</p></div><span class="badge">${state.catalogUpdateMissing.length}</span></div>
+    <div class="section-heading"><div><h3>Itens SIGEM ausentes do novo arquivo</h3><p>Nada é inativado automaticamente. Escolha explicitamente quando necessário.</p></div><span class="badge">${state.catalogUpdateMissing.length}</span></div>
     <div class="table-wrap catalog-review-table"><table>
       <thead><tr><th>Item atual</th><th>Tipo</th><th>Patrimônios</th><th>Ação</th></tr></thead>
       <tbody>${state.catalogUpdateMissing.map(item=>`<tr>
@@ -1734,7 +1735,7 @@ function renderCatalogUpdateDialog() {
     root.innerHTML = `
       <div class="catalog-wizard">
         <section class="catalog-step">
-          <div class="step-title"><span>1</span><div><h3>Selecionar nova lista SIGEM</h3><p>CSV em UTF-8 ou Windows-1252, separado por vírgula ou ponto e vírgula.</p></div></div>
+          <div class="step-title"><span>1</span><div><h3>Selecionar nova base SIGEM</h3><p>CSV em UTF-8 ou Windows-1252, separado por vírgula ou ponto e vírgula.</p></div></div>
           <label class="file-drop catalog-file-drop">
             <input id="catalogUpdateFile" type="file" accept=".csv,text/csv">
             <strong>${state.catalogUpdateFileName || "Escolher arquivo CSV"}</strong>
@@ -2768,9 +2769,9 @@ async function handleSigemSearch(event) {
   box.hidden = false;
   box.innerHTML = '<div class="search-message">Pesquisando…</div>';
   try {
-    const items = await searchSigem(input.value);
-    const options = items.map((item) => `<button type="button" class="sigem-option" data-id="${item.id}" data-description="${escapeHtml(item.descricao)}" data-value="${item.valor_padrao}" data-type-id="${item.tipo_id || ""}" data-origin="${/\s-\sHRPP$/i.test(item.descricao) ? "HRPP" : "SIGEM"}"><span>${escapeHtml(item.descricao)}<small>${/\s-\sHRPP$/i.test(item.descricao) ? "Catálogo HRPP" : "SIGEM"}</small></span><strong>${money(item.valor_padrao)}</strong></button>`).join("");
-    box.innerHTML = options || '<div class="search-message">Nenhum item SIGEM encontrado. Você pode deixar este campo vazio.</div>';
+    const items = await searchCatalog(input.value);
+    const options = items.map((item) => `<button type="button" class="sigem-option" data-id="${item.id}" data-description="${escapeHtml(item.descricao)}" data-value="${item.valor_padrao}" data-type-id="${item.tipo_id || ""}" data-origin="${item.origem || "SIGEM"}"><span>${escapeHtml(item.descricao)}<small>${item.origem === "PROPRIO" ? "Catálogo Próprio — HRPP" : "SIGEM"}</small></span><strong>${money(item.valor_padrao)}</strong></button>`).join("");
+    box.innerHTML = options || '<div class="search-message">Nenhum item do Catálogo encontrado. Você pode deixar este campo vazio.</div>';
     box.querySelectorAll(".sigem-option").forEach((button) => button.addEventListener("click", () => selectSigem(button)));
   } catch (error) {
     box.innerHTML = `<div class="search-message">Erro: ${escapeHtml(error.message)}</div>`;
@@ -2791,13 +2792,13 @@ function updateTypeFieldState() {
   hint.classList.remove("is-warning", "is-locked");
   if (!linked) {
     select.disabled = false;
-    hint.textContent = "Sem item SIGEM, o Tipo é definido manualmente.";
+    hint.textContent = "Sem item do Catálogo, o Tipo é definido manualmente.";
     return;
   }
 
   if (!validTypeId(sigemType)) {
     select.disabled = false;
-    hint.textContent = "Este item SIGEM ainda não possui Tipo definido no catálogo. Revise o Tipo antes de salvar.";
+    hint.textContent = "Este item do Catálogo ainda não possui Tipo definido. Revise o Tipo antes de salvar.";
     hint.classList.add("is-warning");
     return;
   }
@@ -2805,25 +2806,25 @@ function updateTypeFieldState() {
   if (state.assetFormMode === "create") {
     select.value = String(sigemType);
     select.disabled = true;
-    hint.textContent = `Definido automaticamente pelo SIGEM: ${typeName(sigemType)}.`;
+    hint.textContent = `Definido automaticamente pelo Catálogo: ${typeName(sigemType)}.`;
     hint.classList.add("is-locked");
     return;
   }
 
   select.disabled = false;
   if (Number(select.value) !== sigemType) {
-    hint.textContent = `SIGEM: ${typeName(sigemType)}. O Tipo atual está diferente e exigirá confirmação ao salvar.`;
+    hint.textContent = `Catálogo: ${typeName(sigemType)}. O Tipo atual está diferente e exigirá confirmação ao salvar.`;
     hint.classList.add("is-warning");
   } else {
-    hint.textContent = `Tipo conferido com o SIGEM: ${typeName(sigemType)}.`;
+    hint.textContent = `Tipo conferido com o Catálogo: ${typeName(sigemType)}.`;
   }
 }
 
 function confirmSigemTypeOverride(selectedType, sigemType, sigemDescription = "") {
   if (!validTypeId(sigemType) || Number(selectedType) === Number(sigemType)) return true;
-  const item = sigemDescription ? `\nItem SIGEM: ${sigemDescription}` : "";
+  const item = sigemDescription ? `\nItem do Catálogo: ${sigemDescription}` : "";
   return window.confirm(
-    `Tipo diferente do catálogo SIGEM.${item}\n\nSIGEM: ${typeName(sigemType)}\nSelecionado: ${typeName(selectedType)}\n\nDeseja manter essa alteração?`
+    `Tipo diferente do Catálogo.${item}\n\nCatálogo: ${typeName(sigemType)}\nSelecionado: ${typeName(selectedType)}\n\nDeseja manter essa alteração?`
   );
 }
 
@@ -3356,7 +3357,7 @@ function renderPublicAsset(asset) {
             <h2>Identificação</h2>
             ${publicField("ID interna", asset.id_interna)}
             ${publicField("ID SES", asset.id_ses)}
-            ${publicField("Descrição SIGEM", sigemName)}
+            ${publicField("Item do Catálogo", sigemName)}
             ${publicField("Descrição complementar", asset.descricao)}
             ${publicField("Tipo", asset.tipo || typeName(asset.tipo_id))}
             ${publicField("Marca/Modelo", asset.marca_modelo)}
