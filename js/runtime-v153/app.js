@@ -2,12 +2,12 @@ import { hasApiConfig } from "./lib/api.js";
 import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/utils.js";
 import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
-import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.5.7";
+import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/sigem.js?v=1.6.0";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
-import { listRecentHistory } from "./services/historico.js?v=1.5.7";
+import { listRecentHistory } from "./services/historico.js?v=1.6.0";
 
 const state = {
   currentView: "dashboard",
@@ -2259,7 +2259,7 @@ async function changeCatalogType(select) {
   const next = Number(select.value);
   if (previous === next) return;
   const ok = window.confirm(
-    `Alterar a classificação SIGEM?\n\n${item.descricao}\n\n${typeName(previous)} → ${typeName(next)}\n\nPatrimônios vinculados que ainda usam a classificação anterior também serão atualizados.`
+    `Alterar a classificação do item?\n\n${item.descricao}\n\n${typeName(previous)} → ${typeName(next)}\n\nPatrimônios vinculados que ainda usam a classificação anterior também serão atualizados.`
   );
   if (!ok) {
     select.value = String(previous);
@@ -2275,7 +2275,7 @@ async function changeCatalogType(select) {
     toast(
       Number(result.patrimonios_sincronizados || 0) > 0
         ? `Classificação atualizada. ${result.patrimonios_sincronizados} patrimônio(s) vinculado(s) também foram sincronizados.`
-        : "Classificação SIGEM atualizada.",
+        : "Classificação do Catálogo atualizada.",
       "success"
     );
     renderCatalog();
