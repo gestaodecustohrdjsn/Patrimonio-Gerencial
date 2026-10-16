@@ -188,8 +188,9 @@ export default {
                 'nome',coalesce(cc.nome,h.dados_novos->>'nome',h.dados_anteriores->>'nome')
               )
               when h.tabela='descricoes_padrao' then jsonb_build_object(
-                'tipo','sigem',
-                'nome',coalesce(dp.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao')
+                'tipo','catalog_item',
+                'nome',coalesce(dp.descricao,h.dados_novos->>'descricao',h.dados_anteriores->>'descricao'),
+                'origem',coalesce(dp.origem_catalogo,h.dados_novos->>'origem',h.dados_anteriores->>'origem')
               )
               when h.tabela='catalogo_sigem_atualizacoes' then jsonb_build_object(
                 'tipo','catalog_update',
