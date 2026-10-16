@@ -90,7 +90,8 @@ O arquivo de referência versionado é:
 2. Confirmar que o comparador usa apenas itens de origem SIGEM.
 3. Marcar arquivo como catálogo completo e confirmar que os 7 itens próprios não aparecem como ausentes.
 4. Confirmar que a API rejeita qualquer plano de atualização SIGEM que tente alterar um item de origem PROPRIO.
-5. Novos itens vindos do updater devem nascer com:
+5. Em uma correspondência exata com valor SIGEM diferente, confirmar que o valor de referência do Catálogo é atualizado.
+6. Novos itens vindos do updater devem nascer com:
    - origem SIGEM;
    - fonte do valor SIGEM.
 
