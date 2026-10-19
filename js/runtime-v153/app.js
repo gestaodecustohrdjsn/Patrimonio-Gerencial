@@ -2320,6 +2320,171 @@ async function changeCatalogType(select) {
   }
 }
 
+const REPORT_TEMPLATE_COLUMNS = [
+  ["id_interna","ID interna"],
+  ["id_ses","ID SES"],
+  ["descricao","Descrição"],
+  ["tipo","Tipo"],
+  ["estado","Estado de conservação"],
+  ["mobilidade","Mobilidade"],
+  ["status","Status"],
+  ["manutencao","Manutenção"],
+  ["marca_modelo","Marca/Modelo"],
+  ["data_aquisicao","Data de aquisição"],
+  ["valor_aquisicao","Valor de aquisição"]
+];
+
+function defaultReportTemplateClient() {
+  return {
+    instituicao:"Hospital Regional Dr. José de Simone Netto",
+    unidade:"",
+    titulo:"Relação Patrimonial por Centro de Custo",
+    rodape:"Centro atual dos bens no momento da emissão.",
+    assinatura_1:"Responsável pelo setor",
+    assinatura_2:"Patrimônio",
+    mostrar_data:true,
+    mostrar_quantidade:true,
+    mostrar_filtros:true,
+    logo_data_url:null,
+    logo_nome:null,
+    colunas:{
+      id_interna:true,
+      id_ses:true,
+      descricao:true,
+      tipo:true,
+      estado:true,
+      mobilidade:true,
+      status:true,
+      manutencao:true,
+      marca_modelo:false,
+      data_aquisicao:false,
+      valor_aquisicao:false
+    }
+  };
+}
+
+function normalizeReportTemplateClient(value) {
+  const base=defaultReportTemplateClient();
+  const input=value && typeof value==="object" ? value : {};
+  return {
+    ...base,
+    ...input,
+    colunas:{...base.colunas,...(input.colunas||{})}
+  };
+}
+
+async function ensureReportTemplate(force=false) {
+  if(state.reportTemplateLoaded && !force) return state.reportTemplate;
+  if(state.reportTemplateBusy) return state.reportTemplate || defaultReportTemplateClient();
+  state.reportTemplateBusy=true;
+  try {
+    const result=await getReportTemplate();
+    state.reportTemplate=normalizeReportTemplateClient(result.configuracao);
+    state.reportTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:result.atualizado_por};
+    state.reportTemplateLoaded=true;
+    return state.reportTemplate;
+  } catch(error) {
+    state.reportTemplate=state.reportTemplate || defaultReportTemplateClient();
+    toast(`Não foi possível carregar o template da relação: ${error.message}`,"error");
+    return state.reportTemplate;
+  } finally {
+    state.reportTemplateBusy=false;
+  }
+}
+
+function reportTemplatePreviewHtml(template) {
+  const t=normalizeReportTemplateClient(template);
+  const visible=REPORT_TEMPLATE_COLUMNS.filter(([key])=>t.colunas?.[key]).map(([,label])=>label);
+  return `
+    <div class="report-template-preview">
+      <div class="report-template-preview-head">
+        ${t.logo_data_url ? `<img src="${escapeHtml(t.logo_data_url)}" alt="Logo configurado">` : '<div class="report-template-logo-placeholder">Logo</div>'}
+        <div>
+          <strong>${escapeHtml(t.instituicao || "Instituição")}</strong>
+          ${t.unidade ? `<span>${escapeHtml(t.unidade)}</span>` : ""}
+          <h3>${escapeHtml(t.titulo || "Relação Patrimonial")}</h3>
+        </div>
+      </div>
+      <div class="report-template-preview-columns">${visible.map(label=>`<span>${escapeHtml(label)}</span>`).join("")}</div>
+      <small>${escapeHtml(t.rodape || "Sem texto de rodapé")}</small>
+    </div>
+  `;
+}
+
+function readReportTemplateForm() {
+  const current=normalizeReportTemplateClient(state.reportTemplate);
+  const columns={};
+  for(const [key] of REPORT_TEMPLATE_COLUMNS) {
+    columns[key]=Boolean(document.querySelector(`[data-report-template-column="${key}"]`)?.checked);
+  }
+  return {
+    instituicao:document.querySelector("#reportTemplateInstitution")?.value.trim() || "",
+    unidade:document.querySelector("#reportTemplateUnit")?.value.trim() || "",
+    titulo:document.querySelector("#reportTemplateTitle")?.value.trim() || "",
+    rodape:document.querySelector("#reportTemplateFooter")?.value.trim() || "",
+    assinatura_1:document.querySelector("#reportTemplateSignature1")?.value.trim() || "",
+    assinatura_2:document.querySelector("#reportTemplateSignature2")?.value.trim() || "",
+    mostrar_data:Boolean(document.querySelector("#reportTemplateShowDate")?.checked),
+    mostrar_quantidade:Boolean(document.querySelector("#reportTemplateShowCount")?.checked),
+    mostrar_filtros:Boolean(document.querySelector("#reportTemplateShowFilters")?.checked),
+    logo_data_url:current.logo_data_url || null,
+    logo_nome:current.logo_nome || null,
+    colunas:columns
+  };
+}
+
+async function handleReportTemplateLogo(event) {
+  const file=event.target.files?.[0];
+  if(!file) return;
+  if(!["image/png","image/jpeg","image/webp"].includes(file.type)) {
+    toast("Use logo em PNG, JPG ou WEBP.","error");
+    event.target.value="";
+    return;
+  }
+  if(file.size>300*1024) {
+    toast("O logo deve ter no máximo 300 KB.","error");
+    event.target.value="";
+    return;
+  }
+  const dataUrl=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(new Error("Falha ao ler o logo."));
+    reader.readAsDataURL(file);
+  });
+  state.reportTemplate={...normalizeReportTemplateClient(state.reportTemplate),logo_data_url:dataUrl,logo_nome:file.name};
+  renderSettings();
+}
+
+async function saveReportTemplateFromSettings() {
+  if(state.reportTemplateBusy) return;
+  const config=readReportTemplateForm();
+  if(!config.titulo) {
+    toast("Informe o título da relação patrimonial.","error");
+    return;
+  }
+  if(!config.colunas.id_interna && !config.colunas.descricao) {
+    toast("Exiba pelo menos ID interna ou Descrição.","error");
+    return;
+  }
+  state.reportTemplateBusy=true;
+  const button=document.querySelector('[data-action="save-report-template"]');
+  if(button) { button.disabled=true; button.textContent="Salvando…"; }
+  try {
+    const result=await saveReportTemplate(config);
+    state.reportTemplate=normalizeReportTemplateClient(result.configuracao);
+    state.reportTemplateLoaded=true;
+    state.reportTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:state.session?.user||null};
+    state.recentHistory=[];
+    toast("Template da Relação Patrimonial salvo.","success");
+    renderSettings();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    state.reportTemplateBusy=false;
+  }
+}
+
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
   if (!canDeleteAssets()) {
@@ -2331,6 +2496,8 @@ function renderSettings() {
 
   const templateOpen = state.settingsOpenCard === "template";
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
+  const template=normalizeReportTemplateClient(state.reportTemplate);
+
   root.innerHTML = `
     <div class="page-header">
       <div><h1>Configurações</h1><p>Personalize parâmetros gerais do Patrimônio+.</p></div>
@@ -2347,11 +2514,55 @@ function renderSettings() {
           <span class="settings-card-chevron">${templateOpen ? "−" : "+"}</span>
         </button>
         <div class="settings-card-content" ${templateOpen ? "" : "hidden"}>
-          <div class="settings-coming-soon">
-            <strong>Estrutura preparada.</strong>
-            <p>Quando você enviar o PDF ou imagem de referência, esta área receberá o editor visual do template com prévia da impressão.</p>
-            <span class="badge">Em preparação</span>
-          </div>
+          ${!state.reportTemplateLoaded ? '<div class="loading">Carregando template…</div>' : `
+            <div class="report-template-editor">
+              <div class="report-template-fields">
+                <label>Instituição<input id="reportTemplateInstitution" maxlength="180" value="${escapeHtml(template.instituicao||"")}"></label>
+                <label>Unidade<input id="reportTemplateUnit" maxlength="180" value="${escapeHtml(template.unidade||"")}" placeholder="Ex.: Hospital Regional"></label>
+                <label class="full">Título do documento<input id="reportTemplateTitle" maxlength="180" value="${escapeHtml(template.titulo||"")}"></label>
+                <label class="full">Rodapé<textarea id="reportTemplateFooter" rows="2" maxlength="300">${escapeHtml(template.rodape||"")}</textarea></label>
+                <label>Assinatura 1<input id="reportTemplateSignature1" maxlength="120" value="${escapeHtml(template.assinatura_1||"")}"></label>
+                <label>Assinatura 2<input id="reportTemplateSignature2" maxlength="120" value="${escapeHtml(template.assinatura_2||"")}"></label>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Logo</strong>
+                <div class="report-template-logo-editor">
+                  ${template.logo_data_url ? `<img src="${escapeHtml(template.logo_data_url)}" alt="Logo"><span>${escapeHtml(template.logo_nome||"Logo configurado")}</span>` : '<div class="report-template-logo-placeholder">Sem logo</div>'}
+                  <label class="secondary-button file-button">Selecionar imagem<input id="reportTemplateLogo" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+                  ${template.logo_data_url ? '<button class="ghost-button compact-button" type="button" data-action="remove-report-logo">Remover</button>' : ""}
+                </div>
+                <small>PNG, JPG ou WEBP, até 300 KB.</small>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Informações do cabeçalho</strong>
+                <div class="config-checkbox-grid">
+                  <label><input id="reportTemplateShowDate" type="checkbox" ${template.mostrar_data?"checked":""}> Data/hora de geração</label>
+                  <label><input id="reportTemplateShowCount" type="checkbox" ${template.mostrar_quantidade?"checked":""}> Quantidade de patrimônios</label>
+                  <label><input id="reportTemplateShowFilters" type="checkbox" ${template.mostrar_filtros?"checked":""}> Resumo dos filtros</label>
+                </div>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Colunas da relação</strong>
+                <div class="config-checkbox-grid">
+                  ${REPORT_TEMPLATE_COLUMNS.map(([key,label])=>`<label><input type="checkbox" data-report-template-column="${key}" ${template.colunas?.[key]?"checked":""}> ${escapeHtml(label)}</label>`).join("")}
+                </div>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Prévia estrutural</strong>
+                ${reportTemplatePreviewHtml(template)}
+              </div>
+
+              <div class="settings-editor-actions">
+                <button class="ghost-button" type="button" data-action="reset-report-template">Restaurar padrão</button>
+                <button class="primary-button" type="button" data-action="save-report-template">Salvar template</button>
+              </div>
+              ${state.reportTemplateMeta?.atualizado_em ? `<small class="settings-update-meta">Última alteração: ${escapeHtml(historyDateTime(state.reportTemplateMeta.atualizado_em))}${state.reportTemplateMeta?.atualizado_por?.nome ? ` · ${escapeHtml(state.reportTemplateMeta.atualizado_por.nome)}` : ""}</small>` : ""}
+            </div>
+          `}
         </div>
       </section>
 
@@ -2380,8 +2591,27 @@ function renderSettings() {
       const key = button.dataset.settingCard;
       state.settingsOpenCard = state.settingsOpenCard === key ? null : key;
       renderSettings();
+      if(state.settingsOpenCard==="template" && !state.reportTemplateLoaded) {
+        ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
     });
   });
+
+  document.querySelector("#reportTemplateLogo")?.addEventListener("change",handleReportTemplateLogo);
+  document.querySelector('[data-action="remove-report-logo"]')?.addEventListener("click",()=>{
+    state.reportTemplate={...normalizeReportTemplateClient(state.reportTemplate),logo_data_url:null,logo_nome:null};
+    renderSettings();
+  });
+  document.querySelector('[data-action="reset-report-template"]')?.addEventListener("click",()=>{
+    state.reportTemplate=defaultReportTemplateClient();
+    state.reportTemplateLoaded=true;
+    renderSettings();
+  });
+  document.querySelector('[data-action="save-report-template"]')?.addEventListener("click",saveReportTemplateFromSettings);
+
+  if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
+    ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
 }
 
 function renderCenters() {
