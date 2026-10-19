@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {calculatePermission,normalizeProfile,hasPermission} from "../src/permissions.js";
+assert.equal(normalizeProfile("AUXILIAR"),"OPERADOR");
+assert.equal(normalizeProfile("unknown"),"CONSULTA");
+assert.equal(calculatePermission({profile:"OPERADOR",code:"importacoes.executar",inherited:false,override:true}),true);
+assert.equal(calculatePermission({profile:"GESTOR",code:"patrimonios.editar",inherited:true,override:false}),false);
+assert.equal(calculatePermission({profile:"CONSULTA",code:"patrimonios.editar",inherited:false,override:true}),false);
+assert.equal(calculatePermission({profile:"OPERADOR",code:"usuarios.gerenciar",exclusiveAdmin:true,inherited:true,override:true}),false);
+assert.equal(calculatePermission({profile:"ADMIN",code:"usuarios.gerenciar",exclusiveAdmin:true}),true);
+assert.equal(hasPermission({a:true},"a"),true);
+assert.equal(hasPermission({a:false},"a"),false);
+assert.equal(hasPermission({a:true},"__proto__"),false);
+console.log("OK: regras de autorização");
