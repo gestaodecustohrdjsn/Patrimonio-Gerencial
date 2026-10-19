@@ -1,1 +1,1 @@
-Patrimônio+ portátil frontend 1.7.2
+Patrimônio+ portátil frontend 1.8.0

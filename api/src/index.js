@@ -6,7 +6,7 @@ function corsHeaders(env, request) {
   const allowed = (env.ALLOWED_ORIGIN || "").trim();
   return {
     "Access-Control-Allow-Origin": origin && origin === allowed ? origin : allowed,
-    "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Setup-Token",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
@@ -50,6 +50,77 @@ async function authenticate(request, sql) {
 
 function requireRole(user, roles) {
   return user && roles.includes(user.perfil);
+}
+
+
+function defaultReportTemplate() {
+  return {
+    instituicao: "Hospital Regional Dr. José de Simone Netto",
+    unidade: "",
+    titulo: "Relação Patrimonial por Centro de Custo",
+    rodape: "Centro atual dos bens no momento da emissão.",
+    assinatura_1: "Responsável pelo setor",
+    assinatura_2: "Patrimônio",
+    mostrar_data: true,
+    mostrar_quantidade: true,
+    mostrar_filtros: true,
+    logo_data_url: null,
+    logo_nome: null,
+    colunas: {
+      id_interna: true,
+      id_ses: true,
+      descricao: true,
+      tipo: true,
+      estado: true,
+      mobilidade: true,
+      status: true,
+      manutencao: true,
+      marca_modelo: false,
+      data_aquisicao: false,
+      valor_aquisicao: false
+    }
+  };
+}
+
+function sanitizeReportTemplate(input) {
+  const base=defaultReportTemplate();
+  const value=input && typeof input==="object" ? input : {};
+  const text=(key,max)=>{
+    const raw=String(value[key] ?? base[key] ?? "").trim();
+    return raw.slice(0,max);
+  };
+  const columns={...base.colunas};
+  if(value.colunas && typeof value.colunas==="object") {
+    for(const key of Object.keys(columns)) {
+      if(Object.prototype.hasOwnProperty.call(value.colunas,key)) columns[key]=Boolean(value.colunas[key]);
+    }
+  }
+  if(!columns.id_interna && !columns.descricao) {
+    throw new Error("VALIDATION:O template precisa exibir pelo menos ID interna ou Descrição.");
+  }
+  let logo=null;
+  const rawLogo=value.logo_data_url;
+  if(rawLogo!==null && rawLogo!==undefined && String(rawLogo).trim()!=="") {
+    logo=String(rawLogo).trim();
+    if(logo.length>400000) throw new Error("VALIDATION:A imagem do logo é grande demais. Use até aproximadamente 300 KB.");
+    if(!/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i.test(logo)) {
+      throw new Error("VALIDATION:Formato de logo inválido. Use PNG, JPG ou WEBP.");
+    }
+  }
+  return {
+    instituicao:text("instituicao",180),
+    unidade:text("unidade",180),
+    titulo:text("titulo",180) || base.titulo,
+    rodape:text("rodape",300),
+    assinatura_1:text("assinatura_1",120),
+    assinatura_2:text("assinatura_2",120),
+    mostrar_data:Object.prototype.hasOwnProperty.call(value,"mostrar_data")?Boolean(value.mostrar_data):base.mostrar_data,
+    mostrar_quantidade:Object.prototype.hasOwnProperty.call(value,"mostrar_quantidade")?Boolean(value.mostrar_quantidade):base.mostrar_quantidade,
+    mostrar_filtros:Object.prototype.hasOwnProperty.call(value,"mostrar_filtros")?Boolean(value.mostrar_filtros):base.mostrar_filtros,
+    logo_data_url:logo,
+    logo_nome:logo ? text("logo_nome",180) : null,
+    colunas:columns
+  };
 }
 
 function normalizeCatalogText(value) {
@@ -391,7 +462,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.5.1",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.6.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -460,8 +531,70 @@ export default {
       }
       if (request.method === "GET" && url.pathname === "/api/me") return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil}},200,env,request);
 
+      if (request.method === "GET" && url.pathname === "/api/configuracoes/relacao-patrimonial") {
+        const defaults=defaultReportTemplate();
+        const rows=await sql`
+          select c.id,c.valor,c.atualizado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as atualizado_por
+          from configuracoes_sistema c
+          left join usuarios u on u.id=c.atualizado_por
+          where c.chave='RELACAO_PATRIMONIAL'
+          limit 1
+        `;
+        const stored=rows[0]?.valor && typeof rows[0].valor==="object" ? rows[0].valor : {};
+        const config={
+          ...defaults,
+          ...stored,
+          colunas:{...defaults.colunas,...(stored.colunas||{})}
+        };
+        return responseJson({ok:true,configuracao:config,atualizado_em:rows[0]?.atualizado_em||null,atualizado_por:rows[0]?.atualizado_por||null},200,env,request);
+      }
+
+      if (request.method === "PUT" && url.pathname === "/api/configuracoes/relacao-patrimonial") {
+        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem alterar o template da relação patrimonial."},403,env,request);
+        const b=await bodyJson(request);
+        let config;
+        try { config=sanitizeReportTemplate(b.configuracao); }
+        catch(error) {
+          const msg=String(error?.message||error);
+          if(msg.startsWith("VALIDATION:")) return responseJson({ok:false,error:msg.slice(11)},400,env,request);
+          throw error;
+        }
+        const previousRows=await sql`select valor from configuracoes_sistema where chave='RELACAO_PATRIMONIAL' limit 1`;
+        const previous=previousRows[0]?.valor||null;
+        const previousAudit=previous ? {...previous,logo_data_url:previous.logo_data_url?"[logo configurado]":null} : null;
+        const configAudit={...config,logo_data_url:config.logo_data_url?"[logo configurado]":null};
+        const rows=await sql`
+          insert into configuracoes_sistema(chave,valor,atualizado_por,atualizado_em)
+          values('RELACAO_PATRIMONIAL',${JSON.stringify(config)}::jsonb,${user.id}::uuid,now())
+          on conflict(chave) do update
+          set valor=excluded.valor,atualizado_por=excluded.atualizado_por,atualizado_em=now()
+          returning id,valor,atualizado_em
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+          values(
+            'configuracoes_sistema',
+            ${rows[0].id}::uuid,
+            'CONFIGURACAO_RELACAO_PATRIMONIAL',
+            ${previousAudit?JSON.stringify(previousAudit):null}::jsonb,
+            ${JSON.stringify(configAudit)}::jsonb,
+            ${user.id}::uuid
+          )
+        `;
+        return responseJson({ok:true,configuracao:rows[0].valor,atualizado_em:rows[0].atualizado_em},200,env,request);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/historico") {
-        const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||30)));
+        const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit")||30)));
+        const offset=Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)));
+        const tabela=(url.searchParams.get("tabela")||"").trim().slice(0,80);
+        const operacao=(url.searchParams.get("operacao")||"").trim().slice(0,120);
+        const usuarioId=(url.searchParams.get("usuario_id")||"").trim();
+        const q=(url.searchParams.get("q")||"").trim().slice(0,200);
+        const inicio=(url.searchParams.get("inicio")||"").trim();
+        const fim=(url.searchParams.get("fim")||"").trim();
+
         const rows=await sql`
           select
             h.id,
@@ -469,6 +602,7 @@ export default {
             h.registro_id,
             h.operacao,
             h.criado_em,
+            (count(*) over())::int as total_filtrado,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario,
             case
               when h.tabela='patrimonios' then jsonb_build_object(
@@ -493,6 +627,10 @@ export default {
               when h.tabela='importacoes_patrimoniais' then jsonb_build_object(
                 'tipo','asset_import',
                 'nome',h.dados_novos->>'nome_arquivo'
+              )
+              when h.tabela='configuracoes_sistema' then jsonb_build_object(
+                'tipo','configuracao',
+                'nome','Template da Relação Patrimonial'
               )
               else jsonb_build_object('tipo',h.tabela)
             end as entidade,
@@ -531,13 +669,47 @@ export default {
               nullif(h.dados_novos->>'descricao_padrao_id','')::uuid,
               nullif(h.dados_anteriores->>'descricao_padrao_id','')::uuid
             )
+          where (${tabela}='' or h.tabela=${tabela})
+            and (${operacao}='' or h.operacao ilike ${'%'+operacao+'%'})
+            and (${usuarioId}='' or h.usuario_id::text=${usuarioId})
+            and (${inicio}='' or h.criado_em >= nullif(${inicio},'')::date)
+            and (${fim}='' or h.criado_em < (nullif(${fim},'')::date + interval '1 day'))
+            and (
+              ${q}=''
+              or h.operacao ilike ${'%'+q+'%'}
+              or h.tabela ilike ${'%'+q+'%'}
+              or coalesce(u.nome,'') ilike ${'%'+q+'%'}
+              or coalesce(p.id_interna,'') ilike ${'%'+q+'%'}
+              or coalesce(p.id_ses,'') ilike ${'%'+q+'%'}
+              or coalesce(p.descricao,'') ilike ${'%'+q+'%'}
+              or coalesce(pd.descricao,'') ilike ${'%'+q+'%'}
+              or coalesce(cc.codigo,'') ilike ${'%'+q+'%'}
+              or coalesce(cc.nome,'') ilike ${'%'+q+'%'}
+              or coalesce(h.dados_novos::text,'') ilike ${'%'+q+'%'}
+              or coalesce(h.dados_anteriores::text,'') ilike ${'%'+q+'%'}
+            )
           order by h.criado_em desc,h.id desc
           limit ${limit}
+          offset ${offset}
         `;
-        return responseJson({ok:true,eventos:rows},200,env,request);
+        const usuarios=await sql`
+          select distinct u.id,u.nome
+          from historico_alteracoes h
+          join usuarios u on u.id=h.usuario_id
+          order by u.nome
+        `;
+        const total=rows.length ? Number(rows[0].total_filtrado||0) : 0;
+        return responseJson({
+          ok:true,
+          eventos:rows.map(({total_filtrado,...row})=>row),
+          total,
+          limit,
+          offset,
+          usuarios
+        },200,env,request);
       }
 
-      if (request.method === "GET" && url.pathname === "/api/centros") {
+            if (request.method === "GET" && url.pathname === "/api/centros") {
         const rows=await sql`
           select c.id,c.codigo,c.nome,c.ativo,
             (select count(*)::int from patrimonios p where p.centro_custo_id=c.id and p.removido=false) as patrimonios

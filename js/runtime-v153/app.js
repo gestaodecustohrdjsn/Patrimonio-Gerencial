@@ -7,8 +7,9 @@ import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, 
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
-import { listRecentHistory } from "./services/historico.js?v=1.6.0";
+import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
+import { getReportTemplate, saveReportTemplate } from "./services/configuracoes.js?v=1.8.0";
 
 const state = {
   currentView: "dashboard",
@@ -36,7 +37,21 @@ const state = {
   assetFilters: {},
   labelFilters: {},
   labelSelected: new Set(),
+  labelStartPosition: 1,
+  labelPrintBusy: false,
   reportFilters: { centro: "", q: "", tipo: "", status: "", aquisicao: "", conservacao: "", mobilidade: "", manutencao: "", ordenacao: "id" },
+  reportTemplate: null,
+  reportTemplateLoaded: false,
+  reportTemplateMeta: null,
+  reportTemplateBusy: false,
+  historyEvents: [],
+  historyTotal: 0,
+  historyUsers: [],
+  historyLoading: false,
+  historyLoaded: false,
+  historyPageSize: 100,
+  historyOffset: 0,
+  historyFilters: { tabela: "", operacao: "", usuario_id: "", q: "", inicio: "", fim: "" },
   detailEditMode: false,
   maintenance: [],
   maintenanceAssetId: null,
@@ -95,6 +110,7 @@ function shell() {
         ${canEditAssets() ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
+        <button class="nav-item" data-view="historico">Histórico</button>
         <button class="nav-item" data-view="configuracoes">Configurações</button>
       </nav>
       <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
@@ -287,6 +303,7 @@ function render() {
     case "importacao": renderImport(); break;
     case "etiquetas": renderLabels(); break;
     case "relatorios": renderReports(); break;
+    case "historico": renderHistory(); break;
     case "configuracoes": renderSettings(); break;
     default: renderDashboard();
   }
@@ -321,7 +338,8 @@ function historyActionLabel(event) {
     "descricoes_padrao:ITEM_CATALOGO_EDITADO": "Editou item do Catálogo",
     "descricoes_padrao:ITEM_CATALOGO_EXCLUIDO": "Excluiu item do Catálogo",
     "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM",
-    "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial"
+    "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial",
+    "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -338,6 +356,7 @@ function historyEntityLabel(event) {
   if (entity.tipo === "catalog_item") return entity.nome || "Item do Catálogo";
   if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
   if (entity.tipo === "asset_import") return entity.nome || "Importação patrimonial";
+  if (entity.tipo === "configuracao") return entity.nome || "Configuração do sistema";
   return "";
 }
 
@@ -449,6 +468,181 @@ function renderDashboard() {
   bindDashboardHistoryActions();
   refreshDashboardHistory();
 }
+
+
+
+function historyModuleName(table) {
+  return ({
+    patrimonios:"Patrimônios",
+    centros_custo:"Centros de custo",
+    descricoes_padrao:"Catálogo",
+    catalogo_sigem_atualizacoes:"Atualizações SIGEM",
+    importacoes_patrimoniais:"Importações",
+    configuracoes_sistema:"Configurações"
+  })[table] || table || "Sistema";
+}
+
+async function refreshHistoryPage({resetOffset=false}={}) {
+  if(state.historyLoading) return;
+  if(resetOffset) state.historyOffset=0;
+  state.historyLoading=true;
+  if(state.currentView==="historico") renderHistory();
+  try {
+    const result=await listHistory({
+      ...state.historyFilters,
+      limit:state.historyPageSize,
+      offset:state.historyOffset
+    });
+    state.historyEvents=result.eventos;
+    state.historyTotal=result.total;
+    state.historyUsers=result.usuarios;
+    state.historyLoaded=true;
+  } catch(error) {
+    toast(`Não foi possível carregar o histórico: ${error.message}`,"error");
+  } finally {
+    state.historyLoading=false;
+    if(state.currentView==="historico") renderHistory();
+  }
+}
+
+function exportHistoryCsv() {
+  const events=state.historyEvents||[];
+  if(!events.length) return;
+  const data=[
+    ["Data/Hora","Usuário","Módulo","Operação","Entidade","Detalhes"],
+    ...events.map(event=>[
+      historyDateTime(event.criado_em),
+      event.usuario?.nome||"Sistema",
+      historyModuleName(event.tabela),
+      historyActionLabel(event),
+      historyEntityLabel(event),
+      historyDetailText(event)
+    ])
+  ];
+  const csv=data.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(";")).join("\n");
+  const url=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`historico-patrimonio-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderHistory() {
+  const root=document.querySelector("#viewRoot");
+  const f=state.historyFilters;
+  const events=state.historyEvents||[];
+  const total=Number(state.historyTotal||0);
+  const start=total ? state.historyOffset+1 : 0;
+  const end=Math.min(total,state.historyOffset+events.length);
+  const currentPage=Math.floor(state.historyOffset/state.historyPageSize)+1;
+  const totalPages=Math.max(1,Math.ceil(total/state.historyPageSize));
+  const shown=total ? `${start}–${end}` : "0";
+
+  root.innerHTML=`
+    <div class="page-header">
+      <div><h1>Histórico Geral</h1><p>Auditoria centralizada de operações do Patrimônio+.</p></div>
+      <div class="header-actions">
+        <button class="ghost-button" data-action="refresh-history" ${state.historyLoading?"disabled":""}>Atualizar</button>
+        <button class="primary-button" data-action="export-history" ${events.length?"":"disabled"}>Exportar página CSV</button>
+      </div>
+    </div>
+
+    <section class="filter-panel history-filter-panel">
+      <div class="filter-panel-head">
+        <div><strong>Filtros do histórico</strong><small>Combine período, módulo, usuário, operação e pesquisa livre.</small></div>
+        <button class="ghost-button compact-button" data-action="clear-history-filters">Limpar filtros</button>
+      </div>
+      <div class="filter-grid history-filter-grid">
+        <label class="filter-wide">Pesquisa
+          <input type="search" data-history-filter="q" value="${escapeHtml(f.q)}" placeholder="ID, patrimônio, centro, usuário, operação…">
+        </label>
+        <label>Módulo
+          <select data-history-filter="tabela">
+            <option value="">Todos</option>
+            <option value="patrimonios" ${f.tabela==="patrimonios"?"selected":""}>Patrimônios</option>
+            <option value="centros_custo" ${f.tabela==="centros_custo"?"selected":""}>Centros de custo</option>
+            <option value="descricoes_padrao" ${f.tabela==="descricoes_padrao"?"selected":""}>Catálogo</option>
+            <option value="catalogo_sigem_atualizacoes" ${f.tabela==="catalogo_sigem_atualizacoes"?"selected":""}>Atualizações SIGEM</option>
+            <option value="importacoes_patrimoniais" ${f.tabela==="importacoes_patrimoniais"?"selected":""}>Importações</option>
+            <option value="configuracoes_sistema" ${f.tabela==="configuracoes_sistema"?"selected":""}>Configurações</option>
+          </select>
+        </label>
+        <label>Usuário
+          <select data-history-filter="usuario_id">
+            <option value="">Todos</option>
+            ${state.historyUsers.map(user=>`<option value="${user.id}" ${f.usuario_id===user.id?"selected":""}>${escapeHtml(user.nome)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Operação contém
+          <input type="text" data-history-filter="operacao" value="${escapeHtml(f.operacao)}" placeholder="Ex.: movimentacao">
+        </label>
+        <label>Data inicial
+          <input type="date" data-history-filter="inicio" value="${escapeHtml(f.inicio)}">
+        </label>
+        <label>Data final
+          <input type="date" data-history-filter="fim" value="${escapeHtml(f.fim)}">
+        </label>
+      </div>
+    </section>
+
+    <div class="cards cards-three history-summary-cards">
+      <article class="card"><span class="muted">Eventos encontrados</span><div class="metric">${total}</div></article>
+      <article class="card"><span class="muted">Exibindo</span><div class="metric">${shown}</div></article>
+      <article class="card"><span class="muted">Página</span><div class="metric">${currentPage}/${totalPages}</div></article>
+    </div>
+
+    <section class="panel history-full-panel">
+      <div class="panel-header">
+        <div><h2>Eventos</h2><small>O histórico é somente leitura.</small></div>
+        ${state.historyLoading?'<span class="badge">Carregando…</span>':`<span class="badge">${events.length} nesta página</span>`}
+      </div>
+      ${state.historyLoading && !state.historyLoaded ? '<div class="loading">Carregando histórico…</div>' :
+        events.length ? `<div class="table-wrap history-table-wrap"><table class="history-table">
+          <thead><tr><th>Data/Hora</th><th>Usuário</th><th>Módulo</th><th>Operação</th><th>Entidade</th><th>Detalhes</th></tr></thead>
+          <tbody>${events.map(event=>`<tr>
+            <td class="history-date-cell">${escapeHtml(historyDateTime(event.criado_em))}</td>
+            <td>${escapeHtml(event.usuario?.nome||"Sistema")}</td>
+            <td><span class="badge">${escapeHtml(historyModuleName(event.tabela))}</span></td>
+            <td><strong>${escapeHtml(historyActionLabel(event))}</strong></td>
+            <td>${escapeHtml(historyEntityLabel(event)||"—")}</td>
+            <td>${escapeHtml(historyDetailText(event)||"—")}</td>
+          </tr>`).join("")}</tbody>
+        </table></div>` : '<div class="empty">Nenhum evento corresponde aos filtros.</div>'}
+
+      <div class="history-pagination">
+        <button class="ghost-button" data-action="history-prev" ${state.historyOffset<=0||state.historyLoading?"disabled":""}>← Anterior</button>
+        <span>Página ${currentPage} de ${totalPages}</span>
+        <button class="ghost-button" data-action="history-next" ${state.historyOffset+state.historyPageSize>=total||state.historyLoading?"disabled":""}>Próxima →</button>
+      </div>
+    </section>
+  `;
+
+  document.querySelectorAll("[data-history-filter]").forEach(control=>{
+    const eventName=control.tagName==="INPUT" && ["search","text"].includes(control.type) ? "input" : "change";
+    control.addEventListener(eventName,debounce(()=>{
+      state.historyFilters[control.dataset.historyFilter]=control.value;
+      refreshHistoryPage({resetOffset:true});
+    },eventName==="input"?250:0));
+  });
+  document.querySelector('[data-action="clear-history-filters"]')?.addEventListener("click",()=>{
+    state.historyFilters={tabela:"",operacao:"",usuario_id:"",q:"",inicio:"",fim:""};
+    refreshHistoryPage({resetOffset:true});
+  });
+  document.querySelector('[data-action="refresh-history"]')?.addEventListener("click",()=>refreshHistoryPage());
+  document.querySelector('[data-action="export-history"]')?.addEventListener("click",exportHistoryCsv);
+  document.querySelector('[data-action="history-prev"]')?.addEventListener("click",()=>{
+    state.historyOffset=Math.max(0,state.historyOffset-state.historyPageSize);
+    refreshHistoryPage();
+  });
+  document.querySelector('[data-action="history-next"]')?.addEventListener("click",()=>{
+    state.historyOffset+=state.historyPageSize;
+    refreshHistoryPage();
+  });
+
+  if(!state.historyLoaded && !state.historyLoading) refreshHistoryPage();
+}
+
 
 
 function userProfile() {
@@ -983,16 +1177,38 @@ function renderLabels() {
   const rows = filteredByPanel("labelFilters", false);
   const selectedCount = state.labelSelected.size;
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Etiquetas</h1><p>Selecione livremente patrimônios de diferentes centros e tipos.</p></div></div>
+    <div class="page-header"><div><h1>Etiquetas</h1><p>Selecione patrimônios e gere arquivos individuais ou folhas A4 com 30 etiquetas.</p></div></div>
     ${filterPanelHtml("labelFilters", "Filtros das etiquetas")}
     <section class="selection-toolbar">
       <div><strong>${selectedCount} selecionado(s)</strong><small>${rows.length} patrimônio(s) no filtro atual.</small></div>
       <div class="header-actions">
         <button class="ghost-button" data-action="select-filtered-labels">Selecionar todos filtrados</button>
         <button class="ghost-button" data-action="clear-label-selection">Limpar seleção</button>
-        <button class="primary-button" data-action="generate-selected-labels" ${selectedCount ? "" : "disabled"}>Gerar ${selectedCount || ""} etiqueta${selectedCount===1?"":"s"}</button>
+        <button class="ghost-button" data-action="generate-selected-labels" ${selectedCount ? "" : "disabled"}>Baixar PNG/ZIP</button>
       </div>
     </section>
+
+    <section class="panel label-a4-panel">
+      <div class="panel-header">
+        <div><h2>Impressão em folha A4 — 30 etiquetas</h2><small>Grade 3 × 10. A primeira página pode começar em qualquer posição para reaproveitar folhas parcialmente usadas.</small></div>
+        <span class="badge">${selectedCount} selecionado(s)</span>
+      </div>
+      <div class="label-a4-controls">
+        <label>Começar na posição
+          <select id="labelStartPosition">
+            ${Array.from({length:30},(_,i)=>`<option value="${i+1}" ${Number(state.labelStartPosition)===i+1?"selected":""}>Etiqueta ${i+1}</option>`).join("")}
+          </select>
+        </label>
+        <div class="label-a4-help">
+          <strong>Ordem:</strong>
+          <span>da esquerda para a direita, de cima para baixo.</span>
+        </div>
+        <button class="primary-button" data-action="print-a4-labels" ${selectedCount && !state.labelPrintBusy ? "" : "disabled"}>
+          ${state.labelPrintBusy ? "Gerando folha…" : `Imprimir A4 (${selectedCount})`}
+        </button>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="table-wrap"><table><thead><tr><th class="check-col"></th><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Status</th><th>Prévia</th></tr></thead>
       <tbody>${rows.map(asset=>`<tr>
@@ -1175,42 +1391,102 @@ function exportReportCsv() {
   URL.revokeObjectURL(url);
 }
 
-function printReport() {
+function reportColumnValue(asset,key) {
+  if(key==="id_interna") return asset.id_interna || "—";
+  if(key==="id_ses") return asset.id_ses || "—";
+  if(key==="descricao") return assetDisplayName(asset);
+  if(key==="tipo") return typeName(asset.tipo_id);
+  if(key==="estado") return conservationName(asset.estado_conservacao);
+  if(key==="mobilidade") return asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo";
+  if(key==="status") return asset.status === "ATIVO" ? "Ativo" : "Inativo";
+  if(key==="manutencao") return asset.em_manutencao ? "Em manutenção" : "—";
+  if(key==="marca_modelo") return asset.marca_modelo || "—";
+  if(key==="data_aquisicao") return formatDate(asset.data_aquisicao);
+  if(key==="valor_aquisicao") return asset.valor_aquisicao == null ? "—" : money(Number(asset.valor_aquisicao));
+  return "—";
+}
+
+async function printReport() {
   const rows = reportRows();
   const center = reportCenter();
   if (!rows.length || !center) return;
+
   const popup = window.open("", "_blank", "width=1200,height=800");
   if (!popup) { toast("O navegador bloqueou a janela de impressão.", "error"); return; }
-  const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
-  const bodyRows = rows.map(asset => `<tr>
-    <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
-    <td>${escapeHtml(asset.id_ses || "—")}</td>
-    <td>${escapeHtml(assetDisplayName(asset))}</td>
-    <td>${escapeHtml(typeName(asset.tipo_id))}</td>
-    <td>${escapeHtml(conservationName(asset.estado_conservacao))}</td>
-    <td>${asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}</td>
-    <td>${asset.status === "ATIVO" ? "Ativo" : "Inativo"}</td>
-    <td>${asset.em_manutencao ? "Em manutenção" : "—"}</td>
-  </tr>`).join("");
+  popup.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Preparando relação patrimonial…</title></head><body style="font-family:Arial,sans-serif;padding:30px"><h2>Preparando relação patrimonial…</h2><p>Aguarde enquanto o template é carregado.</p></body></html>');
+  popup.document.close();
 
-  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relação Patrimonial - ${escapeHtml(center.nome)}</title>
+  let template;
+  try {
+    template=normalizeReportTemplateClient(await ensureReportTemplate());
+  } catch(error) {
+    popup.close();
+    toast(error.message,"error");
+    return;
+  }
+
+  const columns=REPORT_TEMPLATE_COLUMNS
+    .filter(([key])=>template.colunas?.[key])
+    .map(([key,label])=>({key,label}));
+  if(!columns.length) {
+    popup.close();
+    toast("O template não possui colunas visíveis.","error");
+    return;
+  }
+
+  const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+  const bodyRows = rows.map(asset => `<tr>${columns.map(col=>`<td class="col-${col.key}">${escapeHtml(reportColumnValue(asset,col.key))}</td>`).join("")}</tr>`).join("");
+  const headerCells=columns.map(col=>`<th class="col-${col.key}">${escapeHtml(col.label)}</th>`).join("");
+  const logo=template.logo_data_url ? `<img class="document-logo" src="${escapeHtml(template.logo_data_url)}" alt="Logo">` : "";
+  const signatures=[template.assinatura_1,template.assinatura_2].filter(Boolean);
+
+  popup.document.open();
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(template.titulo)} - ${escapeHtml(center.nome)}</title>
     <style>
       @page{size:A4 landscape;margin:10mm}
-      *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#17313d;margin:0;font-size:9pt}
-      header{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;border-bottom:2px solid #104861;padding-bottom:8px;margin-bottom:10px}
-      h1{font-size:16pt;margin:0 0 3px;color:#104861}h2{font-size:11pt;margin:0}.meta{text-align:right;color:#526a75;font-size:8pt}
-      .filters{margin:0 0 10px;color:#526a75;font-size:8pt}.count{font-weight:700;color:#104861}
-      table{border-collapse:collapse;width:100%;table-layout:fixed}th,td{border:1px solid #cfdde3;padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
-      th{background:#edf5f8;font-size:7.5pt;text-transform:uppercase}tr{break-inside:avoid}
-      th:nth-child(1),td:nth-child(1){width:11%}th:nth-child(2),td:nth-child(2){width:9%}th:nth-child(3),td:nth-child(3){width:24%}
-      th:nth-child(4),td:nth-child(4){width:14%}th:nth-child(5),td:nth-child(5){width:14%}th:nth-child(6),td:nth-child(6){width:9%}
-      th:nth-child(7),td:nth-child(7){width:8%}th:nth-child(8),td:nth-child(8){width:11%}
-      footer{margin-top:10px;display:flex;justify-content:space-between;color:#6a7f88;font-size:8pt}
+      *{box-sizing:border-box}
+      body{font-family:Arial,sans-serif;color:#17313d;margin:0;font-size:8.5pt}
+      .document-header{display:flex;justify-content:space-between;gap:18px;align-items:center;border-bottom:2px solid #104861;padding-bottom:8px;margin-bottom:9px}
+      .document-identity{display:flex;align-items:center;gap:12px;min-width:0}
+      .document-logo{width:auto;height:50px;max-width:120px;object-fit:contain}
+      .institution{font-size:9pt;font-weight:700;color:#526a75;margin-bottom:2px}
+      .unit{font-size:8pt;color:#6a7f88;margin-bottom:4px}
+      h1{font-size:15pt;margin:0;color:#104861;line-height:1.1}
+      h2{font-size:10.5pt;margin:4px 0 0}
+      .meta{text-align:right;color:#526a75;font-size:8pt;white-space:nowrap}
+      .filters{margin:0 0 9px;color:#526a75;font-size:8pt}
+      .count{font-weight:700;color:#104861}
+      table{border-collapse:collapse;width:100%;table-layout:auto}
+      thead{display:table-header-group}
+      th,td{border:1px solid #cfdde3;padding:4px 5px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+      th{background:#edf5f8;font-size:7.3pt;text-transform:uppercase}
+      tr{break-inside:avoid}
+      .col-descricao{min-width:42mm}
+      .col-id_interna,.col-id_ses{white-space:nowrap}
+      .signatures{display:grid;grid-template-columns:repeat(${Math.max(1,signatures.length)},1fr);gap:30mm;margin-top:18mm;break-inside:avoid}
+      .signature{border-top:1px solid #526a75;text-align:center;padding-top:4px;color:#526a75;font-size:8pt}
+      footer{margin-top:10px;display:flex;justify-content:space-between;gap:15px;color:#6a7f88;font-size:7.8pt}
     </style></head><body>
-      <header><div><h1>Relação Patrimonial por Centro de Custo</h1><h2>${escapeHtml(center.nome)}</h2></div><div class="meta">Gerado em ${escapeHtml(generatedAt)}<br><span class="count">${rows.length} patrimônio(s)</span></div></header>
-      <p class="filters">${escapeHtml(reportFilterSummary())}</p>
-      <table><thead><tr><th>ID interna</th><th>ID SES</th><th>Descrição</th><th>Tipo</th><th>Estado</th><th>Mobilidade</th><th>Status</th><th>Manutenção</th></tr></thead><tbody>${bodyRows}</tbody></table>
-      <footer><span>Patrimônio+</span><span>Centro atual dos bens no momento da emissão.</span></footer>
+      <header class="document-header">
+        <div class="document-identity">
+          ${logo}
+          <div>
+            ${template.instituicao ? `<div class="institution">${escapeHtml(template.instituicao)}</div>` : ""}
+            ${template.unidade ? `<div class="unit">${escapeHtml(template.unidade)}</div>` : ""}
+            <h1>${escapeHtml(template.titulo)}</h1>
+            <h2>${escapeHtml(center.nome)}</h2>
+          </div>
+        </div>
+        <div class="meta">
+          ${template.mostrar_data ? `Gerado em ${escapeHtml(generatedAt)}` : ""}
+          ${template.mostrar_data && template.mostrar_quantidade ? "<br>" : ""}
+          ${template.mostrar_quantidade ? `<span class="count">${rows.length} patrimônio(s)</span>` : ""}
+        </div>
+      </header>
+      ${template.mostrar_filtros ? `<p class="filters">${escapeHtml(reportFilterSummary())}</p>` : ""}
+      <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+      ${signatures.length ? `<section class="signatures">${signatures.map(label=>`<div class="signature">${escapeHtml(label)}</div>`).join("")}</section>` : ""}
+      <footer><span>${escapeHtml(template.rodape || "")}</span><span>Patrimônio+</span></footer>
       <script>window.addEventListener("load",()=>{window.print();});<\/script>
     </body></html>`);
   popup.document.close();
@@ -2301,6 +2577,180 @@ async function changeCatalogType(select) {
   }
 }
 
+const REPORT_TEMPLATE_COLUMNS = [
+  ["id_interna","ID interna"],
+  ["id_ses","ID SES"],
+  ["descricao","Descrição"],
+  ["tipo","Tipo"],
+  ["estado","Estado de conservação"],
+  ["mobilidade","Mobilidade"],
+  ["status","Status"],
+  ["manutencao","Manutenção"],
+  ["marca_modelo","Marca/Modelo"],
+  ["data_aquisicao","Data de aquisição"],
+  ["valor_aquisicao","Valor de aquisição"]
+];
+
+function defaultReportTemplateClient() {
+  return {
+    instituicao:"Hospital Regional Dr. José de Simone Netto",
+    unidade:"",
+    titulo:"Relação Patrimonial por Centro de Custo",
+    rodape:"Centro atual dos bens no momento da emissão.",
+    assinatura_1:"Responsável pelo setor",
+    assinatura_2:"Patrimônio",
+    mostrar_data:true,
+    mostrar_quantidade:true,
+    mostrar_filtros:true,
+    logo_data_url:null,
+    logo_nome:null,
+    colunas:{
+      id_interna:true,
+      id_ses:true,
+      descricao:true,
+      tipo:true,
+      estado:true,
+      mobilidade:true,
+      status:true,
+      manutencao:true,
+      marca_modelo:false,
+      data_aquisicao:false,
+      valor_aquisicao:false
+    }
+  };
+}
+
+function normalizeReportTemplateClient(value) {
+  const base=defaultReportTemplateClient();
+  const input=value && typeof value==="object" ? value : {};
+  return {
+    ...base,
+    ...input,
+    colunas:{...base.colunas,...(input.colunas||{})}
+  };
+}
+
+async function ensureReportTemplate(force=false) {
+  if(state.reportTemplateLoaded && !force) return state.reportTemplate;
+  if(state.reportTemplateBusy) return state.reportTemplate || defaultReportTemplateClient();
+  state.reportTemplateBusy=true;
+  try {
+    const result=await getReportTemplate();
+    state.reportTemplate=normalizeReportTemplateClient(result.configuracao);
+    state.reportTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:result.atualizado_por};
+    state.reportTemplateLoaded=true;
+    return state.reportTemplate;
+  } catch(error) {
+    state.reportTemplate=state.reportTemplate || defaultReportTemplateClient();
+    toast(`Não foi possível carregar o template da relação: ${error.message}`,"error");
+    return state.reportTemplate;
+  } finally {
+    state.reportTemplateBusy=false;
+  }
+}
+
+function reportTemplatePreviewHtml(template) {
+  const t=normalizeReportTemplateClient(template);
+  const visible=REPORT_TEMPLATE_COLUMNS.filter(([key])=>t.colunas?.[key]).map(([,label])=>label);
+  return `
+    <div class="report-template-preview">
+      <div class="report-template-preview-head">
+        ${t.logo_data_url ? `<img src="${escapeHtml(t.logo_data_url)}" alt="Logo configurado">` : '<div class="report-template-logo-placeholder">Logo</div>'}
+        <div>
+          <strong>${escapeHtml(t.instituicao || "Instituição")}</strong>
+          ${t.unidade ? `<span>${escapeHtml(t.unidade)}</span>` : ""}
+          <h3>${escapeHtml(t.titulo || "Relação Patrimonial")}</h3>
+        </div>
+      </div>
+      <div class="report-template-preview-columns">${visible.map(label=>`<span>${escapeHtml(label)}</span>`).join("")}</div>
+      <small>${escapeHtml(t.rodape || "Sem texto de rodapé")}</small>
+    </div>
+  `;
+}
+
+function readReportTemplateForm() {
+  const current=normalizeReportTemplateClient(state.reportTemplate);
+  const columns={};
+  for(const [key] of REPORT_TEMPLATE_COLUMNS) {
+    columns[key]=Boolean(document.querySelector(`[data-report-template-column="${key}"]`)?.checked);
+  }
+  return {
+    instituicao:document.querySelector("#reportTemplateInstitution")?.value.trim() || "",
+    unidade:document.querySelector("#reportTemplateUnit")?.value.trim() || "",
+    titulo:document.querySelector("#reportTemplateTitle")?.value.trim() || "",
+    rodape:document.querySelector("#reportTemplateFooter")?.value.trim() || "",
+    assinatura_1:document.querySelector("#reportTemplateSignature1")?.value.trim() || "",
+    assinatura_2:document.querySelector("#reportTemplateSignature2")?.value.trim() || "",
+    mostrar_data:Boolean(document.querySelector("#reportTemplateShowDate")?.checked),
+    mostrar_quantidade:Boolean(document.querySelector("#reportTemplateShowCount")?.checked),
+    mostrar_filtros:Boolean(document.querySelector("#reportTemplateShowFilters")?.checked),
+    logo_data_url:current.logo_data_url || null,
+    logo_nome:current.logo_nome || null,
+    colunas:columns
+  };
+}
+
+function syncReportTemplateDraftFromForm() {
+  if(!state.reportTemplateLoaded) return;
+  const draft=readReportTemplateForm();
+  state.reportTemplate=normalizeReportTemplateClient(draft);
+  const preview=document.querySelector(".report-template-preview");
+  if(preview) preview.outerHTML=reportTemplatePreviewHtml(state.reportTemplate);
+}
+
+
+async function handleReportTemplateLogo(event) {
+  const file=event.target.files?.[0];
+  if(!file) return;
+  if(!["image/png","image/jpeg","image/webp"].includes(file.type)) {
+    toast("Use logo em PNG, JPG ou WEBP.","error");
+    event.target.value="";
+    return;
+  }
+  if(file.size>300*1024) {
+    toast("O logo deve ter no máximo 300 KB.","error");
+    event.target.value="";
+    return;
+  }
+  const dataUrl=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(new Error("Falha ao ler o logo."));
+    reader.readAsDataURL(file);
+  });
+  state.reportTemplate={...normalizeReportTemplateClient(state.reportTemplate),logo_data_url:dataUrl,logo_nome:file.name};
+  renderSettings();
+}
+
+async function saveReportTemplateFromSettings() {
+  if(state.reportTemplateBusy) return;
+  const config=readReportTemplateForm();
+  if(!config.titulo) {
+    toast("Informe o título da relação patrimonial.","error");
+    return;
+  }
+  if(!config.colunas.id_interna && !config.colunas.descricao) {
+    toast("Exiba pelo menos ID interna ou Descrição.","error");
+    return;
+  }
+  state.reportTemplateBusy=true;
+  const button=document.querySelector('[data-action="save-report-template"]');
+  if(button) { button.disabled=true; button.textContent="Salvando…"; }
+  try {
+    const result=await saveReportTemplate(config);
+    state.reportTemplate=normalizeReportTemplateClient(result.configuracao);
+    state.reportTemplateLoaded=true;
+    state.reportTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:state.session?.user||null};
+    state.recentHistory=[];
+    toast("Template da Relação Patrimonial salvo.","success");
+    renderSettings();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    state.reportTemplateBusy=false;
+  }
+}
+
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
   if (!canDeleteAssets()) {
@@ -2312,6 +2762,8 @@ function renderSettings() {
 
   const templateOpen = state.settingsOpenCard === "template";
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
+  const template=normalizeReportTemplateClient(state.reportTemplate);
+
   root.innerHTML = `
     <div class="page-header">
       <div><h1>Configurações</h1><p>Personalize parâmetros gerais do Patrimônio+.</p></div>
@@ -2328,11 +2780,55 @@ function renderSettings() {
           <span class="settings-card-chevron">${templateOpen ? "−" : "+"}</span>
         </button>
         <div class="settings-card-content" ${templateOpen ? "" : "hidden"}>
-          <div class="settings-coming-soon">
-            <strong>Estrutura preparada.</strong>
-            <p>Quando você enviar o PDF ou imagem de referência, esta área receberá o editor visual do template com prévia da impressão.</p>
-            <span class="badge">Em preparação</span>
-          </div>
+          ${!state.reportTemplateLoaded ? '<div class="loading">Carregando template…</div>' : `
+            <div class="report-template-editor">
+              <div class="report-template-fields">
+                <label>Instituição<input id="reportTemplateInstitution" maxlength="180" value="${escapeHtml(template.instituicao||"")}"></label>
+                <label>Unidade<input id="reportTemplateUnit" maxlength="180" value="${escapeHtml(template.unidade||"")}" placeholder="Ex.: Hospital Regional"></label>
+                <label class="full">Título do documento<input id="reportTemplateTitle" maxlength="180" value="${escapeHtml(template.titulo||"")}"></label>
+                <label class="full">Rodapé<textarea id="reportTemplateFooter" rows="2" maxlength="300">${escapeHtml(template.rodape||"")}</textarea></label>
+                <label>Assinatura 1<input id="reportTemplateSignature1" maxlength="120" value="${escapeHtml(template.assinatura_1||"")}"></label>
+                <label>Assinatura 2<input id="reportTemplateSignature2" maxlength="120" value="${escapeHtml(template.assinatura_2||"")}"></label>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Logo</strong>
+                <div class="report-template-logo-editor">
+                  ${template.logo_data_url ? `<img src="${escapeHtml(template.logo_data_url)}" alt="Logo"><span>${escapeHtml(template.logo_nome||"Logo configurado")}</span>` : '<div class="report-template-logo-placeholder">Sem logo</div>'}
+                  <label class="secondary-button file-button">Selecionar imagem<input id="reportTemplateLogo" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+                  ${template.logo_data_url ? '<button class="ghost-button compact-button" type="button" data-action="remove-report-logo">Remover</button>' : ""}
+                </div>
+                <small>PNG, JPG ou WEBP, até 300 KB.</small>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Informações do cabeçalho</strong>
+                <div class="config-checkbox-grid">
+                  <label><input id="reportTemplateShowDate" type="checkbox" ${template.mostrar_data?"checked":""}> Data/hora de geração</label>
+                  <label><input id="reportTemplateShowCount" type="checkbox" ${template.mostrar_quantidade?"checked":""}> Quantidade de patrimônios</label>
+                  <label><input id="reportTemplateShowFilters" type="checkbox" ${template.mostrar_filtros?"checked":""}> Resumo dos filtros</label>
+                </div>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Colunas da relação</strong>
+                <div class="config-checkbox-grid">
+                  ${REPORT_TEMPLATE_COLUMNS.map(([key,label])=>`<label><input type="checkbox" data-report-template-column="${key}" ${template.colunas?.[key]?"checked":""}> ${escapeHtml(label)}</label>`).join("")}
+                </div>
+              </div>
+
+              <div class="report-template-section">
+                <strong>Prévia estrutural</strong>
+                ${reportTemplatePreviewHtml(template)}
+              </div>
+
+              <div class="settings-editor-actions">
+                <button class="ghost-button" type="button" data-action="reset-report-template">Restaurar padrão</button>
+                <button class="primary-button" type="button" data-action="save-report-template">Salvar template</button>
+              </div>
+              ${state.reportTemplateMeta?.atualizado_em ? `<small class="settings-update-meta">Última alteração: ${escapeHtml(historyDateTime(state.reportTemplateMeta.atualizado_em))}${state.reportTemplateMeta?.atualizado_por?.nome ? ` · ${escapeHtml(state.reportTemplateMeta.atualizado_por.nome)}` : ""}</small>` : ""}
+            </div>
+          `}
         </div>
       </section>
 
@@ -2361,8 +2857,33 @@ function renderSettings() {
       const key = button.dataset.settingCard;
       state.settingsOpenCard = state.settingsOpenCard === key ? null : key;
       renderSettings();
+      if(state.settingsOpenCard==="template" && !state.reportTemplateLoaded) {
+        ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
     });
   });
+
+  document.querySelector("#reportTemplateLogo")?.addEventListener("change",handleReportTemplateLogo);
+  document.querySelectorAll(
+    "#reportTemplateInstitution,#reportTemplateUnit,#reportTemplateTitle,#reportTemplateFooter,#reportTemplateSignature1,#reportTemplateSignature2,#reportTemplateShowDate,#reportTemplateShowCount,#reportTemplateShowFilters,[data-report-template-column]"
+  ).forEach(control=>{
+    const eventName=(control.tagName==="INPUT" && !["checkbox"].includes(control.type)) || control.tagName==="TEXTAREA" ? "input" : "change";
+    control.addEventListener(eventName,syncReportTemplateDraftFromForm);
+  });
+  document.querySelector('[data-action="remove-report-logo"]')?.addEventListener("click",()=>{
+    state.reportTemplate={...normalizeReportTemplateClient(state.reportTemplate),logo_data_url:null,logo_nome:null};
+    renderSettings();
+  });
+  document.querySelector('[data-action="reset-report-template"]')?.addEventListener("click",()=>{
+    state.reportTemplate=defaultReportTemplateClient();
+    state.reportTemplateLoaded=true;
+    renderSettings();
+  });
+  document.querySelector('[data-action="save-report-template"]')?.addEventListener("click",saveReportTemplateFromSettings);
+
+  if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
+    ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
 }
 
 function renderCenters() {
@@ -3141,6 +3662,10 @@ function bindDynamicActions() {
   document.querySelectorAll('[data-action="select-filtered-labels"]').forEach(b=>b.addEventListener("click",()=>{filteredByPanel("labelFilters",false).forEach(a=>state.labelSelected.add(a.id));renderLabels();}));
   document.querySelectorAll('[data-action="clear-label-selection"]').forEach(b=>b.addEventListener("click",()=>{state.labelSelected.clear();renderLabels();}));
   document.querySelectorAll('[data-action="generate-selected-labels"]').forEach(b=>b.addEventListener("click",generateSelectedLabels));
+  document.querySelector("#labelStartPosition")?.addEventListener("change",event=>{
+    state.labelStartPosition=Math.min(30,Math.max(1,Number(event.target.value)||1));
+  });
+  document.querySelectorAll('[data-action="print-a4-labels"]').forEach(b=>b.addEventListener("click",printSelectedLabelsA4));
 
   document.querySelectorAll(".center-search-row").forEach((row)=>{
     const open=()=>{state.assetFilters=defaultFilters();state.assetFilters.centro=row.dataset.centerId;state.currentView="patrimonios";renderAssets();};
@@ -3721,6 +4246,147 @@ function safeLabelFileName(asset) {
 
 async function canvasBlob(canvas) {
   return await new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Falha ao gerar PNG.")), "image/png"));
+}
+
+async function qrDataUrlForAsset(asset, size=220) {
+  if(!window.QRCode) throw new Error("Biblioteca de QR Code não carregada.");
+  const holder=document.createElement("div");
+  holder.style.cssText="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;background:#fff";
+  document.body.appendChild(holder);
+  try {
+    new window.QRCode(holder,{
+      text:assetPublicUrl(asset),
+      width:size,
+      height:size,
+      colorDark:"#000000",
+      colorLight:"#ffffff",
+      correctLevel:window.QRCode.CorrectLevel.L
+    });
+    await new Promise(resolve=>setTimeout(resolve,20));
+    const canvas=holder.querySelector("canvas");
+    if(canvas) return canvas.toDataURL("image/png");
+    const img=holder.querySelector("img");
+    if(img?.src) return img.src;
+    throw new Error(`QR Code não foi gerado para ${asset.id_interna}.`);
+  } finally {
+    holder.remove();
+  }
+}
+
+async function printSelectedLabelsA4() {
+  if(state.labelPrintBusy) return;
+  const assets=sortAssets(
+    state.assets.filter(asset=>state.labelSelected.has(asset.id) && !asset.removido),
+    "id"
+  );
+  if(!assets.length) return;
+  const start=Math.min(30,Math.max(1,Number(state.labelStartPosition)||1));
+  const popup=window.open("","_blank","width=1000,height=800");
+  if(!popup) {
+    toast("O navegador bloqueou a janela de impressão.","error");
+    return;
+  }
+
+  popup.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas Patrimônio+</title></head><body style="font-family:Arial,sans-serif;padding:30px"><h2>Gerando etiquetas…</h2><p>Não feche esta janela.</p></body></html>');
+  popup.document.close();
+
+  state.labelPrintBusy=true;
+  if(state.currentView==="etiquetas") renderLabels();
+
+  try {
+    const prepared=[];
+    for(let index=0; index<assets.length; index++) {
+      const asset=assets[index];
+      prepared.push({
+        asset,
+        qr:await qrDataUrlForAsset(asset,210)
+      });
+      if(index>0 && index%50===0) await new Promise(resolve=>setTimeout(resolve,0));
+    }
+
+    const blanks=start-1;
+    const totalSlots=blanks+prepared.length;
+    const pageCount=Math.ceil(totalSlots/30);
+    const pages=Array.from({length:pageCount},()=>Array(30).fill(null));
+    prepared.forEach((entry,index)=>{
+      const absolute=blanks+index;
+      pages[Math.floor(absolute/30)][absolute%30]=entry;
+    });
+
+    const bgUrl=new URL("./assets/layout-etiqueta-patrimonio.png",window.location.href).href;
+    const pagesHtml=pages.map((page,pageIndex)=>`
+      <section class="sheet">
+        ${page.map(entry=>`<div class="slot">${entry ? `
+          <div class="label" style="background-image:url('${escapeHtml(bgUrl)}')">
+            <img class="qr" src="${escapeHtml(entry.qr)}" alt="">
+            <div class="label-id">${escapeHtml(entry.asset.id_interna)}</div>
+          </div>
+        ` : ""}</div>`).join("")}
+      </section>
+    `).join("");
+
+    popup.document.open();
+    popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas Patrimônio+ — ${assets.length}</title>
+      <style>
+        @page{size:A4 portrait;margin:0}
+        *{box-sizing:border-box}
+        html,body{margin:0;padding:0;background:#fff}
+        body{font-family:Arial,sans-serif}
+        .sheet{
+          width:210mm;
+          height:297mm;
+          padding:5mm;
+          display:grid;
+          grid-template-columns:repeat(3,1fr);
+          grid-template-rows:repeat(10,1fr);
+          break-after:page;
+          page-break-after:always;
+          overflow:hidden;
+        }
+        .sheet:last-child{break-after:auto;page-break-after:auto}
+        .slot{display:flex;align-items:center;justify-content:center;overflow:hidden}
+        .label{
+          position:relative;
+          width:65mm;
+          height:25.32mm;
+          background-repeat:no-repeat;
+          background-size:100% 100%;
+          background-position:center;
+          overflow:hidden;
+        }
+        .qr{
+          position:absolute;
+          left:5.51%;
+          top:12.38%;
+          width:30.50%;
+          height:78.33%;
+          object-fit:fill;
+          background:#fff;
+        }
+        .label-id{
+          position:absolute;
+          left:44%;
+          right:3%;
+          top:74%;
+          height:18%;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          color:#fff;
+          font-weight:900;
+          font-size:10pt;
+          line-height:1;
+          white-space:nowrap;
+        }
+      </style></head><body>${pagesHtml}<script>window.addEventListener("load",()=>{setTimeout(()=>window.print(),150);});<\/script></body></html>`);
+    popup.document.close();
+  } catch(error) {
+    popup.close();
+    toast(`Não foi possível gerar a folha de etiquetas: ${error.message}`,"error");
+  } finally {
+    state.labelPrintBusy=false;
+    if(state.currentView==="etiquetas") renderLabels();
+  }
 }
 
 async function generateSelectedLabels() {
