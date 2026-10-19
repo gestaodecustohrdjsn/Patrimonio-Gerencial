@@ -35,27 +35,22 @@ BEGIN
     RAISE EXCEPTION 'Proteção acionada: não há usuário para preservar';
   END IF;
 
-  -- Histórico de atualizações SIGEM de teste.
-  TRUNCATE TABLE catalogo_sigem_atualizacao_itens RESTART IDENTITY;
-  TRUNCATE TABLE catalogo_sigem_atualizacoes RESTART IDENTITY;
-
-  -- Auditoria/importações patrimoniais anteriores.
-  TRUNCATE TABLE importacao_patrimonial_itens RESTART IDENTITY;
-  TRUNCATE TABLE importacoes_patrimoniais RESTART IDENTITY;
-
-  -- Operação patrimonial.
-  TRUNCATE TABLE patrimonio_centros_permitidos RESTART IDENTITY;
-  TRUNCATE TABLE manutencoes_patrimonio RESTART IDENTITY;
-  TRUNCATE TABLE movimentacoes RESTART IDENTITY;
-  TRUNCATE TABLE patrimonios RESTART IDENTITY CASCADE;
-
-  -- Marco zero da numeração interna.
-  -- A função gerar_id_interna() usa esta tabela para incrementar ultimo_numero
-  -- por Tipo/Ano/Mês. Limpá-la faz a primeira ID oficial começar em 0001.
-  TRUNCATE TABLE controle_sequencias RESTART IDENTITY;
-
-  -- Limpa TODO o histórico geral de testes, inclusive cadastro/edição/exclusão.
-  TRUNCATE TABLE historico_alteracoes RESTART IDENTITY;
+  -- Zera o núcleo operacional em UMA ÚNICA operação.
+  -- PostgreSQL exige que tabelas ligadas por FK sejam truncadas juntas.
+  -- CASCADE alcança somente tabelas que dependem destas; não apaga
+  -- Catálogo, Centros de Custo, usuários ou aliases, que são tabelas referenciadas.
+  TRUNCATE TABLE
+    catalogo_sigem_atualizacao_itens,
+    catalogo_sigem_atualizacoes,
+    importacao_patrimonial_itens,
+    importacoes_patrimoniais,
+    patrimonio_centros_permitidos,
+    manutencoes_patrimonio,
+    movimentacoes,
+    patrimonios,
+    controle_sequencias,
+    historico_alteracoes
+  RESTART IDENTITY CASCADE;
 
   -- Compatibilidade com estruturas antigas de importação, se ainda existirem.
   IF to_regclass('public.importacao_linhas') IS NOT NULL THEN
