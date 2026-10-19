@@ -534,7 +534,7 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/configuracoes/relacao-patrimonial") {
         const defaults=defaultReportTemplate();
         const rows=await sql`
-          select valor,atualizado_em,
+          select c.id,c.valor,c.atualizado_em,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as atualizado_por
           from configuracoes_sistema c
           left join usuarios u on u.id=c.atualizado_por
@@ -567,13 +567,13 @@ export default {
           values('RELACAO_PATRIMONIAL',${JSON.stringify(config)}::jsonb,${user.id}::uuid,now())
           on conflict(chave) do update
           set valor=excluded.valor,atualizado_por=excluded.atualizado_por,atualizado_em=now()
-          returning valor,atualizado_em
+          returning id,valor,atualizado_em
         `;
         await sql`
           insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
           values(
             'configuracoes_sistema',
-            null,
+            ${rows[0].id}::uuid,
             'CONFIGURACAO_RELACAO_PATRIMONIAL',
             ${previous?JSON.stringify(previous):null}::jsonb,
             ${JSON.stringify(config)}::jsonb,
@@ -670,8 +670,8 @@ export default {
           where (${tabela}='' or h.tabela=${tabela})
             and (${operacao}='' or h.operacao ilike ${'%'+operacao+'%'})
             and (${usuarioId}='' or h.usuario_id::text=${usuarioId})
-            and (${inicio}='' or h.criado_em >= ${inicio}::date)
-            and (${fim}='' or h.criado_em < (${fim}::date + interval '1 day'))
+            and (${inicio}='' or h.criado_em >= nullif(${inicio},'')::date)
+            and (${fim}='' or h.criado_em < (nullif(${fim},'')::date + interval '1 day'))
             and (
               ${q}=''
               or h.operacao ilike ${'%'+q+'%'}
