@@ -62,6 +62,300 @@ function normalizeCatalogText(value) {
     .replace(/\s+/g, " ");
 }
 
+
+function importAcquisition(value) {
+  const n=normalizeCatalogText(value);
+  if (!n) return null;
+  if (n.includes("contrato") && n.includes("gestao")) return "CONTRATO_GESTAO";
+  if (n.includes("doa")) return "DOACAO";
+  if (n.includes("loca") || n.includes("alug")) return "LOCACAO";
+  if (n.includes("compra") || n.includes("proprio") || n.includes("aquis")) return "COMPRA";
+  if (["contrato_gestao","doacao","locacao","compra"].includes(String(value||"").trim().toLowerCase())) {
+    return String(value).trim().toUpperCase();
+  }
+  return null;
+}
+
+function importType(value) {
+  const n=normalizeCatalogText(value);
+  if (!n) return null;
+  const numeric=Number(value);
+  if ([1,2,3].includes(numeric)) return numeric;
+  if (n.includes("informat")) return 3;
+  if (n.includes("mobil") || n.includes("moveis")) return 2;
+  if (n.includes("medic") || n.includes("hospital")) return 1;
+  return null;
+}
+
+function importStatus(value) {
+  const n=normalizeCatalogText(value);
+  if (!n) return "ATIVO";
+  if (n.includes("inativo") || n.includes("baixado")) return "INATIVO";
+  if (n.includes("ativo")) return "ATIVO";
+  return null;
+}
+
+function importConservation(value) {
+  const n=normalizeCatalogText(value);
+  if (!n) return "BEM_CONSERVADO";
+  if (n.includes("produto novo") || n==="novo") return "PRODUTO_NOVO";
+  if (n.includes("bem conservado") || n.includes("conservado") || n.includes("bom")) return "BEM_CONSERVADO";
+  if (n.includes("desgast")) return "DESGASTADO";
+  if (n.includes("inutil")) return "INUTILIZAVEL";
+  return null;
+}
+
+function importDate(value) {
+  const raw=String(value||"").trim();
+  if (!raw) return new Date().toISOString().slice(0,10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const d=new Date(raw+"T00:00:00Z");
+    return Number.isNaN(d.getTime()) ? null : raw;
+  }
+  const br=raw.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+  if (br) {
+    const iso=`${br[3]}-${br[2].padStart(2,"0")}-${br[1].padStart(2,"0")}`;
+    const d=new Date(iso+"T00:00:00Z");
+    return Number.isNaN(d.getTime()) ? null : iso;
+  }
+  return null;
+}
+
+function importNumber(value) {
+  if (value===null || value===undefined || value==="") return null;
+  if (typeof value==="number") return Number.isFinite(value) ? value : NaN;
+  let raw=String(value).trim().replace(/R\$/gi,"").replace(/\s+/g,"");
+  if (!raw || raw==="-") return null;
+  if (raw.includes(",") && raw.includes(".")) raw=raw.replace(/\./g,"").replace(",",".");
+  else if (raw.includes(",")) raw=raw.replace(",",".");
+  const n=Number(raw);
+  return n;
+}
+
+function addMapValue(map,key,value) {
+  if (!key) return;
+  if (!map.has(key)) map.set(key,[]);
+  map.get(key).push(value);
+}
+
+async function simulateAssetImport(sql, rawRows) {
+  if (!Array.isArray(rawRows) || rawRows.length<1 || rawRows.length>5000) {
+    throw new Error("VALIDATION:O arquivo deve conter entre 1 e 5000 linhas.");
+  }
+
+  const [catalogRows,aliasRows,centerRows,existingSesRows]=await Promise.all([
+    sql`select id,descricao,tipo_id,valor_padrao,origem_catalogo,ativo from descricoes_padrao where ativo=true order by descricao`,
+    sql`select a.alias_normalizado,a.descricao_padrao_id,d.descricao,d.tipo_id,d.valor_padrao,d.origem_catalogo,d.ativo
+        from catalogo_sigem_aliases a join descricoes_padrao d on d.id=a.descricao_padrao_id where d.ativo=true`,
+    sql`select id,codigo,nome,ativo from centros_custo where ativo=true order by nome`,
+    sql`select id_ses from patrimonios where id_ses is not null and btrim(id_ses)<>''`
+  ]);
+
+  const catalogByName=new Map();
+  for (const item of catalogRows) addMapValue(catalogByName,normalizeCatalogText(item.descricao),item);
+
+  const aliasByName=new Map();
+  for (const item of aliasRows) {
+    const key=String(item.alias_normalizado||"").trim() || normalizeCatalogText(item.descricao);
+    if (key) aliasByName.set(key,item);
+  }
+
+  const centersByName=new Map();
+  const centersByCode=new Map();
+  for (const center of centerRows) {
+    addMapValue(centersByName,normalizeCatalogText(center.nome),center);
+    addMapValue(centersByCode,normalizeCatalogText(center.codigo),center);
+  }
+
+  const existingSes=new Set(existingSesRows.map(row=>normalizeCatalogText(row.id_ses)).filter(Boolean));
+  const results=[];
+
+  for (let index=0; index<rawRows.length; index++) {
+    const source=rawRows[index]||{};
+    const line=Number(source.linha||index+2);
+    const errors=[];
+    const warnings=[];
+
+    const catalogName=String(source.descricao_catalogo||"").trim();
+    const catalogKey=normalizeCatalogText(catalogName);
+    const exactMatches=catalogByName.get(catalogKey)||[];
+    let catalogItem=null;
+    let catalogMatch="";
+
+    if (!catalogKey) errors.push("Item do Catálogo vazio");
+    else if (exactMatches.length===1) {
+      catalogItem=exactMatches[0];
+      catalogMatch="EXATO";
+    } else if (exactMatches.length>1) {
+      errors.push("Descrição corresponde a mais de um item do Catálogo");
+    } else {
+      const alias=aliasByName.get(catalogKey);
+      if (alias) {
+        catalogItem=alias;
+        catalogMatch="ALIAS";
+      } else errors.push("Item não encontrado no Catálogo");
+    }
+
+    const centerName=String(source.centro_nome||"").trim();
+    const centerCode=String(source.centro_codigo||"").trim();
+    const nameMatches=centerName ? (centersByName.get(normalizeCatalogText(centerName))||[]) : [];
+    const codeMatches=centerCode ? (centersByCode.get(normalizeCatalogText(centerCode))||[]) : [];
+    let center=null;
+
+    if (codeMatches.length===1 && nameMatches.length===1 && codeMatches[0].id!==nameMatches[0].id) {
+      errors.push("Código e nome apontam para centros de custo diferentes");
+    } else if (codeMatches.length===1) {
+      center=codeMatches[0];
+      if (centerName && nameMatches.length===0) warnings.push("Centro localizado pelo código; nome do arquivo não coincidiu");
+    } else if (nameMatches.length===1) {
+      center=nameMatches[0];
+      if (centerCode && codeMatches.length===0) warnings.push("Centro localizado pelo nome; código do arquivo não coincidiu");
+    } else if (codeMatches.length>1 || nameMatches.length>1) {
+      errors.push("Centro de custo ambíguo");
+    } else {
+      errors.push("Centro de custo não encontrado");
+    }
+
+    const acquisition=importAcquisition(source.tipo_aquisicao);
+    if (!acquisition) errors.push("Aquisição não reconhecida");
+
+    const date=importDate(source.data_aquisicao);
+    if (!date) errors.push("Data de aquisição inválida");
+
+    const status=importStatus(source.status);
+    if (!status) errors.push("Status não reconhecido");
+
+    const conservation=importConservation(source.estado_conservacao);
+    if (!conservation) errors.push("Estado de conservação não reconhecido");
+
+    const value=importNumber(source.valor_aquisicao);
+    if (Number.isNaN(value) || (value!==null && value<0)) errors.push("Valor de aquisição inválido");
+
+    const fileCatalogValue=importNumber(source.valor_referencia_arquivo);
+    if (Number.isNaN(fileCatalogValue) || (fileCatalogValue!==null && fileCatalogValue<0)) warnings.push("Valor de referência do arquivo inválido");
+
+    const fileType=importType(source.classificacao_origem);
+    if (catalogItem && fileType && Number(catalogItem.tipo_id)!==fileType) {
+      warnings.push("Classificação do arquivo diverge do Catálogo; será usado o Tipo do Catálogo");
+    }
+
+    if (catalogItem && fileCatalogValue!==null && Number.isFinite(fileCatalogValue) && catalogItem.valor_padrao!==null) {
+      const dbValue=Number(catalogItem.valor_padrao);
+      if (Number.isFinite(dbValue) && Math.abs(dbValue-fileCatalogValue)>0.005) {
+        warnings.push("Valor de referência do arquivo diverge do Catálogo atual");
+      }
+    }
+
+    let complement=String(source.descricao_complementar||"").trim();
+    if (!complement && catalogItem) {
+      complement=String(catalogItem.descricao||"").trim();
+      warnings.push("Sem descrição complementar; será usado o nome do Catálogo como fallback");
+    }
+
+    const idSes=String(source.id_ses||"").trim() || null;
+    if (!idSes) warnings.push("Sem ID SES");
+
+    const finalValue=value!==null ? value : (catalogItem?.valor_padrao!==null && catalogItem?.valor_padrao!==undefined ? Number(catalogItem.valor_padrao) : null);
+    if (finalValue===null || !Number.isFinite(finalValue)) warnings.push("Sem valor de aquisição e sem valor de referência");
+
+    const result={
+      linha:line,
+      descricao_catalogo:catalogName,
+      descricao_complementar:complement,
+      id_ses_original:idSes,
+      id_ses:idSes,
+      catalog_match:catalogMatch,
+      item_catalogo:catalogItem ? {
+        id:catalogItem.id,
+        descricao:catalogItem.descricao,
+        tipo_id:Number(catalogItem.tipo_id),
+        valor_padrao:catalogItem.valor_padrao,
+        origem:catalogItem.origem_catalogo
+      } : null,
+      centro: center ? {id:center.id,codigo:center.codigo,nome:center.nome} : null,
+      tipo_aquisicao:acquisition,
+      data_aquisicao:date,
+      valor_aquisicao:value,
+      valor_final:finalValue,
+      marca_modelo:String(source.marca_modelo||"").trim()||null,
+      nota_fiscal_numero:String(source.nota_fiscal_numero||"").trim()||null,
+      status:status||"ATIVO",
+      estado_conservacao:conservation||"BEM_CONSERVADO",
+      errors,
+      warnings,
+      duplicate_key:null,
+      duplicate_existing:false,
+      needs_id_resolution:false
+    };
+    results.push(result);
+  }
+
+  const sesGroups=new Map();
+  for (const row of results) {
+    const key=normalizeCatalogText(row.id_ses_original);
+    if (!key) continue;
+    if (!sesGroups.has(key)) sesGroups.set(key,[]);
+    sesGroups.get(key).push(row);
+  }
+
+  const duplicateGroups=[];
+  for (const [key,rows] of sesGroups) {
+    const exists=existingSes.has(key);
+    if (rows.length>1 || exists) {
+      const display=rows[0].id_ses_original;
+      duplicateGroups.push({
+        key,
+        id_ses:display,
+        existing_in_db:exists,
+        linhas:rows.map(row=>({
+          linha:row.linha,
+          descricao_catalogo:row.descricao_catalogo,
+          descricao_complementar:row.descricao_complementar,
+          centro:row.centro?.nome||null
+        }))
+      });
+      for (const row of rows) {
+        row.duplicate_key=key;
+        row.duplicate_existing=exists;
+        row.needs_id_resolution=true;
+        row.warnings.push(exists ? "ID SES já existe no banco e precisa ser removida deste lote" : "ID SES repetida no arquivo; escolha qual linha manterá a identificação");
+      }
+    }
+  }
+
+  for (const row of results) {
+    row.level=row.errors.length ? "error" : (row.warnings.length ? "warning" : "ok");
+    row.payload={
+      linha:row.linha,
+      id_ses:row.id_ses,
+      descricao_complementar:row.descricao_complementar,
+      descricao_padrao_id:row.item_catalogo?.id||null,
+      data_aquisicao:row.data_aquisicao,
+      valor_aquisicao:row.valor_aquisicao,
+      nota_fiscal_numero:row.nota_fiscal_numero,
+      centro_custo_id:row.centro?.id||null,
+      marca_modelo:row.marca_modelo,
+      tipo_aquisicao:row.tipo_aquisicao,
+      status:row.status,
+      estado_conservacao:row.estado_conservacao
+    };
+  }
+
+  const summary={
+    total:results.length,
+    ok:results.filter(row=>row.level==="ok").length,
+    warning:results.filter(row=>row.level==="warning").length,
+    error:results.filter(row=>row.level==="error").length,
+    catalogo_encontrado:results.filter(row=>row.item_catalogo).length,
+    catalogo_nao_encontrado:results.filter(row=>!row.item_catalogo).length,
+    centros_encontrados:results.filter(row=>row.centro).length,
+    centros_nao_encontrados:results.filter(row=>!row.centro).length,
+    grupos_id_ses:duplicateGroups.length
+  };
+
+  return {linhas:results,grupos_id_ses:duplicateGroups,resumo:summary};
+}
+
 async function hydrateAsset(sql, id) {
   const rows = await sql`
     select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,
@@ -97,7 +391,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.4.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.5.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -196,6 +490,10 @@ export default {
                 'tipo','catalog_update',
                 'nome',h.dados_novos->>'nome_arquivo'
               )
+              when h.tabela='importacoes_patrimoniais' then jsonb_build_object(
+                'tipo','asset_import',
+                'nome',h.dados_novos->>'nome_arquivo'
+              )
               else jsonb_build_object('tipo',h.tabela)
             end as entidade,
             jsonb_build_object(
@@ -218,7 +516,9 @@ export default {
               'duplicados_adicionados',h.dados_novos->>'duplicados_adicionados',
               'ignorados',h.dados_novos->>'ignorados',
               'inativados',h.dados_novos->>'inativados',
-              'reativados',h.dados_novos->>'reativados'
+              'reativados',h.dados_novos->>'reativados',
+              'total_linhas',h.dados_novos->>'total_linhas',
+              'total_importado',h.dados_novos->>'total_importado'
             ) as detalhes
           from historico_alteracoes h
           left join usuarios u on u.id=h.usuario_id
@@ -579,6 +879,69 @@ export default {
         const rows=await sql`select id,descricao,valor_padrao,tipo_id,origem_catalogo as origem,fonte_valor from descricoes_padrao where ativo=true and descricao ilike ${'%'+q+'%'} order by descricao limit ${limit}`;
         return responseJson({ok:true,itens:rows},200,env,request);
       }
+      if (request.method === "POST" && url.pathname === "/api/importacoes/patrimonios/simular") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
+        const b=await bodyJson(request);
+        const linhas=Array.isArray(b.linhas)?b.linhas:[];
+        const simulacao=await simulateAssetImport(sql,linhas);
+        return responseJson({ok:true,simulacao},200,env,request);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/importacoes/patrimonios/aplicar") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
+        const b=await bodyJson(request);
+        const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
+        const linhas=Array.isArray(b.linhas)?b.linhas:[];
+        if(!nomeArquivo) return responseJson({ok:false,error:"Nome do arquivo é obrigatório."},400,env,request);
+
+        const simulacao=await simulateAssetImport(sql,linhas);
+        if(simulacao.resumo.error>0 || simulacao.grupos_id_ses.length>0) {
+          return responseJson({
+            ok:false,
+            error:"O lote final ainda possui erros ou ID SES pendentes. Execute a simulação novamente.",
+            simulacao
+          },409,env,request);
+        }
+
+        const sanitized=simulacao.linhas.map(row=>({
+          linha:row.linha,
+          id_ses:row.id_ses||null,
+          descricao_complementar:row.descricao_complementar,
+          descricao_padrao_id:row.item_catalogo.id,
+          data_aquisicao:row.data_aquisicao,
+          valor_aquisicao:row.valor_aquisicao,
+          nota_fiscal_numero:row.nota_fiscal_numero,
+          centro_custo_id:row.centro.id,
+          marca_modelo:row.marca_modelo,
+          tipo_aquisicao:row.tipo_aquisicao,
+          status:row.status,
+          estado_conservacao:row.estado_conservacao
+        }));
+
+        const rows=await sql`
+          select importar_patrimonios_lote_api(
+            ${nomeArquivo},
+            ${JSON.stringify(sanitized)}::jsonb,
+            ${user.id}::uuid
+          ) as resultado
+        `;
+        return responseJson({ok:true,resultado:rows[0].resultado},200,env,request);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/importacoes/patrimonios/historico") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar importações."},403,env,request);
+        const limit=Math.min(50,Math.max(1,Number(url.searchParams.get("limit")||20)));
+        const rows=await sql`
+          select i.id,i.nome_arquivo,i.total_linhas,i.total_importado,i.criado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
+          from importacoes_patrimoniais i
+          left join usuarios u on u.id=i.usuario_id
+          order by i.criado_em desc
+          limit ${limit}
+        `;
+        return responseJson({ok:true,importacoes:rows},200,env,request);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/patrimonios") {
         const rows=await sql`select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
           exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
