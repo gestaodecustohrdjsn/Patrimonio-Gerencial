@@ -602,7 +602,7 @@ export default {
             h.registro_id,
             h.operacao,
             h.criado_em,
-            count(*) over()::int as total_filtrado,
+            (count(*) over())::int as total_filtrado,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario,
             case
               when h.tabela='patrimonios' then jsonb_build_object(
