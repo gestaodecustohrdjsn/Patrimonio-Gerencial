@@ -2700,6 +2700,7 @@ async function refreshImportHistory() {
   } catch(error) {
     state.importHistoryLoaded=true;
     toast(`Não foi possível carregar o histórico de importações: ${error.message}`,"error");
+    if(state.currentView==="importacao") renderImport();
   }
 }
 
