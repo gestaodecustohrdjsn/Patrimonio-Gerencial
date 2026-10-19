@@ -2300,6 +2300,7 @@ function renderSettings() {
   }
 
   const templateOpen = state.settingsOpenCard === "template";
+  const qrTemplateOpen = state.settingsOpenCard === "qr-template";
   root.innerHTML = `
     <div class="page-header">
       <div><h1>Configurações</h1><p>Personalize parâmetros gerais do Patrimônio+.</p></div>
@@ -2319,6 +2320,24 @@ function renderSettings() {
           <div class="settings-coming-soon">
             <strong>Estrutura preparada.</strong>
             <p>Quando você enviar o PDF ou imagem de referência, esta área receberá o editor visual do template com prévia da impressão.</p>
+            <span class="badge">Em preparação</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-card ${qrTemplateOpen ? "is-open" : ""}">
+        <button class="settings-card-toggle" type="button" data-setting-card="qr-template" aria-expanded="${qrTemplateOpen}">
+          <div class="settings-card-icon">QR</div>
+          <div class="settings-card-title">
+            <strong>Template da Página Pública do QR Code</strong>
+            <span>Defina futuramente quais informações do patrimônio serão exibidas na consulta pública.</span>
+          </div>
+          <span class="settings-card-chevron">${qrTemplateOpen ? "−" : "+"}</span>
+        </button>
+        <div class="settings-card-content" ${qrTemplateOpen ? "" : "hidden"}>
+          <div class="settings-coming-soon">
+            <strong>Ideia reservada para desenvolvimento.</strong>
+            <p>Esta configuração poderá controlar campos visíveis, ordem das informações, cabeçalho, logo, textos e seções da página acessada pelo QR Code.</p>
             <span class="badge">Em preparação</span>
           </div>
         </div>
