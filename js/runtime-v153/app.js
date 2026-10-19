@@ -2307,10 +2307,23 @@ function catalogValueSourceName(value) {
 
 async function renderCatalog() {
   const root = document.querySelector("#viewRoot");
-  if (!canDeleteAssets()) {
+  if (!hasAccess("catalogo.editar")) {
     root.innerHTML = `
-      <div class="page-header"><div><h1>Catálogo</h1><p>Itens de referência para o cadastro patrimonial.</p></div></div>
-      <div class="placeholder">Somente administradores podem alterar o Catálogo.</div>`;
+      <div class="page-header"><div><h1>Catálogo</h1><p>Consulta de itens de referência patrimonial.</p></div></div>
+      <section class="panel"><div class="panel-header"><h2>Pesquisar no Catálogo</h2></div>
+      <div class="config-toolbar"><label>Descrição do item<input id="catalogConsultQuery" type="search" placeholder="Digite pelo menos duas letras"></label></div>
+      <div id="catalogConsultResults" class="table-wrap"><div class="placeholder">Digite um termo para consultar.</div></div></section>`;
+    const input=root.querySelector("#catalogConsultQuery");
+    const results=root.querySelector("#catalogConsultResults");
+    input.addEventListener("input",debounce(async()=>{
+      const term=input.value.trim();
+      if(term.length<2){results.innerHTML='<div class="placeholder">Digite pelo menos duas letras.</div>';return;}
+      try {
+        const items=await searchCatalog(term,50);
+        if(input.value.trim()!==term)return;
+        results.innerHTML=items.length?`<table><thead><tr><th>Descrição</th><th>Tipo</th></tr></thead><tbody>${items.map(i=>`<tr><td>${escapeHtml(i.descricao||"—")}</td><td>${escapeHtml(typeName(i.tipo_id))}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">Nenhum item encontrado.</div>';
+      } catch(e) {toast(e.message,"error");}
+    },250));
     return;
   }
 
@@ -2947,7 +2960,7 @@ function openCenterForm(centerId = null) {
 
 async function submitCenterForm(event) {
   event.preventDefault();
-  if (!canDeleteAssets()) return;
+  if (!hasAccess("centros.gerenciar")) return;
   const payload = {
     codigo: document.querySelector("#centerCode").value.trim(),
     nome: document.querySelector("#centerName").value.trim()
@@ -2977,7 +2990,7 @@ async function submitCenterForm(event) {
 
 async function toggleCenter(centerId) {
   const center = state.centers.find(row => row.id === centerId);
-  if (!center || !canDeleteAssets()) return;
+  if (!center || !hasAccess("centros.gerenciar")) return;
   const next = !center.ativo;
   const detail = !next && Number(center.patrimonios || 0) > 0
     ? `\n\n${center.patrimonios} patrimônio(s) permanecem vinculados ao centro, mas ele deixará de aparecer para novos cadastros e movimentações.`
@@ -2995,7 +3008,7 @@ async function toggleCenter(centerId) {
 
 async function removeCenter(centerId) {
   const center = state.centers.find(row => row.id === centerId);
-  if (!center || !canDeleteAssets()) return;
+  if (!center || !hasAccess("centros.gerenciar")) return;
   const confirmation = window.prompt(
     `Exclusão definitiva de "${center.nome}".\n\nIsso só será permitido se o centro nunca tiver sido usado.\nDigite exatamente o código para confirmar: ${center.codigo}`
   );
@@ -3530,6 +3543,7 @@ async function runImport() {
   state.importBusy=true;
   renderImport();
   try {
+    if(!hasAccess("importacoes.executar")) {toast("Sem permissão para executar importações.","error");return;}
     const result=await applyAssetImport({
       nome_arquivo:state.importFileName,
       linhas:resolution.rows,
