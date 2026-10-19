@@ -113,7 +113,7 @@ function shell() {
         <label class="full sigem-field"><span class="field-title">Item do Catálogo <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do Catálogo"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
         <label class="full">Descrição complementar *<input id="descricao" required maxlength="180" placeholder="Ex.: preta com rodinhas"></label>
         <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item do Catálogo, o Tipo é definido manualmente.</small></label>
-        <label>ID SES<input id="idSes" maxlength="50"></label>
+        <label>ID SES<input id="idSes" maxlength="50"><small>Pode se repetir em casos legados, mas o sistema solicitará confirmação.</small></label>
       </div></fieldset>
 
       <fieldset class="form-section"><legend>Aquisição e valores</legend><div class="form-grid">
@@ -2605,15 +2605,44 @@ function importSourceRows() {
   }));
 }
 
+function importDuplicateDecision(key) {
+  const current=state.importDuplicateChoices[key];
+  if(current && typeof current==="object") {
+    return {
+      mode:String(current.mode||""),
+      selected:Array.isArray(current.selected)?current.selected.map(Number).filter(Number.isFinite):[]
+    };
+  }
+  return {mode:"",selected:[]};
+}
+
 function duplicateChoiceOptions(group) {
-  const current=state.importDuplicateChoices[group.key]||"";
-  const keepOptions=group.existing_in_db ? "" : group.linhas.map(row =>
-    `<option value="KEEP:${row.linha}" ${current===`KEEP:${row.linha}`?"selected":""}>Manter ID na linha ${row.linha} — ${escapeHtml(row.descricao_catalogo)}</option>`
-  ).join("");
+  const decision=importDuplicateDecision(group.key);
   return `
-    <option value="" ${!current?"selected":""}>Escolha como resolver…</option>
-    ${keepOptions}
-    <option value="CLEAR_ALL" ${current==="CLEAR_ALL"?"selected":""}>Importar todas estas linhas sem ID SES</option>
+    <option value="" ${!decision.mode?"selected":""}>Escolha como tratar esta ID SES…</option>
+    <option value="KEEP_ALL" ${decision.mode==="KEEP_ALL"?"selected":""}>Manter esta ID SES em todos</option>
+    <option value="KEEP_SELECTED" ${decision.mode==="KEEP_SELECTED"?"selected":""}>Manter apenas nos patrimônios selecionados</option>
+    <option value="CLEAR_ALL" ${decision.mode==="CLEAR_ALL"?"selected":""}>Remover esta ID SES de todos deste grupo</option>
+  `;
+}
+
+function duplicateSelectedRowsHtml(group) {
+  const decision=importDuplicateDecision(group.key);
+  if(decision.mode!=="KEEP_SELECTED") return "";
+  return `
+    <div class="duplicate-selection-box">
+      <strong>Selecione quais patrimônios manterão a ID SES ${escapeHtml(group.id_ses)}</strong>
+      <small>Você pode selecionar um ou mais. Os demais serão importados sem ID SES.</small>
+      <div class="duplicate-selection-list">
+        ${group.linhas.map(row=>`<label class="duplicate-select-row">
+          <input type="checkbox" class="duplicate-row-choice"
+            data-duplicate-key="${escapeHtml(group.key)}"
+            data-line="${row.linha}"
+            ${decision.selected.includes(Number(row.linha))?"checked":""}>
+          <span><strong>Linha ${row.linha} — ${escapeHtml(row.descricao_catalogo)}</strong><small>${escapeHtml(row.centro||"Centro não identificado")}</small></span>
+        </label>`).join("")}
+      </div>
+    </div>
   `;
 }
 
@@ -2622,12 +2651,17 @@ function importDuplicateGroupsHtml() {
   if (!groups.length) return "";
   return `
     <section class="import-step import-duplicates-step">
-      <div class="step-title"><span>4</span><div><h2>Resolver ID SES duplicadas</h2><p>Nenhuma ID será removida automaticamente. Escolha explicitamente qual patrimônio mantém a identificação, ou importe o grupo sem ID SES.</p></div></div>
+      <div class="step-title"><span>4</span><div><h2>Revisar ID SES repetidas</h2><p>A repetição da ID SES é permitida, mas exige uma decisão explícita. A ID interna do Patrimônio+ continua sendo exclusiva e nunca é compartilhada.</p></div></div>
       <div class="duplicate-group-list">
         ${groups.map(group=>`<article class="duplicate-group">
           <div class="duplicate-group-head">
-            <div><strong>ID SES ${escapeHtml(group.id_ses)}</strong><small>${group.existing_in_db?"Esta ID já existe no banco. Nenhuma linha deste lote pode mantê-la.":"Esta ID aparece em mais de uma linha do arquivo."}</small></div>
-            <span class="badge">${group.linhas.length} linha(s)</span>
+            <div>
+              <strong>ID SES ${escapeHtml(group.id_ses)}</strong>
+              <small>${group.existing_in_db
+                ?"Esta ID SES já existe no banco. Mantê-la criará novos patrimônios compartilhando a mesma identificação SES."
+                :"Esta ID SES aparece em mais de uma linha do arquivo."}</small>
+            </div>
+            <span class="badge">${group.linhas.length} linha(s) no arquivo</span>
           </div>
           <div class="duplicate-lines">
             ${group.linhas.map(row=>`<div class="duplicate-line"><span>Linha ${row.linha}</span><strong>${escapeHtml(row.descricao_catalogo)}</strong><small>${escapeHtml(row.centro||"Centro não identificado")}</small></div>`).join("")}
@@ -2635,6 +2669,7 @@ function importDuplicateGroupsHtml() {
           <label>Decisão
             <select class="duplicate-choice" data-duplicate-key="${escapeHtml(group.key)}">${duplicateChoiceOptions(group)}</select>
           </label>
+          ${duplicateSelectedRowsHtml(group)}
         </article>`).join("")}
       </div>
     </section>
@@ -2643,18 +2678,25 @@ function importDuplicateGroupsHtml() {
 
 function importResolutionState() {
   const simulation=state.importSimulation;
-  if(!simulation) return {ready:false,unresolved:0,hardErrors:0,rows:[]};
+  if(!simulation) return {ready:false,unresolved:0,hardErrors:0,rows:[],confirmedKeys:[]};
   const groups=simulation.grupos_id_ses||[];
-  const unresolved=groups.filter(group=>!state.importDuplicateChoices[group.key]).length;
+  const decisions=new Map(groups.map(group=>[group.key,importDuplicateDecision(group.key)]));
+  const unresolved=groups.filter(group=>{
+    const decision=decisions.get(group.key);
+    if(!["KEEP_ALL","KEEP_SELECTED","CLEAR_ALL"].includes(decision.mode)) return true;
+    if(decision.mode==="KEEP_SELECTED" && decision.selected.length===0) return true;
+    return false;
+  }).length;
   const hardErrors=Number(simulation.resumo?.error||0);
   const resolvedRows=simulation.linhas.map(row=>{
     let idSes=row.id_ses_original||null;
     if(row.duplicate_key) {
-      const choice=state.importDuplicateChoices[row.duplicate_key];
-      if(choice==="CLEAR_ALL") idSes=null;
-      else if(choice && choice.startsWith("KEEP:")) {
-        const keepLine=Number(choice.slice(5));
-        idSes=row.linha===keepLine ? row.id_ses_original : null;
+      const decision=decisions.get(row.duplicate_key)||{mode:"",selected:[]};
+      if(decision.mode==="CLEAR_ALL") idSes=null;
+      else if(decision.mode==="KEEP_SELECTED") {
+        idSes=decision.selected.includes(Number(row.linha)) ? row.id_ses_original : null;
+      } else if(decision.mode==="KEEP_ALL") {
+        idSes=row.id_ses_original||null;
       }
     }
     return {
@@ -2675,7 +2717,13 @@ function importResolutionState() {
       estado_conservacao:row.estado_conservacao
     };
   });
-  return {ready:hardErrors===0&&unresolved===0,unresolved,hardErrors,rows:resolvedRows};
+  const confirmedKeys=groups
+    .filter(group=>{
+      const decision=decisions.get(group.key);
+      return decision && decision.mode && decision.mode!=="CLEAR_ALL";
+    })
+    .map(group=>group.key);
+  return {ready:hardErrors===0&&unresolved===0,unresolved,hardErrors,rows:resolvedRows,confirmedKeys};
 }
 
 function importHistoryHtml() {
@@ -2790,7 +2838,21 @@ function renderImport() {
     renderImport();
   });
   document.querySelectorAll(".duplicate-choice").forEach(select=>select.addEventListener("change",()=>{
-    state.importDuplicateChoices[select.dataset.duplicateKey]=select.value;
+    const key=select.dataset.duplicateKey;
+    const current=importDuplicateDecision(key);
+    state.importDuplicateChoices[key]={
+      mode:select.value,
+      selected:select.value==="KEEP_SELECTED" ? current.selected : []
+    };
+    renderImport();
+  }));
+  document.querySelectorAll(".duplicate-row-choice").forEach(input=>input.addEventListener("change",()=>{
+    const key=input.dataset.duplicateKey;
+    const line=Number(input.dataset.line);
+    const current=importDuplicateDecision(key);
+    const selected=new Set(current.selected);
+    if(input.checked) selected.add(line); else selected.delete(line);
+    state.importDuplicateChoices[key]={mode:"KEEP_SELECTED",selected:[...selected]};
     renderImport();
   }));
 
@@ -2851,7 +2913,8 @@ async function runImport() {
     "",
     "O lote será gravado em uma única transação.",
     "Se qualquer linha falhar, nenhum patrimônio será mantido.",
-    cleared ? `${cleared} linha(s) serão importadas sem ID SES conforme suas decisões.` : ""
+    cleared ? `${cleared} linha(s) serão importadas sem ID SES conforme suas decisões.` : "",
+    resolution.confirmedKeys.length ? `${resolution.confirmedKeys.length} grupo(s) manterão ID SES repetida de forma confirmada.` : ""
   ].filter(Boolean).join("\\n");
 
   if(!window.confirm(message)) return;
@@ -2861,7 +2924,8 @@ async function runImport() {
   try {
     const result=await applyAssetImport({
       nome_arquivo:state.importFileName,
-      linhas:resolution.rows
+      linhas:resolution.rows,
+      id_ses_confirmadas:resolution.confirmedKeys
     });
 
     state.importLastResult=result;
@@ -3234,6 +3298,24 @@ async function submitAsset(event) {
     if (!confirmSigemTypeOverride(payload.tipo_id, sigemType, state.selectedSigem?.descricao || "")) return;
     payload.confirmar_tipo_divergente = true;
   }
+
+  if (payload.id_ses) {
+    const key=normalizeText(payload.id_ses);
+    const current=state.assetFormMode==="edit" ? selectedAsset() : null;
+    const changed=state.assetFormMode==="create" || normalizeText(current?.id_ses)!==key;
+    const duplicates=changed
+      ? state.assets.filter(asset=>asset.id!==current?.id && normalizeText(asset.id_ses)===key)
+      : [];
+    if(duplicates.length) {
+      const refs=duplicates.slice(0,5).map(asset=>asset.id_interna).filter(Boolean).join(", ");
+      const ok=window.confirm(
+        `A ID SES "${payload.id_ses}" já está vinculada a ${duplicates.length} patrimônio(s)${refs?` (${refs})`:""}.\n\nA repetição é permitida, mas não é o cenário ideal. Deseja manter esta mesma ID SES também neste patrimônio?`
+      );
+      if(!ok) return;
+      payload.confirmar_id_ses_duplicada=true;
+    }
+  }
+
   button.disabled = true; button.textContent = "Salvando…";
   try {
     let saved;

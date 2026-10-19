@@ -318,7 +318,7 @@ async function simulateAssetImport(sql, rawRows) {
         row.duplicate_key=key;
         row.duplicate_existing=exists;
         row.needs_id_resolution=true;
-        row.warnings.push(exists ? "ID SES já existe no banco e precisa ser removida deste lote" : "ID SES repetida no arquivo; escolha qual linha manterá a identificação");
+        row.warnings.push(exists ? "ID SES já existe no banco; confirme se deseja compartilhá-la também neste lote" : "ID SES repetida no arquivo; revise como deseja mantê-la");
       }
     }
   }
@@ -391,7 +391,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.5.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.5.1",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -895,10 +895,19 @@ export default {
         if(!nomeArquivo) return responseJson({ok:false,error:"Nome do arquivo é obrigatório."},400,env,request);
 
         const simulacao=await simulateAssetImport(sql,linhas);
-        if(simulacao.resumo.error>0 || simulacao.grupos_id_ses.length>0) {
+        const confirmadas=new Set(
+          (Array.isArray(b.id_ses_confirmadas)?b.id_ses_confirmadas:[])
+            .map(value=>normalizeCatalogText(value))
+            .filter(Boolean)
+        );
+        const gruposPendentes=simulacao.grupos_id_ses.filter(group=>!confirmadas.has(group.key));
+        if(simulacao.resumo.error>0 || gruposPendentes.length>0) {
           return responseJson({
             ok:false,
-            error:"O lote final ainda possui erros ou ID SES pendentes. Execute a simulação novamente.",
+            error:simulacao.resumo.error>0
+              ? "O lote final ainda possui erros. Execute a simulação novamente."
+              : "Há ID SES duplicada sem confirmação explícita.",
+            grupos_pendentes:gruposPendentes,
             simulacao
           },409,env,request);
         }
@@ -965,6 +974,22 @@ export default {
             return responseJson({ok:false,error:`No cadastro, o Tipo deve seguir o item do Catálogo. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
           }
         }
+        if (String(b.id_ses||"").trim()) {
+          const dupSes=await sql`
+            select id,id_interna
+            from patrimonios
+            where lower(btrim(id_ses))=lower(btrim(${String(b.id_ses).trim()}))
+            limit 5
+          `;
+          if(dupSes.length && b.confirmar_id_ses_duplicada!==true) {
+            return responseJson({
+              ok:false,
+              error:"Esta ID SES já está vinculada a outro patrimônio. A repetição é permitida, mas exige confirmação explícita.",
+              code:"ID_SES_DUPLICADA_CONFIRMACAO",
+              existentes:dupSes
+            },409,env,request);
+          }
+        }
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
         const rows=await sql`insert into patrimonios(id_interna,id_ses,descricao,descricao_padrao_id,data_aquisicao,valor_aquisicao,nota_fiscal_numero,centro_custo_id,tipo_id,marca_modelo,status,tipo_aquisicao,estado_conservacao,mobilidade,criado_por,atualizado_por)
           values(null,${b.id_ses||null},${String(b.descricao).trim()},${b.descricao_padrao_id||null}::uuid,coalesce(${b.data_aquisicao||null}::date,current_date),coalesce(${b.valor_aquisicao??null},(select valor_padrao from descricoes_padrao where id=${b.descricao_padrao_id||null}::uuid)),${b.nota_fiscal_numero||null},${b.centro_custo_id}::uuid,${Number(b.tipo_id)},${b.marca_modelo||null},coalesce(${b.status||null}::status_patrimonio,'ATIVO'),${b.tipo_aquisicao}::tipo_aquisicao,coalesce(${b.estado_conservacao||null}::estado_conservacao,'BEM_CONSERVADO'),${mobility},${user.id}::uuid,${user.id}::uuid) returning id`;
@@ -997,6 +1022,25 @@ export default {
 
         if(!next.descricao||!next.tipo_id||!next.tipo_aquisicao||!next.status||!next.estado_conservacao) {
           return responseJson({ok:false,error:"Dados obrigatórios do patrimônio não podem ficar vazios."},400,env,request);
+        }
+
+        const idSesChanged=has("id_ses") && normalizeCatalogText(next.id_ses)!==normalizeCatalogText(current.id_ses);
+        if(idSesChanged && next.id_ses) {
+          const dupSes=await sql`
+            select id,id_interna
+            from patrimonios
+            where id<>${m[1]}::uuid
+              and lower(btrim(id_ses))=lower(btrim(${next.id_ses}))
+            limit 5
+          `;
+          if(dupSes.length && b.confirmar_id_ses_duplicada!==true) {
+            return responseJson({
+              ok:false,
+              error:"Esta ID SES já está vinculada a outro patrimônio. A repetição é permitida, mas exige confirmação explícita.",
+              code:"ID_SES_DUPLICADA_CONFIRMACAO",
+              existentes:dupSes
+            },409,env,request);
+          }
         }
 
         if (next.descricao_padrao_id) {
