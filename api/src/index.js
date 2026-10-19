@@ -562,6 +562,8 @@ export default {
         }
         const previousRows=await sql`select valor from configuracoes_sistema where chave='RELACAO_PATRIMONIAL' limit 1`;
         const previous=previousRows[0]?.valor||null;
+        const previousAudit=previous ? {...previous,logo_data_url:previous.logo_data_url?"[logo configurado]":null} : null;
+        const configAudit={...config,logo_data_url:config.logo_data_url?"[logo configurado]":null};
         const rows=await sql`
           insert into configuracoes_sistema(chave,valor,atualizado_por,atualizado_em)
           values('RELACAO_PATRIMONIAL',${JSON.stringify(config)}::jsonb,${user.id}::uuid,now())
@@ -575,8 +577,8 @@ export default {
             'configuracoes_sistema',
             ${rows[0].id}::uuid,
             'CONFIGURACAO_RELACAO_PATRIMONIAL',
-            ${previous?JSON.stringify(previous):null}::jsonb,
-            ${JSON.stringify(config)}::jsonb,
+            ${previousAudit?JSON.stringify(previousAudit):null}::jsonb,
+            ${JSON.stringify(configAudit)}::jsonb,
             ${user.id}::uuid
           )
         `;
