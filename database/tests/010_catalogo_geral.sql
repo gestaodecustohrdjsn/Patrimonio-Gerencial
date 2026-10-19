@@ -3,7 +3,7 @@
 
 begin;
 
-do $$
+do $catalogo_test$
 declare
   v_id uuid;
   v_sigem_id uuid;
@@ -133,7 +133,7 @@ begin
   ) then
     raise exception 'Updater v2 não atualizou o valor SIGEM em correspondência exata';
   end if;
-end $;
+end $catalogo_test$;
 
 rollback;
 
