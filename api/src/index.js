@@ -974,6 +974,22 @@ export default {
             return responseJson({ok:false,error:`No cadastro, o Tipo deve seguir o item do Catálogo. SIGEM: ${tipoSigem===1?"Equipamento Médico":tipoSigem===2?"Mobiliário":tipoSigem===3?"Equipamento de Informática":"Tipo "+tipoSigem}.`},409,env,request);
           }
         }
+        if (String(b.id_ses||"").trim()) {
+          const dupSes=await sql`
+            select id,id_interna
+            from patrimonios
+            where lower(btrim(id_ses))=lower(btrim(${String(b.id_ses).trim()}))
+            limit 5
+          `;
+          if(dupSes.length && b.confirmar_id_ses_duplicada!==true) {
+            return responseJson({
+              ok:false,
+              error:"Esta ID SES já está vinculada a outro patrimônio. A repetição é permitida, mas exige confirmação explícita.",
+              code:"ID_SES_DUPLICADA_CONFIRMACAO",
+              existentes:dupSes
+            },409,env,request);
+          }
+        }
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
         const rows=await sql`insert into patrimonios(id_interna,id_ses,descricao,descricao_padrao_id,data_aquisicao,valor_aquisicao,nota_fiscal_numero,centro_custo_id,tipo_id,marca_modelo,status,tipo_aquisicao,estado_conservacao,mobilidade,criado_por,atualizado_por)
           values(null,${b.id_ses||null},${String(b.descricao).trim()},${b.descricao_padrao_id||null}::uuid,coalesce(${b.data_aquisicao||null}::date,current_date),coalesce(${b.valor_aquisicao??null},(select valor_padrao from descricoes_padrao where id=${b.descricao_padrao_id||null}::uuid)),${b.nota_fiscal_numero||null},${b.centro_custo_id}::uuid,${Number(b.tipo_id)},${b.marca_modelo||null},coalesce(${b.status||null}::status_patrimonio,'ATIVO'),${b.tipo_aquisicao}::tipo_aquisicao,coalesce(${b.estado_conservacao||null}::estado_conservacao,'BEM_CONSERVADO'),${mobility},${user.id}::uuid,${user.id}::uuid) returning id`;
@@ -1006,6 +1022,25 @@ export default {
 
         if(!next.descricao||!next.tipo_id||!next.tipo_aquisicao||!next.status||!next.estado_conservacao) {
           return responseJson({ok:false,error:"Dados obrigatórios do patrimônio não podem ficar vazios."},400,env,request);
+        }
+
+        const idSesChanged=has("id_ses") && normalizeCatalogText(next.id_ses)!==normalizeCatalogText(current.id_ses);
+        if(idSesChanged && next.id_ses) {
+          const dupSes=await sql`
+            select id,id_interna
+            from patrimonios
+            where id<>${m[1]}::uuid
+              and lower(btrim(id_ses))=lower(btrim(${next.id_ses}))
+            limit 5
+          `;
+          if(dupSes.length && b.confirmar_id_ses_duplicada!==true) {
+            return responseJson({
+              ok:false,
+              error:"Esta ID SES já está vinculada a outro patrimônio. A repetição é permitida, mas exige confirmação explícita.",
+              code:"ID_SES_DUPLICADA_CONFIRMACAO",
+              existentes:dupSes
+            },409,env,request);
+          }
         }
 
         if (next.descricao_padrao_id) {
