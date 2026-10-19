@@ -391,7 +391,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.4.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.5.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
