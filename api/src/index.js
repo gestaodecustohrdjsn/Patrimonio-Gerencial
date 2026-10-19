@@ -544,6 +544,7 @@ export default {
         await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${user.id}::uuid,'SENHA_ALTERADA','{}'::jsonb,${user.id}::uuid)`;
         return responseJson({ok:true,reautenticar:true},200,env,request);
       }
+      if (request.method === "GET" && url.pathname === "/api/me" && user.troca_senha_obrigatoria) return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,perfil_acesso:user.perfil_acesso,troca_senha_obrigatoria:true,permissoes:{}}},200,env,request);
       if(user.troca_senha_obrigatoria) return responseJson({ok:false,error:"Troca de senha obrigatória antes de acessar o sistema.",troca_senha_obrigatoria:true},403,env,request);
       const userPermissions=await loadUserPermissions(sql,user);
       if (request.method === "GET" && url.pathname === "/api/me") return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,perfil_acesso:user.perfil_acesso,troca_senha_obrigatoria:false,permissoes:userPermissions}},200,env,request);
