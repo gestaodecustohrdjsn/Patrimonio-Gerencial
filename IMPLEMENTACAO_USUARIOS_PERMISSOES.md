@@ -1,35 +1,24 @@
-# Patrimônio+ — Usuários e Permissões v1 (branch de implementação)
+# Patrimônio+ — Controle de usuários v1.9.0 (branch de homologação)
 
-## Estado
-**EM DESENVOLVIMENTO — NÃO PUBLICAR / NÃO EXECUTAR EM PRODUÇÃO.**
+**ESTADO: CÓDIGO IMPLEMENTADO EM BRANCH, NÃO HOMOLOGADO, NÃO PUBLICADO EM PRODUÇÃO.**
+Branch: `feat/usuarios-permissoes-v1`
+API: `3.7.0`. Frontend: `1.9.0`.
 
-Fundação preparada:
-- Migration `015_usuarios_permissoes.sql` (34 permissões, 4 perfis, 136 padrões).
-- Motor `api/src/permissions.js` com regra de exceção individual e proteção de privilégios exclusivos.
-- Teste unitário de regras `api/tests/permissions.test.js` (ainda não executado em CI).
-- Rotas iniciais de gestão de usuários e senha temporária no backend.
-- Conversão das verificações legadas explícitas de perfil em permissões na API.
-- Login obtém permissões efetivas no endpoint `/api/me`.
+## Implementado
+- Banco: 34 permissões, 136 regras de perfil, herança e exceções, proteção do último ADMIN, bloqueio de exclusão física de usuários, histórico e e-mail normalizado único.
+- API: autenticação legada preservada, permissões efetivas, troca obrigatória, gestão de usuários, redefinição e revogação de sessões; transações atômicas para operações administrativas essenciais.
+- UI: acesso inicial para troca de senha, cadastro e gerenciamento de usuários e exceções; controles operacionais por permissão, consulta de Catálogo.
+- Testes: suíte unitária de permissão e scripts SQL de diagnóstico pré/pós-migração.
+- Guia: `GUIA_INSTALACAO_USUARIOS_1_9_0.md`.
 
-## Pendências BLOQUEANTES antes de usar
-1. Finalizar e validar tela de troca de senha inicial; gravação foi bloqueada durante a preparação.
-2. Implementar interface administrativa de usuários e editor das permissões individuais.
-3. Revisar TODAS as rotas GET e POST para autorização e regras de leitura do Histórico Geral.
-4. Garantir operações administrativas atômicas (transações) e proteção concorrente do último administrador.
-5. Revisar segurança e política de redefinição de senha; rotas legadas `setup-password`.
-6. Revisar persistência do histórico (sem senha ou token), migração de perfil AUXILIAR e compatibilidade.
-7. Verificar schema real Neon; a migration NÃO foi executada no banco.
-8. Executar testes SQL, unitários, integração e regressão dos fluxos existentes.
-9. Atualizar cache frontend, versão e documentação SOMENTE após conclusão e homologação.
-10. Publicar API e frontend de forma coordenada. Não liberar funcionalidades parcialmente.
+## Pendências de homologação
+1. Executar diagnóstico SOMENTE LEITURA `database/tests/015_pre_migracao_usuarios.sql` e verificar esquema real.
+2. Validar sintaxe/execução Node localmente com `npm run check` e `npm test`.
+3. Verificar integralmente os componentes operacionais e revisar permissões de todos os endpoints, inclusive rotas somente leitura e QR público.
+4. Validar SQL no banco de homologação Neon, com backup/snapshot prévio.
+5. Testar cadastro de quatro perfis, senha temporária, revogação de sessões, auditoria e regressão.
+6. Validar interface em navegador, responsividade e cache.
+7. Só então planejar rollout sincronizado API/Frontend e merge.
+8. Não executar reset/marco zero, não limpar dados, não executar SQL da migration 015 em produção sem prévia.
 
-## Checklist aprovado, ainda não homologado
-- Criar usuário com senha temporária; trocar no primeiro acesso.
-- Impedir qualquer rota operacional antes da troca da senha.
-- Permissão herdada e exceções individuais de permissão e bloqueio.
-- CONSULTA sempre leitura; operações exclusivas ADMIN.
-- Desativação, revogação de sessões e último administrador protegido.
-- Auditabilidade, limites e proteção de dados sensíveis.
-- Regressão da importação, manutenções, etiquetas e relatórios.
-
-**Não marcar nenhum dos itens acima como aprovado sem execução efetiva.**
+**A aplicação principal segue na versão 1.8.1 / API 3.6.0.**
