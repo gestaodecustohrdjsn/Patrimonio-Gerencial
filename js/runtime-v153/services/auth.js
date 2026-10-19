@@ -28,7 +28,12 @@ export async function signIn(email, password) {
     body: { email, password }
   });
   storeToken(data.token);
-  const session = { user: data.user };
+  let user=data.user;
+  if (!user.troca_senha_obrigatoria) {
+    const me=await apiRequest("/api/me");
+    user=me.user;
+  }
+  const session = { user };
   notify(session);
   return session;
 }
