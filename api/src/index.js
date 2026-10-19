@@ -490,6 +490,10 @@ export default {
                 'tipo','catalog_update',
                 'nome',h.dados_novos->>'nome_arquivo'
               )
+              when h.tabela='importacoes_patrimoniais' then jsonb_build_object(
+                'tipo','asset_import',
+                'nome',h.dados_novos->>'nome_arquivo'
+              )
               else jsonb_build_object('tipo',h.tabela)
             end as entidade,
             jsonb_build_object(
@@ -512,7 +516,9 @@ export default {
               'duplicados_adicionados',h.dados_novos->>'duplicados_adicionados',
               'ignorados',h.dados_novos->>'ignorados',
               'inativados',h.dados_novos->>'inativados',
-              'reativados',h.dados_novos->>'reativados'
+              'reativados',h.dados_novos->>'reativados',
+              'total_linhas',h.dados_novos->>'total_linhas',
+              'total_importado',h.dados_novos->>'total_importado'
             ) as detalhes
           from historico_alteracoes h
           left join usuarios u on u.id=h.usuario_id
@@ -873,6 +879,69 @@ export default {
         const rows=await sql`select id,descricao,valor_padrao,tipo_id,origem_catalogo as origem,fonte_valor from descricoes_padrao where ativo=true and descricao ilike ${'%'+q+'%'} order by descricao limit ${limit}`;
         return responseJson({ok:true,itens:rows},200,env,request);
       }
+      if (request.method === "POST" && url.pathname === "/api/importacoes/patrimonios/simular") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
+        const b=await bodyJson(request);
+        const linhas=Array.isArray(b.linhas)?b.linhas:[];
+        const simulacao=await simulateAssetImport(sql,linhas);
+        return responseJson({ok:true,simulacao},200,env,request);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/importacoes/patrimonios/aplicar") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
+        const b=await bodyJson(request);
+        const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
+        const linhas=Array.isArray(b.linhas)?b.linhas:[];
+        if(!nomeArquivo) return responseJson({ok:false,error:"Nome do arquivo é obrigatório."},400,env,request);
+
+        const simulacao=await simulateAssetImport(sql,linhas);
+        if(simulacao.resumo.error>0 || simulacao.grupos_id_ses.length>0) {
+          return responseJson({
+            ok:false,
+            error:"O lote final ainda possui erros ou ID SES pendentes. Execute a simulação novamente.",
+            simulacao
+          },409,env,request);
+        }
+
+        const sanitized=simulacao.linhas.map(row=>({
+          linha:row.linha,
+          id_ses:row.id_ses||null,
+          descricao_complementar:row.descricao_complementar,
+          descricao_padrao_id:row.item_catalogo.id,
+          data_aquisicao:row.data_aquisicao,
+          valor_aquisicao:row.valor_aquisicao,
+          nota_fiscal_numero:row.nota_fiscal_numero,
+          centro_custo_id:row.centro.id,
+          marca_modelo:row.marca_modelo,
+          tipo_aquisicao:row.tipo_aquisicao,
+          status:row.status,
+          estado_conservacao:row.estado_conservacao
+        }));
+
+        const rows=await sql`
+          select importar_patrimonios_lote_api(
+            ${nomeArquivo},
+            ${JSON.stringify(sanitized)}::jsonb,
+            ${user.id}::uuid
+          ) as resultado
+        `;
+        return responseJson({ok:true,resultado:rows[0].resultado},200,env,request);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/importacoes/patrimonios/historico") {
+        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar importações."},403,env,request);
+        const limit=Math.min(50,Math.max(1,Number(url.searchParams.get("limit")||20)));
+        const rows=await sql`
+          select i.id,i.nome_arquivo,i.total_linhas,i.total_importado,i.criado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
+          from importacoes_patrimoniais i
+          left join usuarios u on u.id=i.usuario_id
+          order by i.criado_em desc
+          limit ${limit}
+        `;
+        return responseJson({ok:true,importacoes:rows},200,env,request);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/patrimonios") {
         const rows=await sql`select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
           exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
