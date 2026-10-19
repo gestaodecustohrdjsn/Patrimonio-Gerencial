@@ -320,7 +320,8 @@ function historyActionLabel(event) {
     "descricoes_padrao:ITEM_CATALOGO_CADASTRADO": "Adicionou item ao Catálogo",
     "descricoes_padrao:ITEM_CATALOGO_EDITADO": "Editou item do Catálogo",
     "descricoes_padrao:ITEM_CATALOGO_EXCLUIDO": "Excluiu item do Catálogo",
-    "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM"
+    "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM",
+    "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -336,6 +337,7 @@ function historyEntityLabel(event) {
   }
   if (entity.tipo === "catalog_item") return entity.nome || "Item do Catálogo";
   if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
+  if (entity.tipo === "asset_import") return entity.nome || "Importação patrimonial";
   return "";
 }
 
@@ -362,6 +364,9 @@ function historyDetailText(event) {
     if (Number(d.inativados || 0)) parts.push(`${d.inativados} inativado(s)`);
     if (Number(d.reativados || 0)) parts.push(`${d.reativados} reativado(s)`);
     return parts.length ? parts.join(" · ") : `${d.quantidade_arquivo || 0} item(ns) analisado(s)`;
+  }
+  if (event.operacao === "IMPORTACAO_PATRIMONIAL_CONCLUIDA") {
+    return `${d.total_importado || d.total_linhas || 0} patrimônio(s) importado(s)`;
   }
   return "";
 }
