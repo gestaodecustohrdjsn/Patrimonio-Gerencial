@@ -567,8 +567,16 @@ export default {
         if(!nome||!/^\S+@\S+\.\S+$/.test(email)||senha.length<10||senha.length>256|| !["ADMIN","GESTOR","OPERADOR","CONSULTA"].includes(b.perfil_acesso)) return responseJson({ok:false,error:"Informe nome, e-mail, perfil e senha temporária de 10 a 256 caracteres."},400,env,request);
         const salt=randomSalt(), iterations=310000, hash=await passwordHash(senha,salt,iterations);
         const legacy=perfil==="ADMIN"?"ADMIN":perfil==="CONSULTA"?"CONSULTA":"AUXILIAR";
-        const added=await sql`insert into usuarios(nome,email,perfil,perfil_acesso,ativo,troca_senha_obrigatoria,password_hash,password_salt,password_iterations) values(${nome},${email},${legacy},${perfil},true,true,${hash},${salt},${iterations}) returning id,nome,email,perfil_acesso,ativo`;
-        await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${added[0].id}::uuid,'USUARIO_CRIADO',jsonb_build_object('perfil',${perfil}::text,'email',${email}::text),${user.id}::uuid)`;
+        const added=await sql`
+        with criado as (
+          insert into usuarios(nome,email,perfil,perfil_acesso,ativo,troca_senha_obrigatoria,password_hash,password_salt,password_iterations)
+          values(${nome},${email},${legacy},${perfil},true,true,${hash},${salt},${iterations})
+          returning id,nome,email,perfil_acesso,ativo
+        ), evento as (
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
+          select 'usuarios',id,'USUARIO_CRIADO',jsonb_build_object('perfil',perfil_acesso,'email',email),${user.id}::uuid
+          from criado returning id
+        ) select * from criado`;
         return responseJson({ok:true,usuario:added[0]},201,env,request);
       }
       const usuarioMatch=url.pathname.match(/^\/api\/usuarios\/([0-9a-f-]{36})(?:\/(permissoes|redefinir-senha))?$/i);
@@ -615,22 +623,42 @@ export default {
           const nome=typeof b.nome==="string"?b.nome.trim().slice(0,180):null;
           if(nome==="")return responseJson({ok:false,error:"Nome obrigatório."},400,env,request);
           const legacy=profile==="ADMIN"?"ADMIN":profile==="CONSULTA"?"CONSULTA":"AUXILIAR";
-          const changed=await sql`update usuarios set perfil=${legacy},perfil_acesso=${profile},ativo=${active},nome=coalesce(${nome},nome),atualizado_em=now() where id=${targetId}::uuid returning id,nome,email,perfil_acesso,ativo`;
-          if(profile!==current[0].perfil_acesso) await sql`delete from usuarios_permissoes where usuario_id=${targetId}::uuid`;
-          await sql`update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null`;
-          await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id) values('usuarios',${targetId}::uuid,'USUARIO_EDITADO',jsonb_build_object('perfil',${current[0].perfil_acesso}::text,'ativo',${current[0].ativo}::boolean),jsonb_build_object('perfil',${profile}::text,'ativo',${active}::boolean),${user.id}::uuid)`;
-          return responseJson({ok:true,usuario:changed[0]},200,env,request);
+          const changed=await sql`
+        with atualizado as (
+          update usuarios set perfil=${legacy},perfil_acesso=${profile},ativo=${active},nome=coalesce(${nome},nome),atualizado_em=now()
+          where id=${targetId}::uuid returning id,nome,email,perfil_acesso,ativo
+        ), limpar as (
+          delete from usuarios_permissoes where usuario_id=${targetId}::uuid and ${profile!==current[0].perfil_acesso}
+          returning permissao_codigo
+        ), revogar as (
+          update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null returning id
+        ), evento as (
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+          select 'usuarios',id,'USUARIO_EDITADO',
+            jsonb_build_object('perfil',${current[0].perfil_acesso}::text,'ativo',${current[0].ativo}::boolean),
+            jsonb_build_object('perfil',perfil_acesso,'ativo',ativo),${user.id}::uuid
+          from atualizado returning id
+        ) select * from atualizado`;
+        return responseJson({ok:true,usuario:changed[0]},200,env,request);
         }
         if(request.method==="POST" && suffix==="redefinir-senha") {
           if(!hasPermission(userPermissions,"usuarios.redefinir_senha")||targetId===user.id)return responseJson({ok:false,error:"Acesso negado."},403,env,request);
           const b=await bodyJson(request), senha=String(b.senha_temporaria||"");
           if(senha.length<10||senha.length>256)return responseJson({ok:false,error:"A senha deve ter entre 10 e 256 caracteres."},400,env,request);
           const salt=randomSalt(),iterations=310000,hash=await passwordHash(senha,salt,iterations);
-          const rows=await sql`update usuarios set password_hash=${hash},password_salt=${salt},password_iterations=${iterations},troca_senha_obrigatoria=true,atualizado_em=now() where id=${targetId}::uuid returning id`;
-          if(!rows.length)return responseJson({ok:false,error:"Usuário não encontrado."},404,env,request);
-          await sql`update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null`;
-          await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${targetId}::uuid,'SENHA_REDEFINIDA','{}'::jsonb,${user.id}::uuid)`;
-          return responseJson({ok:true},200,env,request);
+          const rows=await sql`
+        with redefinido as (
+          update usuarios set password_hash=${hash},password_salt=${salt},password_iterations=${iterations},
+            troca_senha_obrigatoria=true,atualizado_em=now()
+          where id=${targetId}::uuid returning id
+        ), revogar as (
+          update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null returning id
+        ), evento as (
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
+          select 'usuarios',id,'SENHA_REDEFINIDA','{}'::jsonb,${user.id}::uuid from redefinido returning id
+        ) select * from redefinido`;
+        if(!rows.length)return responseJson({ok:false,error:"Usuário não encontrado."},404,env,request);
+        return responseJson({ok:true},200,env,request);
         }
       }
 
