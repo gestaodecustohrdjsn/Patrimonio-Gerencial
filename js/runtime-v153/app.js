@@ -1179,8 +1179,8 @@ function renderLabels() {
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header"><div><h1>Etiquetas</h1><p>Selecione patrimônios e gere arquivos individuais ou folhas A4 com 30 etiquetas.</p></div></div>
     ${filterPanelHtml("labelFilters", "Filtros das etiquetas")}
-    <section class="selection-toolbar">
-      <div><strong>${selectedCount} selecionado(s)</strong><small>${rows.length} patrimônio(s) no filtro atual.</small></div>
+    <section class="selection-toolbar label-selection-toolbar">
+      <div><strong>${selectedCount} selecionado(s)</strong><small>${rows.length} patrimônio(s) no filtro atual. Selecione na tabela para preparar a impressão ou download.</small></div>
       <div class="header-actions">
         <button class="ghost-button" data-action="select-filtered-labels">Selecionar todos filtrados</button>
         <button class="ghost-button" data-action="clear-label-selection">Limpar seleção</button>
@@ -1194,14 +1194,14 @@ function renderLabels() {
         <span class="badge">${selectedCount} selecionado(s)</span>
       </div>
       <div class="label-a4-controls">
-        <label>Começar na posição
+        <label>Posição inicial na primeira folha
           <select id="labelStartPosition">
             ${Array.from({length:30},(_,i)=>`<option value="${i+1}" ${Number(state.labelStartPosition)===i+1?"selected":""}>Etiqueta ${i+1}</option>`).join("")}
           </select>
         </label>
         <div class="label-a4-help">
-          <strong>Ordem:</strong>
-          <span>da esquerda para a direita, de cima para baixo.</span>
+          <strong>Como funciona</strong>
+          <span>As etiquetas seguem da esquerda para a direita, linha por linha. Posições anteriores à inicial ficam livres apenas na primeira folha.</span>
         </div>
         <button class="primary-button" data-action="print-a4-labels" ${selectedCount && !state.labelPrintBusy ? "" : "disabled"}>
           ${state.labelPrintBusy ? "Gerando folha…" : `Imprimir A4 (${selectedCount})`}
@@ -1209,8 +1209,9 @@ function renderLabels() {
       </div>
     </section>
 
-    <section class="panel">
-      <div class="table-wrap"><table><thead><tr><th class="check-col"></th><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Status</th><th>Prévia</th></tr></thead>
+    <section class="panel label-list-panel">
+      <div class="panel-header"><div><h2>Patrimônios disponíveis</h2><small>Marque os itens que deseja incluir. A prévia individual não altera a seleção.</small></div><span class="badge">${rows.length} no resultado</span></div>
+      <div class="table-wrap"><table><thead><tr><th class="check-col">Sel.</th><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Status</th><th>Prévia</th></tr></thead>
       <tbody>${rows.map(asset=>`<tr>
         <td><input class="label-check" type="checkbox" data-label-id="${asset.id}" ${state.labelSelected.has(asset.id)?"checked":""} aria-label="Selecionar ${escapeHtml(asset.id_interna)}"></td>
         <td><strong>${escapeHtml(asset.id_interna)}</strong></td><td>${escapeHtml(assetDisplayName(asset))}</td><td><div class="value-with-badges"><span>${typeName(asset.tipo_id)}</span>${mobilityBadge(asset)}</div></td><td>${escapeHtml(asset.centros_custo?.nome||"—")}</td><td><div class="value-with-badges"><span>${asset.status==="ATIVO"?"Ativo":"Inativo"}</span>${maintenanceBadge(asset)}</div></td>
@@ -1328,7 +1329,7 @@ function renderReports() {
 
       <section class="panel report-preview-panel">
         <div class="panel-header">
-          <div><h2>${escapeHtml(center.nome)}</h2><small>${escapeHtml(reportFilterSummary())}</small></div>
+          <div><span class="report-preview-eyebrow">Prévia da relação patrimonial</span><h2>${escapeHtml(center.nome)}</h2><small>${escapeHtml(reportFilterSummary())}</small></div>
           <span class="badge">${rows.length} item(ns)</span>
         </div>
         ${rows.length ? `<div class="table-wrap"><table class="report-table">
@@ -2662,7 +2663,9 @@ function reportTemplatePreviewHtml(template) {
           <h3>${escapeHtml(t.titulo || "Relação Patrimonial")}</h3>
         </div>
       </div>
-      <div class="report-template-preview-columns">${visible.map(label=>`<span>${escapeHtml(label)}</span>`).join("")}</div>
+      <div class="report-template-preview-columns">${visible.length ? visible.map(label=>`<span>${escapeHtml(label)}</span>`).join("") : "<span>Nenhuma coluna selecionada</span>"}</div>
+      <div class="report-template-preview-meta">${t.mostrar_data ? "<span>Data/hora</span>" : ""}${t.mostrar_quantidade ? "<span>Quantidade</span>" : ""}${t.mostrar_filtros ? "<span>Filtros</span>" : ""}</div>
+      <div class="report-template-preview-signatures">${[t.assinatura_1,t.assinatura_2].filter(Boolean).map(value=>`<span>${escapeHtml(value)}</span>`).join("")}</div>
       <small>${escapeHtml(t.rodape || "Sem texto de rodapé")}</small>
     </div>
   `;
@@ -2782,6 +2785,8 @@ function renderSettings() {
         <div class="settings-card-content" ${templateOpen ? "" : "hidden"}>
           ${!state.reportTemplateLoaded ? '<div class="loading">Carregando template…</div>' : `
             <div class="report-template-editor">
+              <div class="report-template-intro"><strong>Personalização do documento</strong><p>Organize a identificação, escolha as informações exibidas e confira a prévia antes de salvar. As alterações só serão aplicadas após clicar em Salvar template.</p></div>
+              <div class="report-template-step"><span>1</span><div><strong>Identificação e assinaturas</strong><small>Textos institucionais que aparecem no documento impresso.</small></div></div>
               <div class="report-template-fields">
                 <label>Instituição<input id="reportTemplateInstitution" maxlength="180" value="${escapeHtml(template.instituicao||"")}"></label>
                 <label>Unidade<input id="reportTemplateUnit" maxlength="180" value="${escapeHtml(template.unidade||"")}" placeholder="Ex.: Hospital Regional"></label>
@@ -2792,7 +2797,7 @@ function renderSettings() {
               </div>
 
               <div class="report-template-section">
-                <strong>Logo</strong>
+                <div class="report-template-step"><span>2</span><div><strong>Identidade visual</strong><small>Logo institucional opcional.</small></div></div>
                 <div class="report-template-logo-editor">
                   ${template.logo_data_url ? `<img src="${escapeHtml(template.logo_data_url)}" alt="Logo"><span>${escapeHtml(template.logo_nome||"Logo configurado")}</span>` : '<div class="report-template-logo-placeholder">Sem logo</div>'}
                   <label class="secondary-button file-button">Selecionar imagem<input id="reportTemplateLogo" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
@@ -2802,7 +2807,7 @@ function renderSettings() {
               </div>
 
               <div class="report-template-section">
-                <strong>Informações do cabeçalho</strong>
+                <div class="report-template-step"><span>3</span><div><strong>Informações do cabeçalho</strong><small>Escolha os metadados que acompanharão a relação.</small></div></div>
                 <div class="config-checkbox-grid">
                   <label><input id="reportTemplateShowDate" type="checkbox" ${template.mostrar_data?"checked":""}> Data/hora de geração</label>
                   <label><input id="reportTemplateShowCount" type="checkbox" ${template.mostrar_quantidade?"checked":""}> Quantidade de patrimônios</label>
@@ -2811,14 +2816,14 @@ function renderSettings() {
               </div>
 
               <div class="report-template-section">
-                <strong>Colunas da relação</strong>
+                <div class="report-template-step"><span>4</span><div><strong>Colunas da relação</strong><small>Selecione os campos que estarão presentes na impressão.</small></div></div>
                 <div class="config-checkbox-grid">
                   ${REPORT_TEMPLATE_COLUMNS.map(([key,label])=>`<label><input type="checkbox" data-report-template-column="${key}" ${template.colunas?.[key]?"checked":""}> ${escapeHtml(label)}</label>`).join("")}
                 </div>
               </div>
 
               <div class="report-template-section">
-                <strong>Prévia estrutural</strong>
+                <div class="report-template-step"><span>5</span><div><strong>Prévia do documento</strong><small>Representação simplificada da configuração atual; não é uma página A4 em escala.</small></div></div>
                 ${reportTemplatePreviewHtml(template)}
               </div>
 
