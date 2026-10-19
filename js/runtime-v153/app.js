@@ -7,8 +7,9 @@ import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, 
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
-import { listRecentHistory } from "./services/historico.js?v=1.6.0";
+import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
+import { getReportTemplate, saveReportTemplate } from "./services/configuracoes.js?v=1.8.0";
 
 const state = {
   currentView: "dashboard",
@@ -36,7 +37,21 @@ const state = {
   assetFilters: {},
   labelFilters: {},
   labelSelected: new Set(),
+  labelStartPosition: 1,
+  labelPrintBusy: false,
   reportFilters: { centro: "", q: "", tipo: "", status: "", aquisicao: "", conservacao: "", mobilidade: "", manutencao: "", ordenacao: "id" },
+  reportTemplate: null,
+  reportTemplateLoaded: false,
+  reportTemplateMeta: null,
+  reportTemplateBusy: false,
+  historyEvents: [],
+  historyTotal: 0,
+  historyUsers: [],
+  historyLoading: false,
+  historyLoaded: false,
+  historyPageSize: 100,
+  historyOffset: 0,
+  historyFilters: { tabela: "", operacao: "", usuario_id: "", q: "", inicio: "", fim: "" },
   detailEditMode: false,
   maintenance: [],
   maintenanceAssetId: null,
@@ -95,6 +110,7 @@ function shell() {
         ${canEditAssets() ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
+        <button class="nav-item" data-view="historico">Histórico</button>
         <button class="nav-item" data-view="configuracoes">Configurações</button>
       </nav>
       <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
@@ -287,6 +303,7 @@ function render() {
     case "importacao": renderImport(); break;
     case "etiquetas": renderLabels(); break;
     case "relatorios": renderReports(); break;
+    case "historico": renderHistory(); break;
     case "configuracoes": renderSettings(); break;
     default: renderDashboard();
   }
@@ -321,7 +338,8 @@ function historyActionLabel(event) {
     "descricoes_padrao:ITEM_CATALOGO_EDITADO": "Editou item do Catálogo",
     "descricoes_padrao:ITEM_CATALOGO_EXCLUIDO": "Excluiu item do Catálogo",
     "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM",
-    "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial"
+    "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial",
+    "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -338,6 +356,7 @@ function historyEntityLabel(event) {
   if (entity.tipo === "catalog_item") return entity.nome || "Item do Catálogo";
   if (entity.tipo === "catalog_update") return entity.nome || "Atualização do catálogo";
   if (entity.tipo === "asset_import") return entity.nome || "Importação patrimonial";
+  if (entity.tipo === "configuracao") return entity.nome || "Configuração do sistema";
   return "";
 }
 
