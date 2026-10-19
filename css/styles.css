@@ -1034,3 +1034,15 @@ button:disabled { opacity: .65; cursor: wait; }
 .duplicate-select-row input{width:auto;margin-top:3px}
 .duplicate-select-row span{display:grid;gap:3px}
 .duplicate-select-row small{color:var(--muted)}
+
+
+/* ===== Erros visíveis da importação v1.7.2 ===== */
+.import-errors-step{border-color:#e6b9b9;background:#fffafa}
+.import-error-summary{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.import-error-summary span{padding:8px 10px;border:1px solid #edc7c7;border-radius:999px;background:#fff3f3;font-size:12px;color:var(--danger)}
+.import-error-summary strong{margin-right:4px}
+.import-error-actions{justify-content:flex-start;margin-bottom:12px}
+.import-errors-table{max-height:520px;overflow:auto}
+.import-errors-table table{min-width:980px}
+.import-errors-table thead th{position:sticky;top:0;z-index:3}
+.import-final-step .catalog-alert.error .compact-button{justify-self:start;margin-top:6px}

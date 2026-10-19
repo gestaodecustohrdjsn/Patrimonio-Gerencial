@@ -2726,6 +2726,77 @@ function importResolutionState() {
   return {ready:hardErrors===0&&unresolved===0,unresolved,hardErrors,rows:resolvedRows,confirmedKeys};
 }
 
+function importBlockingErrors() {
+  return (state.importSimulation?.linhas || []).filter(row => Array.isArray(row.errors) && row.errors.length);
+}
+
+function importBlockingErrorsHtml() {
+  const rows=importBlockingErrors();
+  if(!rows.length) return "";
+  const reasonCounts=new Map();
+  for(const row of rows) {
+    for(const reason of row.errors) reasonCounts.set(reason,(reasonCounts.get(reason)||0)+1);
+  }
+  const reasons=[...reasonCounts.entries()].sort((a,b)=>b[1]-a[1]);
+
+  return `
+    <section class="import-step import-errors-step" id="importBlockingErrors">
+      <div class="step-title">
+        <span>!</span>
+        <div><h2>Erros que bloqueiam a importação</h2><p>Estas são exatamente as linhas que precisam ser corrigidas antes de liberar o lote.</p></div>
+      </div>
+
+      <div class="import-error-summary">
+        ${reasons.map(([reason,count])=>`<span><strong>${count}</strong> ${escapeHtml(reason)}</span>`).join("")}
+      </div>
+
+      <div class="import-actions import-error-actions">
+        <button class="ghost-button" data-action="download-import-errors">Baixar erros em CSV</button>
+      </div>
+
+      <div class="table-wrap import-errors-table">
+        <table>
+          <thead><tr><th>Linha CSV</th><th>Item do Catálogo</th><th>Centro de custo</th><th>ID SES</th><th>Erro</th></tr></thead>
+          <tbody>${rows.map(row=>`<tr>
+            <td><strong>${row.linha}</strong></td>
+            <td>${escapeHtml(row.descricao_catalogo||row.item_catalogo?.descricao||"—")}</td>
+            <td>${escapeHtml(row.centro?.nome||"—")}</td>
+            <td>${escapeHtml(row.id_ses_original||"—")}</td>
+            <td><span class="validation-error">${escapeHtml(row.errors.join(" · "))}</span></td>
+          </tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function downloadImportErrorsCsv() {
+  const rows=importBlockingErrors();
+  if(!rows.length) {
+    toast("A simulação não possui erros bloqueantes.","success");
+    return;
+  }
+  const data=[
+    ["LINHA_CSV","ITEM_CATALOGO","CENTRO_CUSTO","COD_CENTRO","ID_SES","ERRO"],
+    ...rows.map(row=>[
+      row.linha,
+      row.descricao_catalogo||row.item_catalogo?.descricao||"",
+      row.centro?.nome||"",
+      row.centro?.codigo||"",
+      row.id_ses_original||"",
+      row.errors.join(" | ")
+    ])
+  ];
+  const csv=data.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(";")).join("\n");
+  const url=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+  const a=document.createElement("a");
+  a.href=url;
+  const base=(state.importFileName||"importacao").replace(/\.[^.]+$/,"").replace(/[<>:"/\\|?*]+/g,"_");
+  a.download=`${base} - erros da simulacao.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function importHistoryHtml() {
   if(!state.importHistoryLoaded) return '<div class="loading">Carregando histórico de importações…</div>';
   if(!state.importHistory.length) return '<div class="empty">Nenhuma importação patrimonial concluída ainda.</div>';
@@ -2806,11 +2877,13 @@ function renderImport() {
       ${simulation.linhas.length>250?'<p class="import-note">Mostrando as primeiras 250 linhas. Todas as linhas foram validadas.</p>':""}
     </section>` : ""}
 
+    ${simulation ? importBlockingErrorsHtml() : ""}
+
     ${importDuplicateGroupsHtml()}
 
     ${simulation ? `<section class="import-step import-final-step">
       <div class="step-title"><span>${(simulation.grupos_id_ses||[]).length?5:4}</span><div><h2>Confirmação final</h2><p>O servidor repetirá todas as validações. Se uma única linha falhar, o PostgreSQL desfaz o lote inteiro.</p></div></div>
-      ${resolution.hardErrors>0 ? `<div class="catalog-alert error"><strong>${resolution.hardErrors} linha(s) ainda possuem erro.</strong><span>Corrija o arquivo ou o Catálogo/Centro de Custo e simule novamente.</span></div>` : ""}
+      ${resolution.hardErrors>0 ? `<div class="catalog-alert error"><strong>${resolution.hardErrors} linha(s) ainda possuem erro.</strong><span>Veja a seção "Erros que bloqueiam a importação" acima para identificar linha e motivo exatos.</span><button class="ghost-button compact-button" type="button" data-action="go-import-errors">Ver erros</button></div>` : ""}
       ${pendingGroups>0 ? `<div class="catalog-alert warning"><strong>${pendingGroups} grupo(s) de ID SES aguardam decisão.</strong><span>Nenhuma identificação será removida sem sua escolha.</span></div>` : ""}
       ${resolution.ready ? '<div class="catalog-alert success"><strong>Lote pronto para importação.</strong><span>A gravação será atômica: tudo ou nada.</span></div>' : ""}
       <div class="import-actions">
@@ -2833,6 +2906,10 @@ function renderImport() {
   }));
   document.querySelector('[data-action="validate-import"]')?.addEventListener("click",validateImport);
   document.querySelector('[data-action="run-import"]')?.addEventListener("click",runImport);
+  document.querySelector('[data-action="download-import-errors"]')?.addEventListener("click",downloadImportErrorsCsv);
+  document.querySelector('[data-action="go-import-errors"]')?.addEventListener("click",()=>{
+    document.querySelector("#importBlockingErrors")?.scrollIntoView({behavior:"smooth",block:"start"});
+  });
   document.querySelector('[data-action="clear-import-simulation"]')?.addEventListener("click",()=>{
     resetImportSimulation();
     renderImport();
