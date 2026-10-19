@@ -1024,3 +1024,13 @@ button:disabled { opacity: .65; cursor: wait; }
   .import-summary-wide{grid-template-columns:1fr 1fr}
   .duplicate-line{grid-template-columns:1fr}
 }
+
+
+/* ===== ID SES duplicada controlada v1.7.1 ===== */
+.duplicate-selection-box{display:grid;gap:9px;padding:12px;border:1px dashed var(--border);border-radius:10px;background:var(--surface-soft)}
+.duplicate-selection-box>small{color:var(--muted);line-height:1.4}
+.duplicate-selection-list{display:grid;gap:7px}
+.duplicate-select-row{display:flex!important;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface);font-weight:400!important}
+.duplicate-select-row input{width:auto;margin-top:3px}
+.duplicate-select-row span{display:grid;gap:3px}
+.duplicate-select-row small{color:var(--muted)}
