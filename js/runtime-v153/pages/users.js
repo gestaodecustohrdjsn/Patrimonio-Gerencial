@@ -59,7 +59,14 @@ async function draw(root) {
       </form>` : '<p class="user-admin-note">Exceções individuais disponíveis apenas para Gestor e Operador.</p>'}</div></section>`:""}
   `;
   root.querySelectorAll("[data-user]").forEach(b=>b.addEventListener("click",()=>{selected=b.dataset.user;draw(root);}));
-  root.querySelector("#newUserForm").addEventListener("submit",e=>submit(e,root,async f=>request("/api/usuarios","POST",Object.fromEntries(f))));
+  root.querySelector("#newUserForm").addEventListener("submit",e=>submit(e,root,async f=>{
+    const email=String(f.get("email")||"").trim().toLowerCase();
+    if(users.some(u=>String(u.email||"").trim().toLowerCase()===email)){
+      toast("Já existe uma conta com este e-mail. Selecione Gerenciar na listagem.","error");
+      return;
+    }
+    return request("/api/usuarios","POST",Object.fromEntries(f));
+  }));
   root.querySelector("#editUserForm")?.addEventListener("submit",e=>submit(e,root,async f=>{
     if(!confirm("Alterar perfil ou situação pode encerrar sessões. Confirmar?"))return;
     return request("/api/usuarios/"+selected,"PATCH",{nome:f.get("nome"),perfil_acesso:f.get("perfil_acesso"),ativo:f.get("ativo")==="true"});
@@ -78,9 +85,33 @@ async function draw(root) {
   });
 }
 async function submit(event,root,fn){
-  event.preventDefault();const btn=event.currentTarget.querySelector("[type=submit]");btn.disabled=true;
-  try{const result=await fn(new FormData(event.currentTarget));if(!result)return;
-    users=(await request("/api/usuarios")).usuarios||[];
-    event.currentTarget.reset();toast("Operação concluída.","success");await draw(root);
-  }catch(e){toast(e.message,"error");}finally{btn.disabled=false;}
+  event.preventDefault();
+  const form=event.currentTarget;
+  const btn=form.querySelector("[type=submit]");
+  if(btn.disabled)return;
+  btn.disabled=true;
+  const previous=btn.textContent;
+  btn.textContent="Aguarde…";
+  try{
+    const result=await fn(new FormData(form));
+    if(!result)return;
+    form.reset();
+    toast("Operação registrada com sucesso.","success");
+    try{
+      users=(await request("/api/usuarios")).usuarios||[];
+      await draw(root);
+    }catch(refreshError){
+      toast("Operação salva. Atualize a listagem para visualizar o resultado.","error");
+    }
+  }catch(e){
+    toast(e.message||"Não foi possível concluir. Confira a lista antes de repetir.","error");
+    // O banco pode ter confirmado uma gravação antes de uma falha na resposta.
+    // Atualizar a lista evita tentar cadastrar a mesma conta novamente.
+    try{
+      users=(await request("/api/usuarios")).usuarios||[];
+      await draw(root);
+    }catch{}
+  }finally{
+    if(btn.isConnected){btn.disabled=false;btn.textContent=previous;}
+  }
 }
