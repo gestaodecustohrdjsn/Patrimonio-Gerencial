@@ -1,0 +1,11 @@
+# Segredos locais: nunca enviar ao GitHub
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+# Dependencias e builds locais
+node_modules/
+.wrangler/
+.DS_Store
