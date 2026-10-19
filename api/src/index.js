@@ -654,7 +654,7 @@ export default {
       }
 
       if (request.method === "PUT" && url.pathname === "/api/configuracoes/relacao-patrimonial") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem alterar o template da relação patrimonial."},403,env,request);
+        if(!hasPermission(userPermissions,"configuracoes.templates")) return responseJson({ok:false,error:"Apenas administradores podem alterar o template da relação patrimonial."},403,env,request);
         const b=await bodyJson(request);
         let config;
         try { config=sanitizeReportTemplate(b.configuracao); }
@@ -823,7 +823,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/centros") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem cadastrar centros de custo."},403,env,request);
+        if(!hasPermission(userPermissions,"centros.gerenciar")) return responseJson({ok:false,error:"Apenas administradores podem cadastrar centros de custo."},403,env,request);
         const b=await bodyJson(request);
         const codigo=String(b.codigo||"").trim();
         const nome=String(b.nome||"").trim();
@@ -849,7 +849,7 @@ export default {
 
       const centerMatch=url.pathname.match(/^\/api\/centros\/([0-9a-f-]{36})$/i);
       if(centerMatch && request.method === "PATCH") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem editar centros de custo."},403,env,request);
+        if(!hasPermission(userPermissions,"centros.gerenciar")) return responseJson({ok:false,error:"Apenas administradores podem editar centros de custo."},403,env,request);
         const currentRows=await sql`select id,codigo,nome,ativo from centros_custo where id=${centerMatch[1]}::uuid limit 1`;
         const current=currentRows[0];
         if(!current) return responseJson({ok:false,error:"Centro de custo não encontrado."},404,env,request);
@@ -886,7 +886,7 @@ export default {
       }
 
       if(centerMatch && request.method === "DELETE") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem excluir centros de custo."},403,env,request);
+        if(!hasPermission(userPermissions,"centros.gerenciar")) return responseJson({ok:false,error:"Apenas administradores podem excluir centros de custo."},403,env,request);
         const currentRows=await sql`select id,codigo,nome,ativo from centros_custo where id=${centerMatch[1]}::uuid limit 1`;
         const current=currentRows[0];
         if(!current) return responseJson({ok:false,error:"Centro de custo não encontrado."},404,env,request);
@@ -919,7 +919,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo/admin") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem gerenciar o Catálogo."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.editar")) return responseJson({ok:false,error:"Apenas administradores podem gerenciar o Catálogo."},403,env,request);
         const rows=await sql`
           select d.id,d.descricao,d.valor_padrao,d.tipo_id,d.ativo,d.origem_catalogo as origem,d.fonte_valor,d.atualizado_em,
             (select count(*)::int from patrimonios p where p.descricao_padrao_id=d.id and p.removido=false) as patrimonios_vinculados
@@ -930,7 +930,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/catalogo") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem adicionar itens ao Catálogo."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.cadastrar")) return responseJson({ok:false,error:"Apenas administradores podem adicionar itens ao Catálogo."},403,env,request);
         const b=await bodyJson(request);
         const descricao=String(b.descricao||"").trim();
         const tipoId=Number(b.tipo_id);
@@ -959,7 +959,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/catalogo/atualizacoes/contexto") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.atualizar_sigem")) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
         const aliases=await sql`
           select a.id,a.alias_original,a.alias_normalizado,a.descricao_padrao_id,a.criado_em,
             d.descricao as item_catalogo_nome,d.tipo_id,d.ativo,d.origem_catalogo as origem
@@ -983,7 +983,7 @@ export default {
 
       const catalogUpdateDetail=url.pathname.match(/^\/api\/catalogo\/atualizacoes\/([0-9a-f-]{36})$/i);
       if(catalogUpdateDetail && request.method === "GET") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações da base SIGEM."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.atualizar_sigem")) return responseJson({ok:false,error:"Apenas administradores podem consultar atualizações da base SIGEM."},403,env,request);
         const atualizacoes=await sql`
           select a.*,
             case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as usuario
@@ -1003,7 +1003,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/catalogo/atualizacoes/aplicar") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.atualizar_sigem")) return responseJson({ok:false,error:"Apenas administradores podem atualizar a base SIGEM."},403,env,request);
         const b=await bodyJson(request);
         const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
         const quantidadeArquivo=Number(b.quantidade_arquivo||0);
@@ -1061,7 +1061,7 @@ export default {
 
       const catalogMatch=url.pathname.match(/^\/api\/catalogo\/([0-9a-f-]{36})$/i);
       if(catalogMatch && request.method === "PATCH") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem editar itens do Catálogo."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.editar")) return responseJson({ok:false,error:"Apenas administradores podem editar itens do Catálogo."},403,env,request);
         const b=await bodyJson(request);
         const currentRows=await sql`select id,descricao,valor_padrao,tipo_id,ativo,origem_catalogo,fonte_valor from descricoes_padrao where id=${catalogMatch[1]}::uuid limit 1`;
         const current=currentRows[0];
@@ -1124,7 +1124,7 @@ export default {
       }
 
       if(catalogMatch && request.method === "DELETE") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem excluir itens próprios do Catálogo."},403,env,request);
+        if(!hasPermission(userPermissions,"catalogo.excluir")) return responseJson({ok:false,error:"Apenas administradores podem excluir itens próprios do Catálogo."},403,env,request);
         const b=await bodyJson(request);
         const rows=await sql`select id,descricao,origem_catalogo,ativo from descricoes_padrao where id=${catalogMatch[1]}::uuid limit 1`;
         const current=rows[0];
@@ -1155,7 +1155,7 @@ export default {
         return responseJson({ok:true,itens:rows},200,env,request);
       }
       if (request.method === "POST" && url.pathname === "/api/importacoes/patrimonios/simular") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
+        if(!hasPermission(userPermissions,"importacoes.simular")) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
         const b=await bodyJson(request);
         const linhas=Array.isArray(b.linhas)?b.linhas:[];
         const simulacao=await simulateAssetImport(sql,linhas);
@@ -1163,7 +1163,7 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/importacoes/patrimonios/aplicar") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
+        if(!hasPermission(userPermissions,"importacoes.executar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para importar patrimônios."},403,env,request);
         const b=await bodyJson(request);
         const nomeArquivo=String(b.nome_arquivo||"").trim().slice(0,240);
         const linhas=Array.isArray(b.linhas)?b.linhas:[];
@@ -1213,7 +1213,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/importacoes/patrimonios/historico") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar importações."},403,env,request);
+        if(!hasPermission(userPermissions,"importacoes.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar importações."},403,env,request);
         const limit=Math.min(50,Math.max(1,Number(url.searchParams.get("limit")||20)));
         const rows=await sql`
           select i.id,i.nome_arquivo,i.total_linhas,i.total_importado,i.criado_em,
@@ -1238,7 +1238,7 @@ export default {
         return responseJson({ok:true,patrimonios:rows},200,env,request);
       }
       if (request.method === "POST" && url.pathname === "/api/patrimonios") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para cadastrar patrimônios."},403,env,request);
+        if(!hasPermission(userPermissions,"patrimonios.cadastrar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para cadastrar patrimônios."},403,env,request);
         const b=await bodyJson(request);
         if(!b.tipo_id||!String(b.descricao||"").trim()||!b.tipo_aquisicao||!b.centro_custo_id) return responseJson({ok:false,error:"Tipo, descrição, aquisição e centro de custo são obrigatórios."},400,env,request);
         if (b.descricao_padrao_id) {
@@ -1274,7 +1274,7 @@ export default {
 
       let m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})$/i);
       if (m && request.method === "PATCH") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para editar patrimônios."},403,env,request);
+        if(!hasPermission(userPermissions,"patrimonios.editar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para editar patrimônios."},403,env,request);
         const b=await bodyJson(request);
         const current=await hydrateAsset(sql,m[1]);
         if(!current) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
@@ -1362,7 +1362,7 @@ export default {
         return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request);
       }
       if (m && request.method === "DELETE") {
-        if(!requireRole(user,["ADMIN"])) return responseJson({ok:false,error:"Apenas administradores podem excluir definitivamente."},403,env,request);
+        if(!hasPermission(userPermissions,"patrimonios.excluir")) return responseJson({ok:false,error:"Apenas administradores podem excluir definitivamente."},403,env,request);
         const b=await bodyJson(request);
         const target=await hydrateAsset(sql,m[1]);
         if(!target) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
@@ -1378,7 +1378,7 @@ export default {
         where h.tabela='patrimonios' and h.registro_id=${m[1]}::uuid order by h.criado_em desc limit 300`; return responseJson({ok:true,historico:rows},200,env,request); }
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/movimentar$/i);
       if(m&&request.method==="POST") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para movimentar patrimônios."},403,env,request);
+        if(!hasPermission(userPermissions,"patrimonios.movimentar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para movimentar patrimônios."},403,env,request);
         const b=await bodyJson(request);
         if(!String(b.solicitante||"").trim()||!String(b.movimentadoPor||"").trim()||!String(b.recebidoPor||"").trim()) return responseJson({ok:false,error:"Solicitante, movimentado por e recebido por são obrigatórios."},400,env,request);
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
@@ -1387,7 +1387,7 @@ export default {
         return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request);
       }
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/(remover|restaurar)$/i);
-      if(m&&request.method==="POST") { if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para remover patrimônios."},403,env,request); if(m[2]==="remover") await sql`select remover_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; else await sql`select restaurar_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request); }
+      if(m&&request.method==="POST") { if(!hasPermission(userPermissions,m[2]==="remover"?"patrimonios.inativar":"patrimonios.restaurar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para remover patrimônios."},403,env,request); if(m[2]==="remover") await sql`select remover_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; else await sql`select restaurar_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request); }
 
 
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/manutencoes$/i);
@@ -1398,7 +1398,7 @@ export default {
         return responseJson({ok:true,manutencoes:rows},200,env,request);
       }
       if(m&&request.method==="POST") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para registrar manutenção."},403,env,request);
+        if(!hasPermission(userPermissions,"manutencoes.abrir")) return responseJson({ok:false,error:"Seu perfil não possui permissão para registrar manutenção."},403,env,request);
         const b=await bodyJson(request);
         if(!["PREVENTIVA","CORRETIVA"].includes(String(b.tipo||""))) return responseJson({ok:false,error:"Tipo de manutenção inválido."},400,env,request);
         if(!String(b.descricao||"").trim()) return responseJson({ok:false,error:"Informe a descrição da manutenção."},400,env,request);
@@ -1414,7 +1414,7 @@ export default {
 
       m=url.pathname.match(/^\/api\/manutencoes\/([0-9a-f-]{36})\/concluir$/i);
       if(m&&request.method==="POST") {
-        if(!requireRole(user,["ADMIN","AUXILIAR"])) return responseJson({ok:false,error:"Seu perfil não possui permissão para concluir manutenção."},403,env,request);
+        if(!hasPermission(userPermissions,"manutencoes.concluir")) return responseJson({ok:false,error:"Seu perfil não possui permissão para concluir manutenção."},403,env,request);
         const b=await bodyJson(request);
         if(!String(b.responsavel_manutencao||"").trim()||!String(b.entregue_centro_por||"").trim()||!String(b.recebido_centro_por||"").trim()) return responseJson({ok:false,error:"Informe responsável pela manutenção, quem entregou e quem recebeu no centro."},400,env,request);
         const rows=await sql`update manutencoes_patrimonio set status='CONCLUIDA',data_fim=coalesce(${b.data_fim||null}::date,current_date),atualizado_em=now(),
