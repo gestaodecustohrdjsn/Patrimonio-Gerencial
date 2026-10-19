@@ -33,7 +33,19 @@ cd ..
 ```
 Esperado: zero erros. Se falhar, **não execute SQL/deploy**.
 
-## 3 — Neon (somente depois de backup e validação de schema)
+## 3 — Diagnóstico do Neon (somente leitura; pode executar antes do deploy)
+A partir da raiz do repositório, copie a prévia sem alteração no banco:
+```powershell
+Get-Content ".\\database\\tests\\015_pre_migracao_usuarios.sql" -Raw -Encoding UTF8 | Set-Clipboard
+```
+No Neon, cole no SQL Editor, confirme o banco correto e execute. Confira:
+- colunas da tabela `usuarios`, inclusive `criado_em`;
+- nenhum e-mail duplicado após normalização;
+- ao menos 1 conta `ADMIN` ativa;
+- perfis legados presentes e conhecidos.
+Se houver divergências, **não execute a migration ainda**.
+
+## 4 — Neon (somente depois de backup e validação de schema)
 Abra o SQL Editor do Neon e verifique estar no banco e branch CORRETOS.
 No PowerShell, a partir da raiz do repositório:
 ```powershell
@@ -46,7 +58,7 @@ Get-Content ".\database\tests\015_usuarios_permissoes.sql" -Raw -Encoding UTF8 |
 Execute o teste SQL e confira 34 permissões e quatro perfis de 34 regras cada.
 **Nunca execute novamente scripts de marco zero, limpeza, truncate ou reset.**
 
-## 4 — Publicação após homologação
+## 5 — Publicação após homologação
 A API 3.7.0 exige a migration 015 ANTES do deploy.
 O frontend 1.9.0 precisa da API 3.7.0. Não publique um componente isoladamente.
 Para deploy do Cloudflare, após validar schema, testes, ambiente, secrets, backup e versão:
@@ -58,7 +70,7 @@ npx wrangler deploy
 Confira o endpoint /health e o login. Depois publique o frontend pela estratégia atual do projeto.
 Em ambientes de teste, use um banco Neon separado da produção.
 
-## 5 — Testes obrigatórios
+## 6 — Testes obrigatórios
 - ADMIN entra e vê Usuários e Permissões.
 - ADMIN cadastra OPERADOR temporário, OPERADOR é obrigado a alterar senha no primeiro acesso.
 - CONSULTA não altera bens nem recebe exceção individual.
