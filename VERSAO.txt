@@ -1,1 +1,1 @@
-Patrimônio+ portátil frontend 1.8.0
+Patrimônio+ frontend 1.9.0 (branch de homologação)
