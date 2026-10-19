@@ -6,6 +6,7 @@ SELECT 'catalogo_sigem_aliases' AS tabela,count(*)::bigint AS registros FROM cat
 UNION ALL SELECT 'catalogo_sigem_atualizacao_itens',count(*) FROM catalogo_sigem_atualizacao_itens
 UNION ALL SELECT 'catalogo_sigem_atualizacoes',count(*) FROM catalogo_sigem_atualizacoes
 UNION ALL SELECT 'centros_custo',count(*) FROM centros_custo
+UNION ALL SELECT 'controle_sequencias',count(*) FROM controle_sequencias
 UNION ALL SELECT 'descricoes_padrao',count(*) FROM descricoes_padrao
 UNION ALL SELECT 'historico_alteracoes',count(*) FROM historico_alteracoes
 UNION ALL SELECT 'importacao_patrimonial_itens',count(*) FROM importacao_patrimonial_itens

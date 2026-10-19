@@ -1,49 +1,63 @@
 -- Patrimônio+ | MARCO ZERO OPERACIONAL OFICIAL
 -- Remove dados e históricos de teste antes da primeira carga real.
 -- PRESERVA dados mestres e funcionais:
---   Catálogo, Centros de Custo, usuários, sessões/autenticação, aliases/de-paras.
+--   Catálogo, Centros de Custo, usuários, sessões/autenticação, tipos e aliases/de-paras.
 -- APAGA:
 --   patrimônios, movimentações, manutenções, permissões de mobilidade,
---   importações anteriores, histórico geral e histórico de atualizações SIGEM de teste.
+--   importações anteriores, histórico geral, histórico de atualização SIGEM de teste
+--   e o CONTROLE DE SEQUÊNCIAS responsável pela próxima ID interna.
 --
--- Use somente após revisar a prévia e, idealmente, criar uma branch de segurança no Neon.
+-- Use somente após criar uma branch de segurança no Neon.
 
 BEGIN;
 
-CREATE TEMP TABLE tmp_marco_zero_preservacao (
-  catalogo bigint,
-  centros bigint,
-  usuarios bigint,
-  aliases bigint
-) ON COMMIT DROP;
-
-INSERT INTO tmp_marco_zero_preservacao(catalogo,centros,usuarios,aliases)
-SELECT
-  (SELECT count(*) FROM descricoes_padrao),
-  (SELECT count(*) FROM centros_custo),
-  (SELECT count(*) FROM usuarios),
-  (SELECT count(*) FROM catalogo_sigem_aliases);
-
--- Histórico de atualizações SIGEM é histórico, não dado mestre.
-TRUNCATE TABLE catalogo_sigem_atualizacao_itens RESTART IDENTITY;
-TRUNCATE TABLE catalogo_sigem_atualizacoes RESTART IDENTITY;
-
--- Auditoria/importações patrimoniais anteriores.
-TRUNCATE TABLE importacao_patrimonial_itens RESTART IDENTITY;
-TRUNCATE TABLE importacoes_patrimoniais RESTART IDENTITY;
-
--- Operação patrimonial.
-TRUNCATE TABLE patrimonio_centros_permitidos RESTART IDENTITY;
-TRUNCATE TABLE manutencoes_patrimonio RESTART IDENTITY;
-TRUNCATE TABLE movimentacoes RESTART IDENTITY;
-TRUNCATE TABLE patrimonios RESTART IDENTITY CASCADE;
-
--- Limpa TODO o histórico geral de testes, inclusive cadastro/edição/exclusão.
-TRUNCATE TABLE historico_alteracoes RESTART IDENTITY;
-
--- Compatibilidade com estruturas antigas de importação, caso existam.
-DO $legado$
+DO $marco_zero$
+DECLARE
+  v_catalogo bigint;
+  v_centros bigint;
+  v_usuarios bigint;
+  v_aliases bigint;
 BEGIN
+  SELECT count(*) INTO v_catalogo FROM descricoes_padrao;
+  SELECT count(*) INTO v_centros FROM centros_custo;
+  SELECT count(*) INTO v_usuarios FROM usuarios;
+  SELECT count(*) INTO v_aliases FROM catalogo_sigem_aliases;
+
+  IF v_catalogo <> 821 THEN
+    RAISE EXCEPTION 'Proteção acionada: Catálogo deveria ter 821 itens, mas possui %',v_catalogo;
+  END IF;
+
+  IF v_centros = 0 THEN
+    RAISE EXCEPTION 'Proteção acionada: não há Centros de Custo para preservar';
+  END IF;
+
+  IF v_usuarios = 0 THEN
+    RAISE EXCEPTION 'Proteção acionada: não há usuário para preservar';
+  END IF;
+
+  -- Histórico de atualizações SIGEM de teste.
+  TRUNCATE TABLE catalogo_sigem_atualizacao_itens RESTART IDENTITY;
+  TRUNCATE TABLE catalogo_sigem_atualizacoes RESTART IDENTITY;
+
+  -- Auditoria/importações patrimoniais anteriores.
+  TRUNCATE TABLE importacao_patrimonial_itens RESTART IDENTITY;
+  TRUNCATE TABLE importacoes_patrimoniais RESTART IDENTITY;
+
+  -- Operação patrimonial.
+  TRUNCATE TABLE patrimonio_centros_permitidos RESTART IDENTITY;
+  TRUNCATE TABLE manutencoes_patrimonio RESTART IDENTITY;
+  TRUNCATE TABLE movimentacoes RESTART IDENTITY;
+  TRUNCATE TABLE patrimonios RESTART IDENTITY CASCADE;
+
+  -- Marco zero da numeração interna.
+  -- A função gerar_id_interna() usa esta tabela para incrementar ultimo_numero
+  -- por Tipo/Ano/Mês. Limpá-la faz a primeira ID oficial começar em 0001.
+  TRUNCATE TABLE controle_sequencias RESTART IDENTITY;
+
+  -- Limpa TODO o histórico geral de testes, inclusive cadastro/edição/exclusão.
+  TRUNCATE TABLE historico_alteracoes RESTART IDENTITY;
+
+  -- Compatibilidade com estruturas antigas de importação, se ainda existirem.
   IF to_regclass('public.importacao_linhas') IS NOT NULL THEN
     EXECUTE 'TRUNCATE TABLE public.importacao_linhas RESTART IDENTITY CASCADE';
   END IF;
@@ -51,21 +65,8 @@ BEGIN
   IF to_regclass('public.importacoes') IS NOT NULL THEN
     EXECUTE 'TRUNCATE TABLE public.importacoes RESTART IDENTITY CASCADE';
   END IF;
-END;
-$legado$;
 
--- Valida que o operacional ficou realmente zerado e que os mestres não mudaram.
-DO $validacao$
-DECLARE
-  v_catalogo bigint;
-  v_centros bigint;
-  v_usuarios bigint;
-  v_aliases bigint;
-BEGIN
-  SELECT catalogo,centros,usuarios,aliases
-  INTO v_catalogo,v_centros,v_usuarios,v_aliases
-  FROM tmp_marco_zero_preservacao;
-
+  -- Confere o operacional zerado.
   IF (SELECT count(*) FROM patrimonios) <> 0 THEN
     RAISE EXCEPTION 'Ainda existem patrimônios após o marco zero';
   END IF;
@@ -96,6 +97,11 @@ BEGIN
     RAISE EXCEPTION 'O histórico de atualizações SIGEM não foi totalmente limpo';
   END IF;
 
+  IF (SELECT count(*) FROM controle_sequencias) <> 0 THEN
+    RAISE EXCEPTION 'O controle de sequências da ID interna não foi zerado';
+  END IF;
+
+  -- Confere que os dados mestres permaneceram intactos.
   IF (SELECT count(*) FROM descricoes_padrao) <> v_catalogo THEN
     RAISE EXCEPTION 'Proteção acionada: quantidade do Catálogo mudou';
   END IF;
@@ -112,7 +118,7 @@ BEGIN
     RAISE EXCEPTION 'Proteção acionada: aliases/de-paras do Catálogo mudaram';
   END IF;
 END;
-$validacao$;
+$marco_zero$;
 
 COMMIT;
 
@@ -121,6 +127,7 @@ SELECT
   (SELECT count(*)::int FROM patrimonios) AS patrimonios,
   (SELECT count(*)::int FROM historico_alteracoes) AS historico,
   (SELECT count(*)::int FROM importacoes_patrimoniais) AS importacoes,
+  (SELECT count(*)::int FROM controle_sequencias) AS controle_sequencias,
   (SELECT count(*)::int FROM descricoes_padrao) AS catalogo,
   (SELECT count(*)::int FROM centros_custo) AS centros,
   (SELECT count(*)::int FROM usuarios) AS usuarios,

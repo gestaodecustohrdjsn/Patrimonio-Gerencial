@@ -8,6 +8,7 @@ UNION ALL SELECT 'patrimonio_centros_permitidos',count(*) FROM patrimonio_centro
 UNION ALL SELECT 'importacoes_patrimoniais',count(*) FROM importacoes_patrimoniais
 UNION ALL SELECT 'importacao_patrimonial_itens',count(*) FROM importacao_patrimonial_itens
 UNION ALL SELECT 'historico_alteracoes',count(*) FROM historico_alteracoes
+UNION ALL SELECT 'controle_sequencias',count(*) FROM controle_sequencias
 UNION ALL SELECT 'catalogo_sigem_atualizacoes',count(*) FROM catalogo_sigem_atualizacoes
 UNION ALL SELECT 'catalogo_sigem_atualizacao_itens',count(*) FROM catalogo_sigem_atualizacao_itens
 UNION ALL SELECT 'catalogo_preservado',count(*) FROM descricoes_padrao
