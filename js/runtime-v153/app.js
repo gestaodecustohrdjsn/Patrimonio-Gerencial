@@ -108,7 +108,7 @@ function shell() {
         <button class="nav-item" data-view="patrimonios">Patrimônios</button>
         <button class="nav-item" data-view="centros">Centros de custo</button>
         <button class="nav-item" data-view="catalogo">Catálogo</button>
-        ${canEditAssets() ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
+        ${hasAccess("importacoes.simular") ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
         <button class="nav-item" data-view="historico">Histórico</button>
@@ -118,7 +118,7 @@ function shell() {
       <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
     </aside>
     <main class="main">
-      <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div>${canEditAssets() ? '<button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>' : ""}</header>
+      <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div>${canCreateAssets() ? '<button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>' : ""}</header>
       <section id="viewRoot" class="content"><div class="loading">Carregando dados…</div></section>
     </main>
   </div>
@@ -456,7 +456,7 @@ function renderDashboard() {
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
   const visibilityLabel = state.showDashboardValue ? "Ocultar valor" : "Mostrar valor";
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div>${canEditAssets() ? '<button class="primary-button" data-action="new">+ Cadastrar patrimônio</button>' : ""}</div>
+    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div>${canCreateAssets() ? '<button class="primary-button" data-action="new">+ Cadastrar patrimônio</button>' : ""}</div>
     <div class="cards cards-three">
       <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${visibleAssets.length}</div></article>
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
@@ -652,7 +652,8 @@ function userProfile() {
   return String(state.session?.user?.perfil || "").toUpperCase();
 }
 function hasAccess(code) { return state.session?.user?.permissoes?.[code] === true; }
-function canEditAssets() { return state.session?.user?.permissoes?.["patrimonios.editar"] === true; }
+function canEditAssets() { return hasAccess("patrimonios.editar"); }
+function canCreateAssets() { return hasAccess("patrimonios.cadastrar"); }
 function canMoveAssets() { return state.session?.user?.permissoes?.["patrimonios.movimentar"] === true; }
 function canMaintainAssets() { return state.session?.user?.permissoes?.["manutencoes.abrir"] === true; }
 function canDeleteAssets() { return state.session?.user?.permissoes?.["patrimonios.excluir"] === true; }
@@ -918,7 +919,7 @@ function renderAssets() {
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header">
       <div><h1>${state.showRemoved ? "Patrimônios removidos" : "Patrimônios"}</h1><p>Painel operacional para consulta e gestão rápida do acervo.</p></div>
-      <div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver ativos" : "Ver removidos"}</button>${canEditAssets() ? '<button class="primary-button" data-action="new">+ Novo patrimônio</button>' : ""}</div>
+      <div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver ativos" : "Ver removidos"}</button>${canCreateAssets() ? '<button class="primary-button" data-action="new">+ Novo patrimônio</button>' : ""}</div>
     </div>
     ${filterPanelHtml("assetFilters", "Pesquisa e filtros")}
     <section class="panel">
@@ -2760,7 +2761,7 @@ async function saveReportTemplateFromSettings() {
 
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
-  if (!canDeleteAssets()) {
+  if (!hasAccess("configuracoes.templates")) {
     root.innerHTML = `
       <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
       <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
@@ -2896,7 +2897,7 @@ function renderSettings() {
 }
 
 function renderCenters() {
-  const canManage = canDeleteAssets();
+  const canManage = hasAccess("centros.gerenciar");
   const active = state.centers.filter(center => center.ativo).length;
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header">
@@ -3354,7 +3355,7 @@ async function refreshImportHistory() {
 }
 
 function renderImport() {
-  if (!canEditAssets()) {
+  if (!hasAccess("importacoes.simular")) {
     document.querySelector("#viewRoot").innerHTML = '<div class="page-header"><div><h1>Importação</h1><p>Importação patrimonial em lote.</p></div></div><div class="placeholder">Seu perfil possui acesso somente para consulta.</div>';
     return;
   }
