@@ -470,6 +470,181 @@ function renderDashboard() {
 }
 
 
+
+function historyModuleName(table) {
+  return ({
+    patrimonios:"Patrimônios",
+    centros_custo:"Centros de custo",
+    descricoes_padrao:"Catálogo",
+    catalogo_sigem_atualizacoes:"Atualizações SIGEM",
+    importacoes_patrimoniais:"Importações",
+    configuracoes_sistema:"Configurações"
+  })[table] || table || "Sistema";
+}
+
+async function refreshHistoryPage({resetOffset=false}={}) {
+  if(state.historyLoading) return;
+  if(resetOffset) state.historyOffset=0;
+  state.historyLoading=true;
+  if(state.currentView==="historico") renderHistory();
+  try {
+    const result=await listHistory({
+      ...state.historyFilters,
+      limit:state.historyPageSize,
+      offset:state.historyOffset
+    });
+    state.historyEvents=result.eventos;
+    state.historyTotal=result.total;
+    state.historyUsers=result.usuarios;
+    state.historyLoaded=true;
+  } catch(error) {
+    toast(`Não foi possível carregar o histórico: ${error.message}`,"error");
+  } finally {
+    state.historyLoading=false;
+    if(state.currentView==="historico") renderHistory();
+  }
+}
+
+function exportHistoryCsv() {
+  const events=state.historyEvents||[];
+  if(!events.length) return;
+  const data=[
+    ["Data/Hora","Usuário","Módulo","Operação","Entidade","Detalhes"],
+    ...events.map(event=>[
+      historyDateTime(event.criado_em),
+      event.usuario?.nome||"Sistema",
+      historyModuleName(event.tabela),
+      historyActionLabel(event),
+      historyEntityLabel(event),
+      historyDetailText(event)
+    ])
+  ];
+  const csv=data.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(";")).join("\n");
+  const url=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`historico-patrimonio-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderHistory() {
+  const root=document.querySelector("#viewRoot");
+  const f=state.historyFilters;
+  const events=state.historyEvents||[];
+  const total=Number(state.historyTotal||0);
+  const start=total ? state.historyOffset+1 : 0;
+  const end=Math.min(total,state.historyOffset+events.length);
+  const currentPage=Math.floor(state.historyOffset/state.historyPageSize)+1;
+  const totalPages=Math.max(1,Math.ceil(total/state.historyPageSize));
+  const shown=total ? `${start}–${end}` : "0";
+
+  root.innerHTML=`
+    <div class="page-header">
+      <div><h1>Histórico Geral</h1><p>Auditoria centralizada de operações do Patrimônio+.</p></div>
+      <div class="header-actions">
+        <button class="ghost-button" data-action="refresh-history" ${state.historyLoading?"disabled":""}>Atualizar</button>
+        <button class="primary-button" data-action="export-history" ${events.length?"":"disabled"}>Exportar página CSV</button>
+      </div>
+    </div>
+
+    <section class="filter-panel history-filter-panel">
+      <div class="filter-panel-head">
+        <div><strong>Filtros do histórico</strong><small>Combine período, módulo, usuário, operação e pesquisa livre.</small></div>
+        <button class="ghost-button compact-button" data-action="clear-history-filters">Limpar filtros</button>
+      </div>
+      <div class="filter-grid history-filter-grid">
+        <label class="filter-wide">Pesquisa
+          <input type="search" data-history-filter="q" value="${escapeHtml(f.q)}" placeholder="ID, patrimônio, centro, usuário, operação…">
+        </label>
+        <label>Módulo
+          <select data-history-filter="tabela">
+            <option value="">Todos</option>
+            <option value="patrimonios" ${f.tabela==="patrimonios"?"selected":""}>Patrimônios</option>
+            <option value="centros_custo" ${f.tabela==="centros_custo"?"selected":""}>Centros de custo</option>
+            <option value="descricoes_padrao" ${f.tabela==="descricoes_padrao"?"selected":""}>Catálogo</option>
+            <option value="catalogo_sigem_atualizacoes" ${f.tabela==="catalogo_sigem_atualizacoes"?"selected":""}>Atualizações SIGEM</option>
+            <option value="importacoes_patrimoniais" ${f.tabela==="importacoes_patrimoniais"?"selected":""}>Importações</option>
+            <option value="configuracoes_sistema" ${f.tabela==="configuracoes_sistema"?"selected":""}>Configurações</option>
+          </select>
+        </label>
+        <label>Usuário
+          <select data-history-filter="usuario_id">
+            <option value="">Todos</option>
+            ${state.historyUsers.map(user=>`<option value="${user.id}" ${f.usuario_id===user.id?"selected":""}>${escapeHtml(user.nome)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Operação contém
+          <input type="text" data-history-filter="operacao" value="${escapeHtml(f.operacao)}" placeholder="Ex.: movimentacao">
+        </label>
+        <label>Data inicial
+          <input type="date" data-history-filter="inicio" value="${escapeHtml(f.inicio)}">
+        </label>
+        <label>Data final
+          <input type="date" data-history-filter="fim" value="${escapeHtml(f.fim)}">
+        </label>
+      </div>
+    </section>
+
+    <div class="cards cards-three history-summary-cards">
+      <article class="card"><span class="muted">Eventos encontrados</span><div class="metric">${total}</div></article>
+      <article class="card"><span class="muted">Exibindo</span><div class="metric">${shown}</div></article>
+      <article class="card"><span class="muted">Página</span><div class="metric">${currentPage}/${totalPages}</div></article>
+    </div>
+
+    <section class="panel history-full-panel">
+      <div class="panel-header">
+        <div><h2>Eventos</h2><small>O histórico é somente leitura.</small></div>
+        ${state.historyLoading?'<span class="badge">Carregando…</span>':`<span class="badge">${events.length} nesta página</span>`}
+      </div>
+      ${state.historyLoading && !state.historyLoaded ? '<div class="loading">Carregando histórico…</div>' :
+        events.length ? `<div class="table-wrap history-table-wrap"><table class="history-table">
+          <thead><tr><th>Data/Hora</th><th>Usuário</th><th>Módulo</th><th>Operação</th><th>Entidade</th><th>Detalhes</th></tr></thead>
+          <tbody>${events.map(event=>`<tr>
+            <td class="history-date-cell">${escapeHtml(historyDateTime(event.criado_em))}</td>
+            <td>${escapeHtml(event.usuario?.nome||"Sistema")}</td>
+            <td><span class="badge">${escapeHtml(historyModuleName(event.tabela))}</span></td>
+            <td><strong>${escapeHtml(historyActionLabel(event))}</strong></td>
+            <td>${escapeHtml(historyEntityLabel(event)||"—")}</td>
+            <td>${escapeHtml(historyDetailText(event)||"—")}</td>
+          </tr>`).join("")}</tbody>
+        </table></div>` : '<div class="empty">Nenhum evento corresponde aos filtros.</div>'}
+
+      <div class="history-pagination">
+        <button class="ghost-button" data-action="history-prev" ${state.historyOffset<=0||state.historyLoading?"disabled":""}>← Anterior</button>
+        <span>Página ${currentPage} de ${totalPages}</span>
+        <button class="ghost-button" data-action="history-next" ${state.historyOffset+state.historyPageSize>=total||state.historyLoading?"disabled":""}>Próxima →</button>
+      </div>
+    </section>
+  `;
+
+  document.querySelectorAll("[data-history-filter]").forEach(control=>{
+    const eventName=control.tagName==="INPUT" && ["search","text"].includes(control.type) ? "input" : "change";
+    control.addEventListener(eventName,debounce(()=>{
+      state.historyFilters[control.dataset.historyFilter]=control.value;
+      refreshHistoryPage({resetOffset:true});
+    },eventName==="input"?250:0));
+  });
+  document.querySelector('[data-action="clear-history-filters"]')?.addEventListener("click",()=>{
+    state.historyFilters={tabela:"",operacao:"",usuario_id:"",q:"",inicio:"",fim:""};
+    refreshHistoryPage({resetOffset:true});
+  });
+  document.querySelector('[data-action="refresh-history"]')?.addEventListener("click",()=>refreshHistoryPage());
+  document.querySelector('[data-action="export-history"]')?.addEventListener("click",exportHistoryCsv);
+  document.querySelector('[data-action="history-prev"]')?.addEventListener("click",()=>{
+    state.historyOffset=Math.max(0,state.historyOffset-state.historyPageSize);
+    refreshHistoryPage();
+  });
+  document.querySelector('[data-action="history-next"]')?.addEventListener("click",()=>{
+    state.historyOffset+=state.historyPageSize;
+    refreshHistoryPage();
+  });
+
+  if(!state.historyLoaded && !state.historyLoading) refreshHistoryPage();
+}
+
+
+
 function userProfile() {
   return String(state.session?.user?.perfil || "").toUpperCase();
 }
