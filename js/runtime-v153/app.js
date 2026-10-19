@@ -2685,6 +2685,15 @@ function readReportTemplateForm() {
   };
 }
 
+function syncReportTemplateDraftFromForm() {
+  if(!state.reportTemplateLoaded) return;
+  const draft=readReportTemplateForm();
+  state.reportTemplate=normalizeReportTemplateClient(draft);
+  const preview=document.querySelector(".report-template-preview");
+  if(preview) preview.outerHTML=reportTemplatePreviewHtml(state.reportTemplate);
+}
+
+
 async function handleReportTemplateLogo(event) {
   const file=event.target.files?.[0];
   if(!file) return;
@@ -2850,6 +2859,12 @@ function renderSettings() {
   });
 
   document.querySelector("#reportTemplateLogo")?.addEventListener("change",handleReportTemplateLogo);
+  document.querySelectorAll(
+    "#reportTemplateInstitution,#reportTemplateUnit,#reportTemplateTitle,#reportTemplateFooter,#reportTemplateSignature1,#reportTemplateSignature2,#reportTemplateShowDate,#reportTemplateShowCount,#reportTemplateShowFilters,[data-report-template-column]"
+  ).forEach(control=>{
+    const eventName=(control.tagName==="INPUT" && !["checkbox"].includes(control.type)) || control.tagName==="TEXTAREA" ? "input" : "change";
+    control.addEventListener(eventName,syncReportTemplateDraftFromForm);
+  });
   document.querySelector('[data-action="remove-report-logo"]')?.addEventListener("click",()=>{
     state.reportTemplate={...normalizeReportTemplateClient(state.reportTemplate),logo_data_url:null,logo_nome:null};
     renderSettings();
