@@ -1,33 +1,21 @@
 -- Patrimônio+ | Diagnóstico completo antes do marco zero oficial
 -- SOMENTE LEITURA. Não altera nenhum dado.
+-- Compatível com o SQL Editor do Neon sem depender de tabela temporária.
 
-CREATE TEMP TABLE tmp_contagem_tabelas (
-  tabela text primary key,
-  registros bigint
-) ON COMMIT DROP;
-
-DO $contagem$
-DECLARE
-  r record;
-  v_count bigint;
-BEGIN
-  FOR r IN
-    SELECT schemaname, relname
-    FROM pg_stat_user_tables
-    WHERE schemaname='public'
-    ORDER BY relname
-  LOOP
-    EXECUTE format('SELECT count(*) FROM %I.%I',r.schemaname,r.relname) INTO v_count;
-    INSERT INTO tmp_contagem_tabelas(tabela,registros)
-    VALUES(r.relname,v_count)
-    ON CONFLICT (tabela) DO UPDATE SET registros=excluded.registros;
-  END LOOP;
-END;
-$contagem$;
-
-SELECT tabela,registros
-FROM tmp_contagem_tabelas
-WHERE registros>0
+SELECT 'catalogo_sigem_aliases' AS tabela,count(*)::bigint AS registros FROM catalogo_sigem_aliases
+UNION ALL SELECT 'catalogo_sigem_atualizacao_itens',count(*) FROM catalogo_sigem_atualizacao_itens
+UNION ALL SELECT 'catalogo_sigem_atualizacoes',count(*) FROM catalogo_sigem_atualizacoes
+UNION ALL SELECT 'centros_custo',count(*) FROM centros_custo
+UNION ALL SELECT 'descricoes_padrao',count(*) FROM descricoes_padrao
+UNION ALL SELECT 'historico_alteracoes',count(*) FROM historico_alteracoes
+UNION ALL SELECT 'importacao_patrimonial_itens',count(*) FROM importacao_patrimonial_itens
+UNION ALL SELECT 'importacoes_patrimoniais',count(*) FROM importacoes_patrimoniais
+UNION ALL SELECT 'manutencoes_patrimonio',count(*) FROM manutencoes_patrimonio
+UNION ALL SELECT 'movimentacoes',count(*) FROM movimentacoes
+UNION ALL SELECT 'patrimonio_centros_permitidos',count(*) FROM patrimonio_centros_permitidos
+UNION ALL SELECT 'patrimonios',count(*) FROM patrimonios
+UNION ALL SELECT 'sessoes',count(*) FROM sessoes
+UNION ALL SELECT 'usuarios',count(*) FROM usuarios
 ORDER BY tabela;
 
 -- Função que realmente gera a ID interna.
