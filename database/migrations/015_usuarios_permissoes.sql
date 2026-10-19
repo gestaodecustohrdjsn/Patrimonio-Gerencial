@@ -275,8 +275,8 @@ BEGIN
   END LOOP;
   DELETE FROM usuarios_permissoes WHERE usuario_id=p_usuario;
   INSERT INTO usuarios_permissoes(usuario_id,permissao_codigo,permitido,atualizado_por)
-  SELECT p_usuario,item->>'codigo',(item->>'permitido')::boolean,p_administrador
-  FROM jsonb_array_elements(p_excecoes) AS item;
+  SELECT p_usuario,x.value->>'codigo',(x.value->>'permitido')::boolean,p_administrador
+  FROM jsonb_array_elements(p_excecoes) AS x(value);
   UPDATE sessoes SET revogado_em=now()
   WHERE usuario_id=p_usuario AND revogado_em IS NULL;
   INSERT INTO historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
