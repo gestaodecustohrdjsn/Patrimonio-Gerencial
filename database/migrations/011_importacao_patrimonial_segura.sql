@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS importacao_patrimonial_itens (
   id bigserial PRIMARY KEY,
   importacao_id uuid NOT NULL REFERENCES importacoes_patrimoniais(id) ON DELETE CASCADE,
   linha_arquivo integer NOT NULL,
-  patrimonio_id uuid NOT NULL REFERENCES patrimonios(id) ON DELETE RESTRICT,
+  patrimonio_id uuid REFERENCES patrimonios(id) ON DELETE SET NULL,
   item_catalogo_id uuid NOT NULL REFERENCES descricoes_padrao(id) ON DELETE RESTRICT,
   centro_custo_id uuid NOT NULL REFERENCES centros_custo(id) ON DELETE RESTRICT,
   id_ses_original text,
