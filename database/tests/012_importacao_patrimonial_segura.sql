@@ -135,9 +135,10 @@ BEGIN
       ),
       v_usuario_id
     );
-    RAISE EXCEPTION 'FALHA_TESTE: lote com ID SES duplicada foi aceito';
+    RAISE EXCEPTION 'FALHA_TESTE_DUPLICIDADE_ACEITA';
   EXCEPTION WHEN OTHERS THEN
-    IF position('duplicada' in lower(SQLERRM))=0 THEN
+    IF SQLERRM='FALHA_TESTE_DUPLICIDADE_ACEITA'
+       OR position('duplicada' in lower(SQLERRM))=0 THEN
       RAISE;
     END IF;
   END;
