@@ -1002,16 +1002,38 @@ function renderLabels() {
   const rows = filteredByPanel("labelFilters", false);
   const selectedCount = state.labelSelected.size;
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Etiquetas</h1><p>Selecione livremente patrimônios de diferentes centros e tipos.</p></div></div>
+    <div class="page-header"><div><h1>Etiquetas</h1><p>Selecione patrimônios e gere arquivos individuais ou folhas A4 com 30 etiquetas.</p></div></div>
     ${filterPanelHtml("labelFilters", "Filtros das etiquetas")}
     <section class="selection-toolbar">
       <div><strong>${selectedCount} selecionado(s)</strong><small>${rows.length} patrimônio(s) no filtro atual.</small></div>
       <div class="header-actions">
         <button class="ghost-button" data-action="select-filtered-labels">Selecionar todos filtrados</button>
         <button class="ghost-button" data-action="clear-label-selection">Limpar seleção</button>
-        <button class="primary-button" data-action="generate-selected-labels" ${selectedCount ? "" : "disabled"}>Gerar ${selectedCount || ""} etiqueta${selectedCount===1?"":"s"}</button>
+        <button class="ghost-button" data-action="generate-selected-labels" ${selectedCount ? "" : "disabled"}>Baixar PNG/ZIP</button>
       </div>
     </section>
+
+    <section class="panel label-a4-panel">
+      <div class="panel-header">
+        <div><h2>Impressão em folha A4 — 30 etiquetas</h2><small>Grade 3 × 10. A primeira página pode começar em qualquer posição para reaproveitar folhas parcialmente usadas.</small></div>
+        <span class="badge">${selectedCount} selecionado(s)</span>
+      </div>
+      <div class="label-a4-controls">
+        <label>Começar na posição
+          <select id="labelStartPosition">
+            ${Array.from({length:30},(_,i)=>`<option value="${i+1}" ${Number(state.labelStartPosition)===i+1?"selected":""}>Etiqueta ${i+1}</option>`).join("")}
+          </select>
+        </label>
+        <div class="label-a4-help">
+          <strong>Ordem:</strong>
+          <span>da esquerda para a direita, de cima para baixo.</span>
+        </div>
+        <button class="primary-button" data-action="print-a4-labels" ${selectedCount && !state.labelPrintBusy ? "" : "disabled"}>
+          ${state.labelPrintBusy ? "Gerando folha…" : `Imprimir A4 (${selectedCount})`}
+        </button>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="table-wrap"><table><thead><tr><th class="check-col"></th><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Status</th><th>Prévia</th></tr></thead>
       <tbody>${rows.map(asset=>`<tr>
@@ -3445,6 +3467,10 @@ function bindDynamicActions() {
   document.querySelectorAll('[data-action="select-filtered-labels"]').forEach(b=>b.addEventListener("click",()=>{filteredByPanel("labelFilters",false).forEach(a=>state.labelSelected.add(a.id));renderLabels();}));
   document.querySelectorAll('[data-action="clear-label-selection"]').forEach(b=>b.addEventListener("click",()=>{state.labelSelected.clear();renderLabels();}));
   document.querySelectorAll('[data-action="generate-selected-labels"]').forEach(b=>b.addEventListener("click",generateSelectedLabels));
+  document.querySelector("#labelStartPosition")?.addEventListener("change",event=>{
+    state.labelStartPosition=Math.min(30,Math.max(1,Number(event.target.value)||1));
+  });
+  document.querySelectorAll('[data-action="print-a4-labels"]').forEach(b=>b.addEventListener("click",printSelectedLabelsA4));
 
   document.querySelectorAll(".center-search-row").forEach((row)=>{
     const open=()=>{state.assetFilters=defaultFilters();state.assetFilters.centro=row.dataset.centerId;state.currentView="patrimonios";renderAssets();};
