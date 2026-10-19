@@ -1,5 +1,6 @@
 import { database } from "./db.js";
 import { randomToken, randomSalt, sha256, passwordHash, constantTimeEqual } from "./security.js";
+import { loadUserPermissions, hasPermission, normalizeProfile } from "./permissions.js";
 
 function corsHeaders(env, request) {
   const origin = request.headers.get("Origin") || "";
@@ -35,7 +36,7 @@ async function authenticate(request, sql) {
   if (!token) return null;
   const tokenHash = await sha256(token);
   const rows = await sql`
-    select u.id,u.nome,u.email,u.perfil,u.ativo,s.id as sessao_id
+    select u.id,u.nome,u.email,u.perfil,u.perfil_acesso,u.troca_senha_obrigatoria,u.ativo,s.id as sessao_id
     from sessoes s
     join usuarios u on u.id=s.usuario_id
     where s.token_hash=${tokenHash}
@@ -506,7 +507,7 @@ export default {
         const body=await bodyJson(request);
         const email=String(body.email||"").trim().toLowerCase();
         const password=String(body.password||"");
-        const rows=await sql`select id,nome,email,perfil,ativo,password_hash,password_salt,password_iterations,falhas_login,bloqueado_ate from usuarios where lower(email)=${email} limit 1`;
+        const rows=await sql`select id,nome,email,perfil,perfil_acesso,troca_senha_obrigatoria,ativo,password_hash,password_salt,password_iterations,falhas_login,bloqueado_ate from usuarios where lower(email)=${email} limit 1`;
         const u=rows[0];
         if (!u || !u.ativo || !u.password_hash || (u.bloqueado_ate && new Date(u.bloqueado_ate)>new Date())) return responseJson({ok:false,error:"E-mail ou senha inválidos."},401,env,request);
         const hash=await passwordHash(password,u.password_salt,u.password_iterations||310000);
@@ -519,7 +520,7 @@ export default {
         await sql`update usuarios set falhas_login=0,bloqueado_ate=null where id=${u.id}::uuid`;
         const token=randomToken(); const tokenHash=await sha256(token); const hours=Math.max(1,Math.min(72,Number(env.SESSION_HOURS||12)));
         await sql`insert into sessoes(usuario_id,token_hash,expira_em) values(${u.id}::uuid,${tokenHash},now()+(${hours}::text||' hours')::interval)`;
-        return responseJson({ok:true,token,user:{id:u.id,nome:u.nome,email:u.email,perfil:u.perfil}},200,env,request);
+        return responseJson({ok:true,token,user:{id:u.id,nome:u.nome,email:u.email,perfil:u.perfil,perfil_acesso:u.perfil_acesso,troca_senha_obrigatoria:u.troca_senha_obrigatoria}},200,env,request);
       }
 
       const user=await authenticate(request,sql);
@@ -529,7 +530,109 @@ export default {
         const token=bearer(request); if(token){const h=await sha256(token); await sql`update sessoes set revogado_em=now() where token_hash=${h}`;}
         return responseJson({ok:true},200,env,request);
       }
-      if (request.method === "GET" && url.pathname === "/api/me") return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil}},200,env,request);
+      if (request.method === "POST" && url.pathname === "/api/auth/alterar-senha") {
+        const b=await bodyJson(request);
+        const oldPassword=String(b.senha_atual||""); const newPassword=String(b.nova_senha||"");
+        if(newPassword.length<10 || newPassword.length>256) return responseJson({ok:false,error:"A senha deve ter entre 10 e 256 caracteres."},400,env,request);
+        const old=await sql`select password_hash,password_salt,password_iterations from usuarios where id=${user.id}::uuid`;
+        const hash=await passwordHash(oldPassword,old[0].password_salt,old[0].password_iterations||310000);
+        if(!constantTimeEqual(hash,old[0].password_hash)) return responseJson({ok:false,error:"Senha atual inválida."},403,env,request);
+        const salt=randomSalt(); const iterations=310000;
+        const newHash=await passwordHash(newPassword,salt,iterations);
+        await sql`update usuarios set password_hash=${newHash},password_salt=${salt},password_iterations=${iterations},troca_senha_obrigatoria=false,atualizado_em=now() where id=${user.id}::uuid`;
+        await sql`update sessoes set revogado_em=now() where usuario_id=${user.id}::uuid and revogado_em is null`;
+        await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${user.id}::uuid,'SENHA_ALTERADA','{}'::jsonb,${user.id}::uuid)`;
+        return responseJson({ok:true,reautenticar:true},200,env,request);
+      }
+      if(user.troca_senha_obrigatoria) return responseJson({ok:false,error:"Troca de senha obrigatória antes de acessar o sistema.",troca_senha_obrigatoria:true},403,env,request);
+      const userPermissions=await loadUserPermissions(sql,user);
+      if (request.method === "GET" && url.pathname === "/api/me") return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,perfil_acesso:user.perfil_acesso,troca_senha_obrigatoria:false,permissoes:userPermissions}},200,env,request);
+
+      if (request.method === "GET" && url.pathname === "/api/permissoes") {
+        if(!hasPermission(userPermissions,"usuarios.consultar")) return responseJson({ok:false,error:"Acesso negado."},403,env,request);
+        const rows=await sql`select codigo,modulo,descricao,exclusiva_admin from permissoes order by modulo,codigo`;
+        return responseJson({ok:true,permissoes:rows},200,env,request);
+      }
+      if(request.method==="GET" && url.pathname==="/api/usuarios") {
+        if(!hasPermission(userPermissions,"usuarios.consultar")) return responseJson({ok:false,error:"Acesso negado."},403,env,request);
+        const rows=await sql`select id,nome,email,perfil_acesso,ativo,troca_senha_obrigatoria,criado_em,atualizado_em from usuarios order by nome`;
+        return responseJson({ok:true,usuarios:rows},200,env,request);
+      }
+      if(request.method==="POST" && url.pathname==="/api/usuarios") {
+        if(!hasPermission(userPermissions,"usuarios.gerenciar")) return responseJson({ok:false,error:"Acesso negado."},403,env,request);
+        const b=await bodyJson(request);
+        const nome=String(b.nome||"").trim().slice(0,180), email=String(b.email||"").trim().toLowerCase(), perfil=normalizeProfile(b.perfil_acesso);
+        const senha=String(b.senha_temporaria||"");
+        if(!nome||!/^\S+@\S+\.\S+$/.test(email)||senha.length<10||senha.length>256|| !["ADMIN","GESTOR","OPERADOR","CONSULTA"].includes(b.perfil_acesso)) return responseJson({ok:false,error:"Informe nome, e-mail, perfil e senha temporária de 10 a 256 caracteres."},400,env,request);
+        const salt=randomSalt(), iterations=310000, hash=await passwordHash(senha,salt,iterations);
+        const legacy=perfil==="ADMIN"?"ADMIN":perfil==="CONSULTA"?"CONSULTA":"AUXILIAR";
+        const added=await sql`insert into usuarios(nome,email,perfil,perfil_acesso,ativo,troca_senha_obrigatoria,password_hash,password_salt,password_iterations) values(${nome},${email},${legacy},${perfil},true,true,${hash},${salt},${iterations}) returning id,nome,email,perfil_acesso,ativo`;
+        await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${added[0].id}::uuid,'USUARIO_CRIADO',jsonb_build_object('perfil',${perfil}::text,'email',${email}::text),${user.id}::uuid)`;
+        return responseJson({ok:true,usuario:added[0]},201,env,request);
+      }
+      const usuarioMatch=url.pathname.match(/^\/api\/usuarios\/([0-9a-f-]{36})(?:\/(permissoes|redefinir-senha))?$/i);
+      if(usuarioMatch) {
+        if(!hasPermission(userPermissions,"usuarios.gerenciar")) return responseJson({ok:false,error:"Acesso negado."},403,env,request);
+        const targetId=usuarioMatch[1], suffix=usuarioMatch[2]||"";
+        if(request.method==="GET" && !suffix) {
+          const rows=await sql`select id,nome,email,perfil_acesso,ativo,troca_senha_obrigatoria,criado_em,atualizado_em from usuarios where id=${targetId}::uuid`;
+          return responseJson({ok:!!rows.length,usuario:rows[0]||null},rows.length?200:404,env,request);
+        }
+        if(request.method==="GET" && suffix==="permissoes") {
+          const rows=await sql`select permissao_codigo,permitido,atualizado_em from usuarios_permissoes where usuario_id=${targetId}::uuid`;
+          return responseJson({ok:true,excecoes:rows},200,env,request);
+        }
+        if(request.method==="PUT" && suffix==="permissoes") {
+          if(!hasPermission(userPermissions,"usuarios.permissoes")||targetId===user.id) return responseJson({ok:false,error:"Não é permitido alterar suas próprias permissões."},403,env,request);
+          const b=await bodyJson(request);
+          if(!Array.isArray(b.excecoes)||b.excecoes.length>100) return responseJson({ok:false,error:"Exceções inválidas."},400,env,request);
+          const known=await sql`select codigo,exclusiva_admin from permissoes`;
+          const allowed=new Map(known.map(p=>[p.codigo,p]));
+          const unique=new Map();
+          for(const item of b.excecoes) {
+            if(typeof item?.codigo!=="string"||!allowed.has(item.codigo)||allowed.get(item.codigo).exclusiva_admin||typeof item.permitido!=="boolean") return responseJson({ok:false,error:"Permissão individual inválida ou reservada."},400,env,request);
+            unique.set(item.codigo,item.permitido);
+          }
+          await sql`delete from usuarios_permissoes where usuario_id=${targetId}::uuid`;
+          for(const [code,permitted] of unique) await sql`insert into usuarios_permissoes(usuario_id,permissao_codigo,permitido,atualizado_por) values(${targetId}::uuid,${code},${permitted},${user.id}::uuid)`;
+          await sql`update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null`;
+          await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${targetId}::uuid,'PERMISSOES_ALTERADAS',${JSON.stringify([...unique].map(([codigo,permitido])=>({codigo,permitido})))}::jsonb,${user.id}::uuid)`;
+          return responseJson({ok:true},200,env,request);
+        }
+        if(request.method==="PATCH" && !suffix) {
+          if(targetId===user.id) return responseJson({ok:false,error:"Não é permitido alterar sua própria conta administrativa."},403,env,request);
+          const b=await bodyJson(request);
+          const current=await sql`select id,perfil_acesso,ativo from usuarios where id=${targetId}::uuid`;
+          if(!current.length)return responseJson({ok:false,error:"Usuário não encontrado."},404,env,request);
+          const profile=b.perfil_acesso===undefined ? current[0].perfil_acesso : String(b.perfil_acesso);
+          if(!["ADMIN","GESTOR","OPERADOR","CONSULTA"].includes(profile))return responseJson({ok:false,error:"Perfil inválido."},400,env,request);
+          const active=typeof b.ativo==="boolean"?b.ativo:current[0].ativo;
+          if(current[0].perfil_acesso==="ADMIN" && (profile!=="ADMIN"||!active)) {
+            const count=await sql`select count(*)::int as n from usuarios where perfil_acesso='ADMIN' and ativo=true`;
+            if(count[0].n<=1)return responseJson({ok:false,error:"Não é permitido desativar ou rebaixar o último administrador."},409,env,request);
+          }
+          const nome=typeof b.nome==="string"?b.nome.trim().slice(0,180):null;
+          if(nome==="")return responseJson({ok:false,error:"Nome obrigatório."},400,env,request);
+          const legacy=profile==="ADMIN"?"ADMIN":profile==="CONSULTA"?"CONSULTA":"AUXILIAR";
+          const changed=await sql`update usuarios set perfil=${legacy},perfil_acesso=${profile},ativo=${active},nome=coalesce(${nome},nome),atualizado_em=now() where id=${targetId}::uuid returning id,nome,email,perfil_acesso,ativo`;
+          if(profile!==current[0].perfil_acesso) await sql`delete from usuarios_permissoes where usuario_id=${targetId}::uuid`;
+          await sql`update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null`;
+          await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id) values('usuarios',${targetId}::uuid,'USUARIO_EDITADO',jsonb_build_object('perfil',${current[0].perfil_acesso}::text,'ativo',${current[0].ativo}::boolean),jsonb_build_object('perfil',${profile}::text,'ativo',${active}::boolean),${user.id}::uuid)`;
+          return responseJson({ok:true,usuario:changed[0]},200,env,request);
+        }
+        if(request.method==="POST" && suffix==="redefinir-senha") {
+          if(!hasPermission(userPermissions,"usuarios.redefinir_senha")||targetId===user.id)return responseJson({ok:false,error:"Acesso negado."},403,env,request);
+          const b=await bodyJson(request), senha=String(b.senha_temporaria||"");
+          if(senha.length<10||senha.length>256)return responseJson({ok:false,error:"A senha deve ter entre 10 e 256 caracteres."},400,env,request);
+          const salt=randomSalt(),iterations=310000,hash=await passwordHash(senha,salt,iterations);
+          const rows=await sql`update usuarios set password_hash=${hash},password_salt=${salt},password_iterations=${iterations},troca_senha_obrigatoria=true,atualizado_em=now() where id=${targetId}::uuid returning id`;
+          if(!rows.length)return responseJson({ok:false,error:"Usuário não encontrado."},404,env,request);
+          await sql`update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null`;
+          await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${targetId}::uuid,'SENHA_REDEFINIDA','{}'::jsonb,${user.id}::uuid)`;
+          return responseJson({ok:true},200,env,request);
+        }
+      }
+
 
       if (request.method === "GET" && url.pathname === "/api/configuracoes/relacao-patrimonial") {
         const defaults=defaultReportTemplate();
