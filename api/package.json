@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node --check src/index.js && node --check src/db.js && node --check src/security.js && node --check src/permissions.js && node --check ../js/runtime-v153/pages/users.js && node --check ../js/runtime-v153/pages/login.js && node --check ../js/runtime-v153/app.js",
-    "test": "node --test tests/*.test.js"
+    "check": "node --check src/index.js && node --check src/db.js && node --check src/security.js && node --check src/permissions.js && node --check ../js/runtime-v153/pages/users.js && node --check ../js/runtime-v153/pages/login.js && node --check ../js/runtime-v153/app.js && node --check ../js/runtime-v153/services/auth.js",
+    "test": "node --test tests/permissions.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1"
