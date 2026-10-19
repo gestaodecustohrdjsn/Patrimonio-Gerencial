@@ -223,6 +223,32 @@ INSERT INTO perfis_permissoes(perfil,permissao_codigo,permitido) VALUES
   ('CONSULTA','usuarios.redefinir_senha',false)
 ON CONFLICT (perfil,permissao_codigo) DO NOTHING;
 
+-- Protege o último administrador inclusive contra duas atualizações concorrentes.
+CREATE OR REPLACE FUNCTION proteger_ultimo_admin_patrimonio()
+RETURNS trigger LANGUAGE plpgsql AS $
+DECLARE
+  qtd integer;
+BEGIN
+  PERFORM pg_advisory_xact_lock(150015);
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Contas de usuário devem ser inativadas, não excluídas';
+  END IF;
+  IF OLD.perfil_acesso = 'ADMIN' AND OLD.ativo = true
+     AND (NEW.perfil_acesso <> 'ADMIN' OR NEW.ativo = false) THEN
+    SELECT count(*) INTO qtd FROM usuarios
+      WHERE perfil_acesso = 'ADMIN' AND ativo = true;
+    IF qtd <= 1 THEN
+      RAISE EXCEPTION 'Não é permitido desativar o último administrador';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$;
+DROP TRIGGER IF EXISTS trg_proteger_ultimo_admin_patrimonio ON usuarios;
+CREATE TRIGGER trg_proteger_ultimo_admin_patrimonio
+BEFORE UPDATE OR DELETE ON usuarios
+FOR EACH ROW EXECUTE FUNCTION proteger_ultimo_admin_patrimonio();
+
 -- Transição de legado: a migração NÃO altera o tipo de usuarios.perfil.
 -- Usuários AUXILIAR continuam funcionando até a API migrar para perfil_acesso.
 COMMIT;
