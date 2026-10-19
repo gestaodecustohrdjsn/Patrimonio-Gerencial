@@ -3,6 +3,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS configuracoes_sistema (
+  id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
   chave text PRIMARY KEY,
   valor jsonb NOT NULL DEFAULT '{}'::jsonb,
   atualizado_por uuid REFERENCES usuarios(id),
