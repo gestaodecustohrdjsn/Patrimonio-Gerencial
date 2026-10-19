@@ -870,15 +870,32 @@ BEGIN
   IF (SELECT count(*) FROM tmp_catalogo_oficial_20261016 WHERE tipo_id=1) <> 582 THEN RAISE EXCEPTION 'Quantidade Tipo 1 divergente'; END IF;
   IF (SELECT count(*) FROM tmp_catalogo_oficial_20261016 WHERE tipo_id=2) <> 199 THEN RAISE EXCEPTION 'Quantidade Tipo 2 divergente'; END IF;
   IF (SELECT count(*) FROM tmp_catalogo_oficial_20261016 WHERE tipo_id=3) <> 40 THEN RAISE EXCEPTION 'Quantidade Tipo 3 divergente'; END IF;
+  IF (SELECT count(DISTINCT id_existente) FROM tmp_catalogo_oficial_20261016 WHERE origem='SIGEM') <> 814 THEN
+    RAISE EXCEPTION 'A base oficial possui UUIDs SIGEM ausentes ou duplicados';
+  END IF;
+
   IF EXISTS (
-    SELECT 1 FROM tmp_catalogo_oficial_20261016 t
+    SELECT 1
+    FROM tmp_catalogo_oficial_20261016 t
     LEFT JOIN descricoes_padrao d ON d.id=t.id_existente
-    WHERE t.origem='SIGEM' AND (d.id IS NULL OR d.descricao IS DISTINCT FROM t.descricao)
-  ) THEN RAISE EXCEPTION 'O catálogo SIGEM atual não corresponde à base oficial esperada'; END IF;
+    WHERE t.origem='SIGEM' AND d.id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Há UUID SIGEM da base oficial que não existe no banco atual';
+  END IF;
+
+  IF EXISTS (
+    SELECT lower(btrim(descricao))
+    FROM tmp_catalogo_oficial_20261016
+    GROUP BY lower(btrim(descricao))
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'A base oficial contém descrições duplicadas';
+  END IF;
 END $$;
 
 UPDATE descricoes_padrao d
-SET tipo_id=t.tipo_id,
+SET descricao=t.descricao,
+    tipo_id=t.tipo_id,
     valor_padrao=t.valor_padrao,
     origem_catalogo='SIGEM',
     fonte_valor='SIGEM',
@@ -906,6 +923,12 @@ BEGIN
   IF (SELECT count(*) FROM descricoes_padrao WHERE tipo_id=2) <> 199 THEN RAISE EXCEPTION 'Pós-migração: Tipo 2 divergente'; END IF;
   IF (SELECT count(*) FROM descricoes_padrao WHERE tipo_id=3) <> 40 THEN RAISE EXCEPTION 'Pós-migração: Tipo 3 divergente'; END IF;
   IF EXISTS (SELECT 1 FROM descricoes_padrao WHERE origem_catalogo NOT IN ('SIGEM','PROPRIO')) THEN RAISE EXCEPTION 'Origem inválida'; END IF;
+  IF EXISTS (
+    SELECT lower(btrim(descricao))
+    FROM descricoes_padrao
+    GROUP BY lower(btrim(descricao))
+    HAVING count(*) > 1
+  ) THEN RAISE EXCEPTION 'Pós-migração: há descrições duplicadas no Catálogo'; END IF;
 END $$;
 
 
@@ -921,7 +944,7 @@ create or replace function aplicar_atualizacao_catalogo_sigem_v2_api(
 )
 returns jsonb
 language plpgsql
-as $
+as $catalogo$
 declare
   v_acao jsonb;
   v_tipo_acao text;
@@ -956,7 +979,7 @@ begin
     p_usuario_id
   );
 end;
-$;
+$catalogo$;
 
 COMMIT;
 
