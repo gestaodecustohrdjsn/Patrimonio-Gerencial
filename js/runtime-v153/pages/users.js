@@ -45,7 +45,7 @@ async function draw(root) {
       </form>
       <div class="report-template-section"><strong>Permissões individuais</strong>
       <small>Herdar mantém a regra do perfil. Exclusões administrativas são bloqueadas.</small>
-      <form id="userPermissionsForm">
+      ${["GESTOR","OPERADOR"].includes(user.perfil_acesso)? `<form id="userPermissionsForm">
         <div class="user-permission-list">
         ${permissions.map(p=>{const individual=overrides.find(a=>a.permissao_codigo===p.codigo);
           return `<label class="user-permission-row"><span><strong>${esc(p.descricao)}</strong><small>${esc(p.modulo)} — ${esc(p.codigo)}</small></span>
@@ -56,7 +56,7 @@ async function draw(root) {
             </select></label>`;
         }).join("")}</div>
         <div class="settings-editor-actions"><button class="primary-button" type="submit">Salvar permissões</button></div>
-      </form></div></section>`:""}
+      </form>` : '<p class="user-admin-note">Exceções individuais disponíveis apenas para Gestor e Operador.</p>'}</div></section>`:""}
   `;
   root.querySelectorAll("[data-user]").forEach(b=>b.addEventListener("click",()=>{selected=b.dataset.user;draw(root);}));
   root.querySelector("#newUserForm").addEventListener("submit",e=>submit(e,root,async f=>request("/api/usuarios","POST",Object.fromEntries(f))));
