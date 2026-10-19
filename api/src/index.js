@@ -594,10 +594,7 @@ export default {
             if(typeof item?.codigo!=="string"||!allowed.has(item.codigo)||allowed.get(item.codigo).exclusiva_admin||typeof item.permitido!=="boolean") return responseJson({ok:false,error:"Permissão individual inválida ou reservada."},400,env,request);
             unique.set(item.codigo,item.permitido);
           }
-          await sql`delete from usuarios_permissoes where usuario_id=${targetId}::uuid`;
-          for(const [code,permitted] of unique) await sql`insert into usuarios_permissoes(usuario_id,permissao_codigo,permitido,atualizado_por) values(${targetId}::uuid,${code},${permitted},${user.id}::uuid)`;
-          await sql`update sessoes set revogado_em=now() where usuario_id=${targetId}::uuid and revogado_em is null`;
-          await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${targetId}::uuid,'PERMISSOES_ALTERADAS',${JSON.stringify([...unique].map(([codigo,permitido])=>({codigo,permitido})))}::jsonb,${user.id}::uuid)`;
+          await sql`select atualizar_permissoes_individuais_patrimonio(${targetId}::uuid,${user.id}::uuid,${JSON.stringify([...unique].map(([codigo,permitido])=>({codigo,permitido})))}::jsonb)`;
           return responseJson({ok:true},200,env,request);
         }
         if(request.method==="PATCH" && !suffix) {
@@ -690,6 +687,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/historico") {
+        if(!hasPermission(userPermissions,"historico.geral")) return responseJson({ok:false,error:"Sem permissão para consultar Histórico Geral."},403,env,request);
         const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit")||30)));
         const offset=Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)));
         const tabela=(url.searchParams.get("tabela")||"").trim().slice(0,80);
