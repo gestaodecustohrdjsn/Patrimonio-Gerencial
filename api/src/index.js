@@ -585,6 +585,9 @@ export default {
         }
         if(request.method==="PUT" && suffix==="permissoes") {
           if(!hasPermission(userPermissions,"usuarios.permissoes")||targetId===user.id) return responseJson({ok:false,error:"Não é permitido alterar suas próprias permissões."},403,env,request);
+          const targetRows=await sql`select perfil_acesso from usuarios where id=${targetId}::uuid`;
+          if(!targetRows.length) return responseJson({ok:false,error:"Usuário não encontrado."},404,env,request);
+          if(!["GESTOR","OPERADOR"].includes(targetRows[0].perfil_acesso)) return responseJson({ok:false,error:"As exceções individuais são exclusivas dos perfis Gestor e Operador."},403,env,request);
           const b=await bodyJson(request);
           if(!Array.isArray(b.excecoes)||b.excecoes.length>100) return responseJson({ok:false,error:"Exceções inválidas."},400,env,request);
           const known=await sql`select codigo,exclusiva_admin from permissoes`;
