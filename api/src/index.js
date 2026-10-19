@@ -6,7 +6,7 @@ function corsHeaders(env, request) {
   const allowed = (env.ALLOWED_ORIGIN || "").trim();
   return {
     "Access-Control-Allow-Origin": origin && origin === allowed ? origin : allowed,
-    "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Setup-Token",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
