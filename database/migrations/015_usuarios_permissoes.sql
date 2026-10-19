@@ -230,7 +230,7 @@ ON CONFLICT (perfil,permissao_codigo) DO NOTHING;
 
 -- Protege o último administrador inclusive contra duas atualizações concorrentes.
 CREATE OR REPLACE FUNCTION proteger_ultimo_admin_patrimonio()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   qtd integer;
 BEGIN
@@ -248,7 +248,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 DROP TRIGGER IF EXISTS trg_proteger_ultimo_admin_patrimonio ON usuarios;
 CREATE TRIGGER trg_proteger_ultimo_admin_patrimonio
 BEFORE UPDATE OR DELETE ON usuarios
@@ -257,7 +257,7 @@ FOR EACH ROW EXECUTE FUNCTION proteger_ultimo_admin_patrimonio();
 -- Substituição atômica de exceções e revogação de sessões.
 CREATE OR REPLACE FUNCTION atualizar_permissoes_individuais_patrimonio(
   p_usuario uuid, p_administrador uuid, p_excecoes jsonb
-) RETURNS void LANGUAGE plpgsql AS $
+) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
   item jsonb;
   anteriores jsonb;
@@ -290,7 +290,7 @@ BEGIN
   INSERT INTO historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
   VALUES('usuarios',p_usuario,'PERMISSOES_ALTERADAS',anteriores,p_excecoes,p_administrador);
 END;
-$;
+$$;
 
 -- Transição de legado: a migração NÃO altera o tipo de usuarios.perfil.
 -- Usuários AUXILIAR continuam funcionando até a API migrar para perfil_acesso.
