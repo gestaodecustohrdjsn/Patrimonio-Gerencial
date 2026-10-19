@@ -1194,42 +1194,97 @@ function exportReportCsv() {
   URL.revokeObjectURL(url);
 }
 
-function printReport() {
+function reportColumnValue(asset,key) {
+  if(key==="id_interna") return asset.id_interna || "—";
+  if(key==="id_ses") return asset.id_ses || "—";
+  if(key==="descricao") return assetDisplayName(asset);
+  if(key==="tipo") return typeName(asset.tipo_id);
+  if(key==="estado") return conservationName(asset.estado_conservacao);
+  if(key==="mobilidade") return asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo";
+  if(key==="status") return asset.status === "ATIVO" ? "Ativo" : "Inativo";
+  if(key==="manutencao") return asset.em_manutencao ? "Em manutenção" : "—";
+  if(key==="marca_modelo") return asset.marca_modelo || "—";
+  if(key==="data_aquisicao") return formatDate(asset.data_aquisicao);
+  if(key==="valor_aquisicao") return asset.valor_aquisicao == null ? "—" : money(Number(asset.valor_aquisicao));
+  return "—";
+}
+
+async function printReport() {
   const rows = reportRows();
   const center = reportCenter();
   if (!rows.length || !center) return;
+
+  let template;
+  try {
+    template=normalizeReportTemplateClient(await ensureReportTemplate());
+  } catch(error) {
+    toast(error.message,"error");
+    return;
+  }
+
+  const columns=REPORT_TEMPLATE_COLUMNS
+    .filter(([key])=>template.colunas?.[key])
+    .map(([key,label])=>({key,label}));
+  if(!columns.length) {
+    toast("O template não possui colunas visíveis.","error");
+    return;
+  }
+
   const popup = window.open("", "_blank", "width=1200,height=800");
   if (!popup) { toast("O navegador bloqueou a janela de impressão.", "error"); return; }
-  const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
-  const bodyRows = rows.map(asset => `<tr>
-    <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
-    <td>${escapeHtml(asset.id_ses || "—")}</td>
-    <td>${escapeHtml(assetDisplayName(asset))}</td>
-    <td>${escapeHtml(typeName(asset.tipo_id))}</td>
-    <td>${escapeHtml(conservationName(asset.estado_conservacao))}</td>
-    <td>${asset.mobilidade === "MOVEL" ? "Móvel" : "Fixo"}</td>
-    <td>${asset.status === "ATIVO" ? "Ativo" : "Inativo"}</td>
-    <td>${asset.em_manutencao ? "Em manutenção" : "—"}</td>
-  </tr>`).join("");
 
-  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relação Patrimonial - ${escapeHtml(center.nome)}</title>
+  const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+  const bodyRows = rows.map(asset => `<tr>${columns.map(col=>`<td class="col-${col.key}">${escapeHtml(reportColumnValue(asset,col.key))}</td>`).join("")}</tr>`).join("");
+  const headerCells=columns.map(col=>`<th class="col-${col.key}">${escapeHtml(col.label)}</th>`).join("");
+  const logo=template.logo_data_url ? `<img class="document-logo" src="${escapeHtml(template.logo_data_url)}" alt="Logo">` : "";
+  const signatures=[template.assinatura_1,template.assinatura_2].filter(Boolean);
+
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(template.titulo)} - ${escapeHtml(center.nome)}</title>
     <style>
       @page{size:A4 landscape;margin:10mm}
-      *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#17313d;margin:0;font-size:9pt}
-      header{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;border-bottom:2px solid #104861;padding-bottom:8px;margin-bottom:10px}
-      h1{font-size:16pt;margin:0 0 3px;color:#104861}h2{font-size:11pt;margin:0}.meta{text-align:right;color:#526a75;font-size:8pt}
-      .filters{margin:0 0 10px;color:#526a75;font-size:8pt}.count{font-weight:700;color:#104861}
-      table{border-collapse:collapse;width:100%;table-layout:fixed}th,td{border:1px solid #cfdde3;padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
-      th{background:#edf5f8;font-size:7.5pt;text-transform:uppercase}tr{break-inside:avoid}
-      th:nth-child(1),td:nth-child(1){width:11%}th:nth-child(2),td:nth-child(2){width:9%}th:nth-child(3),td:nth-child(3){width:24%}
-      th:nth-child(4),td:nth-child(4){width:14%}th:nth-child(5),td:nth-child(5){width:14%}th:nth-child(6),td:nth-child(6){width:9%}
-      th:nth-child(7),td:nth-child(7){width:8%}th:nth-child(8),td:nth-child(8){width:11%}
-      footer{margin-top:10px;display:flex;justify-content:space-between;color:#6a7f88;font-size:8pt}
+      *{box-sizing:border-box}
+      body{font-family:Arial,sans-serif;color:#17313d;margin:0;font-size:8.5pt}
+      .document-header{display:flex;justify-content:space-between;gap:18px;align-items:center;border-bottom:2px solid #104861;padding-bottom:8px;margin-bottom:9px}
+      .document-identity{display:flex;align-items:center;gap:12px;min-width:0}
+      .document-logo{width:auto;height:50px;max-width:120px;object-fit:contain}
+      .institution{font-size:9pt;font-weight:700;color:#526a75;margin-bottom:2px}
+      .unit{font-size:8pt;color:#6a7f88;margin-bottom:4px}
+      h1{font-size:15pt;margin:0;color:#104861;line-height:1.1}
+      h2{font-size:10.5pt;margin:4px 0 0}
+      .meta{text-align:right;color:#526a75;font-size:8pt;white-space:nowrap}
+      .filters{margin:0 0 9px;color:#526a75;font-size:8pt}
+      .count{font-weight:700;color:#104861}
+      table{border-collapse:collapse;width:100%;table-layout:auto}
+      thead{display:table-header-group}
+      th,td{border:1px solid #cfdde3;padding:4px 5px;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+      th{background:#edf5f8;font-size:7.3pt;text-transform:uppercase}
+      tr{break-inside:avoid}
+      .col-descricao{min-width:42mm}
+      .col-id_interna,.col-id_ses{white-space:nowrap}
+      .signatures{display:grid;grid-template-columns:repeat(${Math.max(1,signatures.length)},1fr);gap:30mm;margin-top:18mm;break-inside:avoid}
+      .signature{border-top:1px solid #526a75;text-align:center;padding-top:4px;color:#526a75;font-size:8pt}
+      footer{margin-top:10px;display:flex;justify-content:space-between;gap:15px;color:#6a7f88;font-size:7.8pt}
     </style></head><body>
-      <header><div><h1>Relação Patrimonial por Centro de Custo</h1><h2>${escapeHtml(center.nome)}</h2></div><div class="meta">Gerado em ${escapeHtml(generatedAt)}<br><span class="count">${rows.length} patrimônio(s)</span></div></header>
-      <p class="filters">${escapeHtml(reportFilterSummary())}</p>
-      <table><thead><tr><th>ID interna</th><th>ID SES</th><th>Descrição</th><th>Tipo</th><th>Estado</th><th>Mobilidade</th><th>Status</th><th>Manutenção</th></tr></thead><tbody>${bodyRows}</tbody></table>
-      <footer><span>Patrimônio+</span><span>Centro atual dos bens no momento da emissão.</span></footer>
+      <header class="document-header">
+        <div class="document-identity">
+          ${logo}
+          <div>
+            ${template.instituicao ? `<div class="institution">${escapeHtml(template.instituicao)}</div>` : ""}
+            ${template.unidade ? `<div class="unit">${escapeHtml(template.unidade)}</div>` : ""}
+            <h1>${escapeHtml(template.titulo)}</h1>
+            <h2>${escapeHtml(center.nome)}</h2>
+          </div>
+        </div>
+        <div class="meta">
+          ${template.mostrar_data ? `Gerado em ${escapeHtml(generatedAt)}` : ""}
+          ${template.mostrar_data && template.mostrar_quantidade ? "<br>" : ""}
+          ${template.mostrar_quantidade ? `<span class="count">${rows.length} patrimônio(s)</span>` : ""}
+        </div>
+      </header>
+      ${template.mostrar_filtros ? `<p class="filters">${escapeHtml(reportFilterSummary())}</p>` : ""}
+      <table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+      ${signatures.length ? `<section class="signatures">${signatures.map(label=>`<div class="signature">${escapeHtml(label)}</div>`).join("")}</section>` : ""}
+      <footer><span>${escapeHtml(template.rodape || "")}</span><span>Patrimônio+</span></footer>
       <script>window.addEventListener("load",()=>{window.print();});<\/script>
     </body></html>`);
   popup.document.close();
