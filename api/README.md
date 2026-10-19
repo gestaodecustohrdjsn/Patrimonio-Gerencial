@@ -1,4 +1,4 @@
-# Patrimônio+ API 3.5.1 — portátil
+# Patrimônio+ API 3.6.0 — portátil
 
 Esta API não depende de Supabase Auth nem Neon Auth. A autenticação pertence ao próprio Patrimônio+ e fica armazenada em PostgreSQL padrão.
 
@@ -12,7 +12,7 @@ As migrations históricas necessárias para a API 3.3 estão em `database/004_au
 1. `npm install`
 2. `npm run check`
 3. `npx wrangler deploy`
-4. Confirme `/health` com `version: 3.5.1`.
+4. Confirme `/health` com `version: 3.6.0`.
 
 Os secrets `DATABASE_URL` e `SETUP_TOKEN` devem permanecer configurados no Worker e não devem ser colocados no repositório.
 
@@ -30,7 +30,7 @@ Uma divergência só é aceita quando o cliente envia `confirmar_tipo_divergente
 
 
 ## Gestão de catálogo e centros
-A API 3.5.1 adiciona:
+A API 3.6.0 adiciona:
 - administração da classificação dos itens SIGEM;
 - sincronização dos patrimônios vinculados que ainda seguem a classificação anterior;
 - cadastro, edição, ativação e inativação de centros de custo;
@@ -38,12 +38,12 @@ A API 3.5.1 adiciona:
 
 
 ## Histórico global
-A API 3.5.1 adiciona `GET /api/historico` para a Visão Geral.
+A API 3.6.0 adiciona `GET /api/historico` para a Visão Geral.
 O endpoint retorna os eventos recentes já registrados em `historico_alteracoes`, com usuário, entidade e detalhes resumidos para exibição no dashboard.
 
 
 ## Atualizador inteligente do Catálogo SIGEM
-A API 3.5.1 adiciona o fluxo de atualização controlada do catálogo:
+A API 3.6.0 adiciona o fluxo de atualização controlada do catálogo:
 - aliases/de-paras persistentes;
 - histórico resumido e detalhado das atualizações;
 - aplicação transacional do plano revisado;
@@ -51,12 +51,12 @@ A API 3.5.1 adiciona o fluxo de atualização controlada do catálogo:
 - confirmação de itens semelhantes;
 - reativação e inativação controladas.
 
-A migration `008_catalogo_sigem_atualizacoes.sql` deve ser aplicada antes da publicação da API 3.5.1.
+A migration `008_catalogo_sigem_atualizacoes.sql` deve ser aplicada antes da publicação da API 3.6.0.
 
 
 ## Catálogo Geral 1.6.0
 
-A API 3.5.1 substitui o conceito operacional de "Catálogo SIGEM" por um Catálogo único.
+A API 3.6.0 substitui o conceito operacional de "Catálogo SIGEM" por um Catálogo único.
 
 Cada item passa a informar:
 - descrição;
@@ -85,7 +85,7 @@ A migration `009_catalogo_geral_base_oficial.sql` aplica a base oficial conferid
 
 ## Importação Patrimonial Segura 1.7.0
 
-A API 3.5.1 adiciona:
+A API 3.6.0 adiciona:
 - simulação server-side antes de qualquer gravação;
 - resolução de item pelo Catálogo e Centro de Custo;
 - Tipo sempre herdado do Catálogo;
@@ -96,12 +96,12 @@ A API 3.5.1 adiciona:
 - histórico de importações;
 - evento resumido no log global.
 
-A migration `011_importacao_patrimonial_segura.sql` deve ser aplicada antes da publicação da API 3.5.1.
+A migration `011_importacao_patrimonial_segura.sql` deve ser aplicada antes da publicação da API 3.6.0.
 
 
 ## ID SES duplicada controlada 1.7.1
 
-A API 3.5.1 altera a regra de identificação SES:
+A API 3.6.0 altera a regra de identificação SES:
 - `id_interna` continua sendo a identificação exclusiva do Patrimônio+;
 - `id_ses` pode se repetir em casos legados ou bens antes controlados em conjunto;
 - importações continuam obrigando revisão explícita de cada grupo repetido;
@@ -110,3 +110,22 @@ A API 3.5.1 altera a regra de identificação SES:
 - cadastro e edição manual também exigem confirmação explícita quando uma nova ID SES já está em uso.
 
 A migration `012_id_ses_duplicada_controlada.sql` remove qualquer unicidade exclusiva de `patrimonios.id_ses`, mantém índice comum de consulta e atualiza o importador transacional.
+
+
+## Documentos e Histórico 1.8.0
+
+A API 3.6.0 adiciona:
+- configuração persistente do template da Relação Patrimonial;
+- upload estruturado de logo (PNG/JPG/WEBP);
+- colunas configuráveis no documento;
+- auditoria das alterações do template;
+- histórico geral filtrável por período, módulo, usuário, operação e pesquisa;
+- paginação do histórico.
+
+A migration `013_configuracoes_documentos.sql` deve ser aplicada antes da publicação da API 3.6.0.
+
+O frontend 1.8.0 adiciona:
+- editor do template em Configurações;
+- Relação Patrimonial pronta para impressão/salvamento em PDF com o template salvo;
+- etiquetas em folha A4 3x10, com posição inicial configurável;
+- nova aba Histórico Geral.
