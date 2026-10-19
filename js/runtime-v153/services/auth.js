@@ -39,9 +39,19 @@ export async function signIn(email, password) {
 }
 
 export async function signOut() {
-  try { await apiRequest("/api/auth/logout", { method: "POST" }); } catch {}
+  const token=getStoredToken();
   storeToken(null);
   notify(null);
+  if (!token) return;
+  try {
+    await apiRequest("/api/auth/logout", {
+      method:"POST",
+      auth:false,
+      headers:{"Authorization":`Bearer ${token}`}
+    });
+  } catch {
+    // Logout local imediato; tokens já revogados pelo servidor permanecem inválidos.
+  }
 }
 
 export function onAuthChange(callback) {
