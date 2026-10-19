@@ -1411,10 +1411,16 @@ async function printReport() {
   const center = reportCenter();
   if (!rows.length || !center) return;
 
+  const popup = window.open("", "_blank", "width=1200,height=800");
+  if (!popup) { toast("O navegador bloqueou a janela de impressão.", "error"); return; }
+  popup.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Preparando relação patrimonial…</title></head><body style="font-family:Arial,sans-serif;padding:30px"><h2>Preparando relação patrimonial…</h2><p>Aguarde enquanto o template é carregado.</p></body></html>');
+  popup.document.close();
+
   let template;
   try {
     template=normalizeReportTemplateClient(await ensureReportTemplate());
   } catch(error) {
+    popup.close();
     toast(error.message,"error");
     return;
   }
@@ -1423,12 +1429,10 @@ async function printReport() {
     .filter(([key])=>template.colunas?.[key])
     .map(([key,label])=>({key,label}));
   if(!columns.length) {
+    popup.close();
     toast("O template não possui colunas visíveis.","error");
     return;
   }
-
-  const popup = window.open("", "_blank", "width=1200,height=800");
-  if (!popup) { toast("O navegador bloqueou a janela de impressão.", "error"); return; }
 
   const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
   const bodyRows = rows.map(asset => `<tr>${columns.map(col=>`<td class="col-${col.key}">${escapeHtml(reportColumnValue(asset,col.key))}</td>`).join("")}</tr>`).join("");
@@ -1436,6 +1440,7 @@ async function printReport() {
   const logo=template.logo_data_url ? `<img class="document-logo" src="${escapeHtml(template.logo_data_url)}" alt="Logo">` : "";
   const signatures=[template.assinatura_1,template.assinatura_2].filter(Boolean);
 
+  popup.document.open();
   popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(template.titulo)} - ${escapeHtml(center.nome)}</title>
     <style>
       @page{size:A4 landscape;margin:10mm}
