@@ -249,6 +249,41 @@ CREATE TRIGGER trg_proteger_ultimo_admin_patrimonio
 BEFORE UPDATE OR DELETE ON usuarios
 FOR EACH ROW EXECUTE FUNCTION proteger_ultimo_admin_patrimonio();
 
+-- Substituição atômica de exceções e revogação de sessões.
+CREATE OR REPLACE FUNCTION atualizar_permissoes_individuais_patrimonio(
+  p_usuario uuid, p_administrador uuid, p_excecoes jsonb
+) RETURNS void LANGUAGE plpgsql AS $
+DECLARE
+  item jsonb;
+BEGIN
+  IF p_usuario = p_administrador THEN
+    RAISE EXCEPTION 'Não é permitido alterar as próprias permissões';
+  END IF;
+  IF jsonb_typeof(p_excecoes) <> 'array' OR jsonb_array_length(p_excecoes)>100 THEN
+    RAISE EXCEPTION 'Lista de exceções inválida';
+  END IF;
+  PERFORM 1 FROM usuarios WHERE id=p_usuario FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Usuário não encontrado'; END IF;
+  FOR item IN SELECT value FROM jsonb_array_elements(p_excecoes) LOOP
+    IF jsonb_typeof(item->'permitido') <> 'boolean'
+       OR NOT EXISTS (
+         SELECT 1 FROM permissoes
+         WHERE codigo=item->>'codigo' AND exclusiva_admin=false
+       ) THEN
+      RAISE EXCEPTION 'Permissão individual inválida';
+    END IF;
+  END LOOP;
+  DELETE FROM usuarios_permissoes WHERE usuario_id=p_usuario;
+  INSERT INTO usuarios_permissoes(usuario_id,permissao_codigo,permitido,atualizado_por)
+  SELECT p_usuario,item->>'codigo',(item->>'permitido')::boolean,p_administrador
+  FROM jsonb_array_elements(p_excecoes) AS item;
+  UPDATE sessoes SET revogado_em=now()
+  WHERE usuario_id=p_usuario AND revogado_em IS NULL;
+  INSERT INTO historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
+  VALUES('usuarios',p_usuario,'PERMISSOES_ALTERADAS',p_excecoes,p_administrador);
+END;
+$;
+
 -- Transição de legado: a migração NÃO altera o tipo de usuarios.perfil.
 -- Usuários AUXILIAR continuam funcionando até a API migrar para perfil_acesso.
 COMMIT;
