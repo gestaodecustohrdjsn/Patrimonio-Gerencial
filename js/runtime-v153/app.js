@@ -5,7 +5,7 @@ import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/catalogo.js?v=1.6.0";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
-import { renderLogin } from "./pages/login.js";
+import { renderLogin, renderPasswordChange } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
@@ -648,10 +648,10 @@ function renderHistory() {
 function userProfile() {
   return String(state.session?.user?.perfil || "").toUpperCase();
 }
-function canEditAssets() { return ["ADMIN", "AUXILIAR"].includes(userProfile()); }
-function canMoveAssets() { return ["ADMIN", "AUXILIAR"].includes(userProfile()); }
-function canMaintainAssets() { return ["ADMIN", "AUXILIAR"].includes(userProfile()); }
-function canDeleteAssets() { return userProfile() === "ADMIN"; }
+function canEditAssets() { return state.session?.user?.permissoes?.["patrimonios.editar"] === true; }
+function canMoveAssets() { return state.session?.user?.permissoes?.["patrimonios.movimentar"] === true; }
+function canMaintainAssets() { return state.session?.user?.permissoes?.["manutencoes.abrir"] === true; }
+function canDeleteAssets() { return state.session?.user?.permissoes?.["patrimonios.excluir"] === true; }
 
 function iconSvg(name) {
   const icons = {
@@ -4577,11 +4577,11 @@ async function start() {
   }
 
   state.session = await getSession();
-  if (!state.session) renderLogin(appRoot); else { shell(); await loadData(); }
+  if (!state.session) renderLogin(appRoot); else if(state.session.user?.troca_senha_obrigatoria) renderPasswordChange(appRoot); else { shell(); await loadData(); }
   onAuthChange(async (session) => {
     if (publicTokenFromHash()) return;
     state.session = session;
-    if (!session) renderLogin(appRoot); else { shell(); await loadData(); }
+    if (!session) renderLogin(appRoot); else if(session.user?.troca_senha_obrigatoria) renderPasswordChange(appRoot); else { shell(); await loadData(); }
   });
 }
 
