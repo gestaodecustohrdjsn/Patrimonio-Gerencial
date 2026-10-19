@@ -8,6 +8,7 @@ import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, perma
 import { renderLogin } from "./pages/login.js";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory } from "./services/historico.js?v=1.6.0";
+import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
 
 const state = {
   currentView: "dashboard",
@@ -27,6 +28,11 @@ const state = {
   importMapping: {},
   importValidated: [],
   importBusy: false,
+  importSimulation: null,
+  importDuplicateChoices: {},
+  importHistory: [],
+  importHistoryLoaded: false,
+  importLastResult: null,
   assetFilters: {},
   labelFilters: {},
   labelSelected: new Set(),
@@ -2498,22 +2504,198 @@ function parseCsv(text) {
 }
 
 const IMPORT_FIELDS = [
-  ["descricao", "Descrição *"], ["tipo", "Tipo *"], ["aquisicao", "Aquisição *"], ["centro", "Centro de custo *"],
-  ["id_ses", "ID SES"], ["data", "Data de aquisição"], ["valor", "Valor"], ["marca", "Marca/Modelo"], ["nota", "Nota fiscal"]
+  ["descricao_catalogo", "Item do Catálogo *"],
+  ["descricao_complementar", "Descrição complementar"],
+  ["aquisicao", "Aquisição *"],
+  ["centro", "Centro de custo"],
+  ["centro_codigo", "Código do centro"],
+  ["id_ses", "ID SES"],
+  ["data", "Data de aquisição"],
+  ["valor", "Valor do material / aquisição"],
+  ["valor_referencia", "Valor de referência no arquivo"],
+  ["marca", "Marca/Modelo"],
+  ["nota", "Nota fiscal"],
+  ["classificacao", "Classificação do arquivo"],
+  ["status", "Status"],
+  ["estado", "Estado de conservação"]
 ];
 
-function guessMapping(headers) {
-  const aliases = { descricao:["descricao","bem","item","patrimonio"], tipo:["tipo","classificacao","categoria"], aquisicao:["aquisicao","forma aquisicao","origem"], centro:["centro de custo","centro custo","setor","cc"], id_ses:["id ses","ses","patrimonio ses"], data:["data aquisicao","data de aquisicao","data"], valor:["valor aquisicao","valor de aquisicao","valor"], marca:["marca modelo","marca/modelo","modelo","marca"], nota:["nota fiscal","nf","numero nf"] };
-  const out = {};
-  for (const [field] of IMPORT_FIELDS) {
-    const found = headers.find((h) => aliases[field].some((a) => normalizeText(h) === normalizeText(a) || normalizeText(h).includes(normalizeText(a))));
-    out[field] = found || "";
+function findImportHeader(headers, aliases, exactOnly = false) {
+  const normalized=headers.map(header=>({header,key:normalizeText(header)}));
+  for (const alias of aliases) {
+    const key=normalizeText(alias);
+    const exact=normalized.find(item=>item.key===key);
+    if (exact) return exact.header;
   }
-  return out;
+  if (exactOnly) return "";
+  for (const alias of aliases) {
+    const key=normalizeText(alias);
+    const partial=normalized.find(item=>item.key.includes(key));
+    if (partial) return partial.header;
+  }
+  return "";
+}
+
+function guessMapping(headers) {
+  return {
+    descricao_catalogo: findImportHeader(headers,["descricao","nome do item","item do catalogo","item"],true),
+    descricao_complementar: findImportHeader(headers,["descricao auxiliar","descricao complementar"],true),
+    aquisicao: findImportHeader(headers,["tipo aquisicao","tipo de aquisicao","aquisicao","forma aquisicao"],false),
+    centro: findImportHeader(headers,["centro de custo","centro custo","setor"],true),
+    centro_codigo: findImportHeader(headers,["cod c.c.","cod c c","codigo centro","codigo cc","cod cc"],true),
+    id_ses: findImportHeader(headers,["id ses","ses","patrimonio ses"],true),
+    data: findImportHeader(headers,["data de aquisicao","data aquisicao"],true),
+    valor: findImportHeader(headers,["valor do material","valor de aquisicao","valor aquisicao"],true),
+    valor_referencia: findImportHeader(headers,["valor sigem","valor de referencia","valor referencia"],true),
+    marca: findImportHeader(headers,["marca / modelo","marca/modelo","marca modelo","modelo"],true),
+    nota: findImportHeader(headers,["nota fiscal","numero nf","nf"],true),
+    classificacao: findImportHeader(headers,["classificacao","categoria","tipo"],true),
+    status: findImportHeader(headers,["status"],true),
+    estado: findImportHeader(headers,["estado de conservacao","conservacao"],true)
+  };
 }
 
 function mappingOptions(selected) {
-  return `<option value="">Não importar</option>${state.importHeaders.map((h) => `<option value="${escapeHtml(h)}" ${h === selected ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}`;
+  return \`<option value="">Não importar</option>\${state.importHeaders.map((h) => \`<option value="\${escapeHtml(h)}" \${h === selected ? "selected" : ""}>\${escapeHtml(h)}</option>\`).join("")}\`;
+}
+
+async function readImportCsvFile(file) {
+  const buffer=await file.arrayBuffer();
+  let text="";
+  try {
+    text=new TextDecoder("utf-8",{fatal:true}).decode(buffer);
+  } catch {
+    text=new TextDecoder("windows-1252").decode(buffer);
+  }
+  return text.replace(/^\uFEFF/,"");
+}
+
+function resetImportSimulation() {
+  state.importValidated=[];
+  state.importSimulation=null;
+  state.importDuplicateChoices={};
+}
+
+function importSourceRows() {
+  const val=(row,field)=>{
+    const header=state.importMapping[field];
+    return header ? String(row[header]??"").trim() : "";
+  };
+  return state.importRows.map((row,index)=>({
+    linha:index+2,
+    descricao_catalogo:val(row,"descricao_catalogo"),
+    descricao_complementar:val(row,"descricao_complementar"),
+    classificacao_origem:val(row,"classificacao"),
+    tipo_aquisicao:val(row,"aquisicao"),
+    centro_nome:val(row,"centro"),
+    centro_codigo:val(row,"centro_codigo"),
+    id_ses:val(row,"id_ses"),
+    data_aquisicao:val(row,"data"),
+    valor_aquisicao:val(row,"valor"),
+    valor_referencia_arquivo:val(row,"valor_referencia"),
+    marca_modelo:val(row,"marca"),
+    nota_fiscal_numero:val(row,"nota"),
+    status:val(row,"status"),
+    estado_conservacao:val(row,"estado")
+  }));
+}
+
+function duplicateChoiceOptions(group) {
+  const current=state.importDuplicateChoices[group.key]||"";
+  const keepOptions=group.existing_in_db ? "" : group.linhas.map(row =>
+    \`<option value="KEEP:\${row.linha}" \${current===\`KEEP:\${row.linha}\`?"selected":""}>Manter ID na linha \${row.linha} — \${escapeHtml(row.descricao_catalogo)}</option>\`
+  ).join("");
+  return \`
+    <option value="" \${!current?"selected":""}>Escolha como resolver…</option>
+    \${keepOptions}
+    <option value="CLEAR_ALL" \${current==="CLEAR_ALL"?"selected":""}>Importar todas estas linhas sem ID SES</option>
+  \`;
+}
+
+function importDuplicateGroupsHtml() {
+  const groups=state.importSimulation?.grupos_id_ses||[];
+  if (!groups.length) return "";
+  return \`
+    <section class="import-step import-duplicates-step">
+      <div class="step-title"><span>4</span><div><h2>Resolver ID SES duplicadas</h2><p>Nenhuma ID será removida automaticamente. Escolha explicitamente qual patrimônio mantém a identificação, ou importe o grupo sem ID SES.</p></div></div>
+      <div class="duplicate-group-list">
+        \${groups.map(group=>\`<article class="duplicate-group">
+          <div class="duplicate-group-head">
+            <div><strong>ID SES \${escapeHtml(group.id_ses)}</strong><small>\${group.existing_in_db?"Esta ID já existe no banco. Nenhuma linha deste lote pode mantê-la.":"Esta ID aparece em mais de uma linha do arquivo."}</small></div>
+            <span class="badge">\${group.linhas.length} linha(s)</span>
+          </div>
+          <div class="duplicate-lines">
+            \${group.linhas.map(row=>\`<div class="duplicate-line"><span>Linha \${row.linha}</span><strong>\${escapeHtml(row.descricao_catalogo)}</strong><small>\${escapeHtml(row.centro||"Centro não identificado")}</small></div>\`).join("")}
+          </div>
+          <label>Decisão
+            <select class="duplicate-choice" data-duplicate-key="\${escapeHtml(group.key)}">\${duplicateChoiceOptions(group)}</select>
+          </label>
+        </article>\`).join("")}
+      </div>
+    </section>
+  \`;
+}
+
+function importResolutionState() {
+  const simulation=state.importSimulation;
+  if(!simulation) return {ready:false,unresolved:0,hardErrors:0,rows:[]};
+  const groups=simulation.grupos_id_ses||[];
+  const unresolved=groups.filter(group=>!state.importDuplicateChoices[group.key]).length;
+  const hardErrors=Number(simulation.resumo?.error||0);
+  const resolvedRows=simulation.linhas.map(row=>{
+    let idSes=row.id_ses_original||null;
+    if(row.duplicate_key) {
+      const choice=state.importDuplicateChoices[row.duplicate_key];
+      if(choice==="CLEAR_ALL") idSes=null;
+      else if(choice && choice.startsWith("KEEP:")) {
+        const keepLine=Number(choice.slice(5));
+        idSes=row.linha===keepLine ? row.id_ses_original : null;
+      }
+    }
+    return {
+      linha:row.linha,
+      descricao_catalogo:row.item_catalogo?.descricao||row.descricao_catalogo,
+      descricao_complementar:row.descricao_complementar,
+      classificacao_origem:row.item_catalogo?.tipo_id||"",
+      tipo_aquisicao:row.tipo_aquisicao,
+      centro_nome:row.centro?.nome||"",
+      centro_codigo:row.centro?.codigo||"",
+      id_ses:idSes||"",
+      data_aquisicao:row.data_aquisicao,
+      valor_aquisicao:row.valor_aquisicao,
+      valor_referencia_arquivo:row.item_catalogo?.valor_padrao??"",
+      marca_modelo:row.marca_modelo||"",
+      nota_fiscal_numero:row.nota_fiscal_numero||"",
+      status:row.status,
+      estado_conservacao:row.estado_conservacao
+    };
+  });
+  return {ready:hardErrors===0&&unresolved===0,unresolved,hardErrors,rows:resolvedRows};
+}
+
+function importHistoryHtml() {
+  if(!state.importHistoryLoaded) return '<div class="loading">Carregando histórico de importações…</div>';
+  if(!state.importHistory.length) return '<div class="empty">Nenhuma importação patrimonial concluída ainda.</div>';
+  return \`<div class="table-wrap"><table>
+    <thead><tr><th>Data</th><th>Arquivo</th><th>Usuário</th><th>Importados</th></tr></thead>
+    <tbody>\${state.importHistory.map(item=>\`<tr>
+      <td>\${escapeHtml(historyDateTime(item.criado_em))}</td>
+      <td><strong>\${escapeHtml(item.nome_arquivo)}</strong></td>
+      <td>\${escapeHtml(item.usuario?.nome||"Sistema")}</td>
+      <td>\${Number(item.total_importado||0)}</td>
+    </tr>\`).join("")}</tbody>
+  </table></div>\`;
+}
+
+async function refreshImportHistory() {
+  try {
+    state.importHistory=await listAssetImportHistory(20);
+    state.importHistoryLoaded=true;
+    if(state.currentView==="importacao") renderImport();
+  } catch(error) {
+    state.importHistoryLoaded=true;
+    toast(\`Não foi possível carregar o histórico de importações: \${error.message}\`,"error");
+  }
 }
 
 function renderImport() {
@@ -2521,63 +2703,179 @@ function renderImport() {
     document.querySelector("#viewRoot").innerHTML = '<div class="page-header"><div><h1>Importação</h1><p>Importação patrimonial em lote.</p></div></div><div class="placeholder">Seu perfil possui acesso somente para consulta.</div>';
     return;
   }
-  const hasFile = state.importRows.length > 0;
-  const counts = state.importValidated.reduce((a, r) => { a[r.level] = (a[r.level] || 0) + 1; return a; }, {});
-  document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Importação inteligente</h1><p>Carregue um CSV, confira o mapeamento e valide antes de gravar.</p></div></div>
-    <section class="import-step"><div class="step-title"><span>1</span><div><h2>Selecionar arquivo</h2><p>Compatível com CSV separado por vírgula ou ponto e vírgula.</p></div></div><label class="file-drop"><input id="importFile" type="file" accept=".csv,text/csv"><strong>${state.importFileName || "Escolher arquivo CSV"}</strong><small>${hasFile ? `${state.importRows.length} linha(s) encontradas` : "Nenhum arquivo selecionado"}</small></label></section>
-    ${hasFile ? `<section class="import-step"><div class="step-title"><span>2</span><div><h2>Mapear colunas</h2><p>Os quatro campos marcados são necessários.</p></div></div><div class="mapping-grid">${IMPORT_FIELDS.map(([f,l]) => `<label>${l}<select data-import-map="${f}">${mappingOptions(state.importMapping[f])}</select></label>`).join("")}</div><div class="import-actions"><button class="primary-button" data-action="validate-import">Validar dados</button></div></section>` : ""}
-    ${state.importValidated.length ? `<section class="import-step"><div class="step-title"><span>3</span><div><h2>Prévia e validação</h2><p>Nenhum dado foi gravado até este momento.</p></div></div><div class="import-summary"><article><strong>${counts.ok || 0}</strong><span>Prontos</span></article><article><strong>${counts.warning || 0}</strong><span>Com avisos</span></article><article><strong>${counts.error || 0}</strong><span>Com erros</span></article></div><div class="table-wrap"><table class="import-table"><thead><tr><th>Linha</th><th>Descrição</th><th>Centro</th><th>Situação</th></tr></thead><tbody>${state.importValidated.slice(0,200).map((r) => `<tr><td>${r.line}</td><td>${escapeHtml(r.payload.descricao || "—")}</td><td>${escapeHtml(r.centerName || "—")}</td><td><span class="validation-${r.level}">${escapeHtml(r.messages.join(" · ") || "Pronto para importar")}</span></td></tr>`).join("")}</tbody></table></div>${state.importValidated.length > 200 ? `<p class="import-note">Mostrando as primeiras 200 linhas.</p>` : ""}<div class="import-actions"><button class="primary-button" data-action="run-import" ${(counts.error || 0) > 0 || state.importBusy ? "disabled" : ""}>${state.importBusy ? "Importando…" : `Importar ${state.importValidated.length} patrimônio(s)`}</button></div></section>` : ""}`;
+
+  const hasFile=state.importRows.length>0;
+  const simulation=state.importSimulation;
+  const resolution=importResolutionState();
+  const summary=simulation?.resumo||{};
+  const pendingGroups=resolution.unresolved;
+
+  document.querySelector("#viewRoot").innerHTML = \`
+    <div class="page-header"><div><h1>Importação patrimonial segura</h1><p>Simule, resolva pendências e só então grave o lote inteiro em uma única transação.</p></div></div>
+
+    \${state.importLastResult ? \`<div class="catalog-alert success import-success-banner"><strong>Última importação concluída.</strong><span>\${Number(state.importLastResult.total_importado||0)} patrimônio(s) importado(s) do arquivo \${escapeHtml(state.importLastResult.nome_arquivo||"")}.</span></div>\` : ""}
+
+    <section class="import-step">
+      <div class="step-title"><span>1</span><div><h2>Selecionar arquivo</h2><p>CSV em UTF-8 ou Windows-1252, separado por vírgula ou ponto e vírgula.</p></div></div>
+      <label class="file-drop"><input id="importFile" type="file" accept=".csv,text/csv"><strong>\${state.importFileName || "Escolher arquivo CSV"}</strong><small>\${hasFile ? \`\${state.importRows.length} linha(s) encontradas\` : "Nenhum arquivo selecionado"}</small></label>
+    </section>
+
+    \${hasFile ? \`<section class="import-step">
+      <div class="step-title"><span>2</span><div><h2>Mapear colunas</h2><p>Item do Catálogo e Aquisição são obrigatórios. Informe Centro de custo por nome, código ou ambos.</p></div></div>
+      <div class="mapping-grid">\${IMPORT_FIELDS.map(([f,l]) => \`<label>\${l}<select data-import-map="\${f}">\${mappingOptions(state.importMapping[f])}</select></label>\`).join("")}</div>
+      <div class="import-note"><strong>Regra de classificação:</strong> o Tipo será sempre herdado do Catálogo. A classificação do arquivo é usada apenas para avisar divergências.</div>
+      <div class="import-actions"><button class="primary-button" data-action="validate-import" \${state.importBusy?"disabled":""}>Simular importação</button></div>
+    </section>\` : ""}
+
+    \${simulation ? \`<section class="import-step">
+      <div class="step-title"><span>3</span><div><h2>Resultado da simulação</h2><p>Nenhum patrimônio foi gravado. Esta etapa é somente leitura.</p></div></div>
+      <div class="import-summary import-summary-wide">
+        <article><strong>\${Number(summary.total||0)}</strong><span>Linhas</span></article>
+        <article><strong>\${Number(summary.catalogo_encontrado||0)}</strong><span>Catálogo reconhecido</span></article>
+        <article><strong>\${Number(summary.centros_encontrados||0)}</strong><span>Centros reconhecidos</span></article>
+        <article><strong>\${Number(summary.warning||0)}</strong><span>Com avisos</span></article>
+        <article><strong>\${Number(summary.error||0)}</strong><span>Com erros</span></article>
+        <article><strong>\${Number(summary.grupos_id_ses||0)}</strong><span>Grupos ID SES</span></article>
+      </div>
+
+      <div class="table-wrap import-preview-table"><table class="import-table">
+        <thead><tr><th>Linha</th><th>Item do Catálogo</th><th>Centro</th><th>ID SES</th><th>Valor final</th><th>Situação</th></tr></thead>
+        <tbody>\${simulation.linhas.slice(0,250).map(row=>\`<tr>
+          <td>\${row.linha}</td>
+          <td><strong>\${escapeHtml(row.item_catalogo?.descricao||row.descricao_catalogo||"—")}</strong><small class="row-note">\${row.catalog_match==="ALIAS"?"Via de-para":row.catalog_match==="EXATO"?"Correspondência exata":"Não reconhecido"}</small></td>
+          <td>\${escapeHtml(row.centro?.nome||"—")}</td>
+          <td>\${escapeHtml(row.id_ses_original||"—")}</td>
+          <td>\${row.valor_final!=null&&Number.isFinite(Number(row.valor_final))?money(Number(row.valor_final)):"—"}</td>
+          <td><span class="validation-\${row.level}">\${escapeHtml([...row.errors,...row.warnings].join(" · ")||"Pronto")}</span></td>
+        </tr>\`).join("")}</tbody>
+      </table></div>
+      \${simulation.linhas.length>250?'<p class="import-note">Mostrando as primeiras 250 linhas. Todas as linhas foram validadas.</p>':""}
+    </section>\` : ""}
+
+    \${importDuplicateGroupsHtml()}
+
+    \${simulation ? \`<section class="import-step import-final-step">
+      <div class="step-title"><span>\${(simulation.grupos_id_ses||[]).length?5:4}</span><div><h2>Confirmação final</h2><p>O servidor repetirá todas as validações. Se uma única linha falhar, o PostgreSQL desfaz o lote inteiro.</p></div></div>
+      \${resolution.hardErrors>0 ? \`<div class="catalog-alert error"><strong>\${resolution.hardErrors} linha(s) ainda possuem erro.</strong><span>Corrija o arquivo ou o Catálogo/Centro de Custo e simule novamente.</span></div>\` : ""}
+      \${pendingGroups>0 ? \`<div class="catalog-alert warning"><strong>\${pendingGroups} grupo(s) de ID SES aguardam decisão.</strong><span>Nenhuma identificação será removida sem sua escolha.</span></div>\` : ""}
+      \${resolution.ready ? '<div class="catalog-alert success"><strong>Lote pronto para importação.</strong><span>A gravação será atômica: tudo ou nada.</span></div>' : ""}
+      <div class="import-actions">
+        <button class="ghost-button" data-action="clear-import-simulation">Limpar simulação</button>
+        <button class="primary-button" data-action="run-import" \${!resolution.ready||state.importBusy?"disabled":""}>\${state.importBusy?"Importando…":\`Importar \${Number(summary.total||0)} patrimônio(s)\`}</button>
+      </div>
+    </section>\` : ""}
+
+    <section class="panel import-history-panel">
+      <div class="panel-header"><div><h2>Histórico de importações</h2><small>Lotes concluídos com sucesso.</small></div></div>
+      \${importHistoryHtml()}
+    </section>
+  \`;
+
   document.querySelector("#importFile")?.addEventListener("change", handleImportFile);
-  document.querySelectorAll("[data-import-map]").forEach((el) => el.addEventListener("change", () => { state.importMapping[el.dataset.importMap] = el.value; state.importValidated = []; renderImport(); }));
-  document.querySelector('[data-action="validate-import"]')?.addEventListener("click", validateImport);
-  document.querySelector('[data-action="run-import"]')?.addEventListener("click", runImport);
+  document.querySelectorAll("[data-import-map]").forEach(el=>el.addEventListener("change",()=>{
+    state.importMapping[el.dataset.importMap]=el.value;
+    resetImportSimulation();
+    renderImport();
+  }));
+  document.querySelector('[data-action="validate-import"]')?.addEventListener("click",validateImport);
+  document.querySelector('[data-action="run-import"]')?.addEventListener("click",runImport);
+  document.querySelector('[data-action="clear-import-simulation"]')?.addEventListener("click",()=>{
+    resetImportSimulation();
+    renderImport();
+  });
+  document.querySelectorAll(".duplicate-choice").forEach(select=>select.addEventListener("change",()=>{
+    state.importDuplicateChoices[select.dataset.duplicateKey]=select.value;
+    renderImport();
+  }));
+
+  if(!state.importHistoryLoaded) refreshImportHistory();
 }
 
 async function handleImportFile(event) {
-  const file = event.target.files?.[0]; if (!file) return;
+  const file=event.target.files?.[0];
+  if(!file) return;
   try {
-    const parsed = parseCsv(await file.text());
-    state.importFileName = file.name; state.importHeaders = parsed.headers; state.importRows = parsed.rows; state.importMapping = guessMapping(parsed.headers); state.importValidated = []; renderImport();
-  } catch (error) { toast(error.message, "error"); }
+    const parsed=parseCsv(await readImportCsvFile(file));
+    state.importFileName=file.name;
+    state.importHeaders=parsed.headers;
+    state.importRows=parsed.rows;
+    state.importMapping=guessMapping(parsed.headers);
+    state.importLastResult=null;
+    resetImportSimulation();
+    renderImport();
+  } catch(error) {
+    toast(\`Não foi possível ler o arquivo: \${error.message}\`,"error");
+  }
 }
 
-function parseImportDate(value) {
-  const raw = String(value || "").trim(); if (!raw) return new Date().toISOString().slice(0,10);
-  const br = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-  if (br) return `${br[3]}-${br[2].padStart(2,"0")}-${br[1].padStart(2,"0")}`;
-  const d = new Date(raw); return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0,10);
-}
-function mapTipo(value) { const n=normalizeText(value); if (/informat|comput|ti/.test(n)) return 3; if (/mobil|moveis|cadeira|mesa|armario/.test(n)) return 2; if (/medic|hospital|equip/.test(n)) return 1; return null; }
-function mapAquisicao(value) { const n=normalizeText(value); if (/contrato/.test(n) && /gestao/.test(n)) return "CONTRATO_GESTAO"; if (/doa/.test(n)) return "DOACAO"; if (/loca|alug/.test(n)) return "LOCACAO"; if (/compra|proprio|aquis/.test(n)) return "COMPRA"; return null; }
+async function validateImport() {
+  if(state.importBusy) return;
+  const missing=[];
+  if(!state.importMapping.descricao_catalogo) missing.push("Item do Catálogo");
+  if(!state.importMapping.aquisicao) missing.push("Aquisição");
+  if(!state.importMapping.centro && !state.importMapping.centro_codigo) missing.push("Centro de custo ou Código do centro");
+  if(missing.length) {
+    toast(\`Mapeie os campos obrigatórios: \${missing.join(", ")}.\`,"error");
+    return;
+  }
 
-function validateImport() {
-  const required=["descricao","tipo","aquisicao","centro"];
-  const missing=required.filter((f)=>!state.importMapping[f]); if(missing.length){toast("Mapeie todos os quatro campos obrigatórios.","error");return;}
-  const centersByName=new Map(state.centers.map(c=>[normalizeText(c.nome),c]));
-  const existingSes=new Set(state.assets.map(a=>normalizeText(a.id_ses)).filter(Boolean));
-  const seenSes=new Set();
-  state.importValidated=state.importRows.map((row,index)=>{
-    const val=(f)=>String(row[state.importMapping[f]]??"").trim(); const messages=[]; let level="ok";
-    const center=centersByName.get(normalizeText(val("centro"))); const tipo=mapTipo(val("tipo")); const aquisicao=mapAquisicao(val("aquisicao")); const date=parseImportDate(val("data"));
-    if(!val("descricao")) messages.push("Descrição vazia"); if(!center) messages.push("Centro não encontrado"); if(!tipo) messages.push("Tipo não reconhecido"); if(!aquisicao) messages.push("Aquisição não reconhecida"); if(!date) messages.push("Data inválida");
-    const idSes=val("id_ses")||null; if(idSes && (existingSes.has(normalizeText(idSes))||seenSes.has(normalizeText(idSes)))) messages.push("ID SES duplicada"); if(idSes) seenSes.add(normalizeText(idSes));
-    let value=null; if(val("valor")){ value=normalizeMoney(val("valor")); if(!Number.isFinite(value)||value<0) messages.push("Valor inválido"); }
-    if(messages.length) level="error"; else if(!idSes||value===null){level="warning";messages.push(!idSes&&value===null?"Sem ID SES e sem valor":!idSes?"Sem ID SES":"Sem valor");}
-    return {line:index+2,level,messages,centerName:center?.nome,payload:{id_ses:idSes,descricao:val("descricao"),descricao_padrao_id:null,data_aquisicao:date,valor_aquisicao:value,nota_fiscal_numero:val("nota")||null,centro_custo_id:center?.id||null,tipo_id:tipo,marca_modelo:val("marca")||null,tipo_aquisicao:aquisicao,estado_conservacao:"BEM_CONSERVADO",status:"ATIVO"}};
-  }); renderImport();
+  state.importBusy=true;
+  renderImport();
+  try {
+    state.importSimulation=await simulateAssetImport({linhas:importSourceRows()});
+    state.importValidated=state.importSimulation.linhas||[];
+    state.importDuplicateChoices={};
+    toast("Simulação concluída. Nenhum dado foi gravado.","success");
+  } catch(error) {
+    toast(\`Não foi possível simular a importação: \${error.message}\`,"error");
+  } finally {
+    state.importBusy=false;
+    renderImport();
+  }
 }
 
 async function runImport() {
-  if(!state.importValidated.length||state.importValidated.some(r=>r.level==="error")) return;
-  if(!window.confirm(`Importar ${state.importValidated.length} patrimônios?`)) return;
-  state.importBusy=true; renderImport(); let imported=0;
-  try{
-    for(const row of state.importValidated){ const asset=await createAsset(row.payload); state.assets.unshift(asset); imported++; }
-    toast(`${imported} patrimônio(s) importado(s) com sucesso.`,"success");
-    state.importFileName="";state.importHeaders=[];state.importRows=[];state.importMapping={};state.importValidated=[];state.currentView="patrimonios";render();
-  }catch(error){toast(`Importação interrompida após ${imported} registro(s): ${error.message}`,"error");}
-  finally{state.importBusy=false;}
+  const resolution=importResolutionState();
+  if(!resolution.ready || state.importBusy) return;
+
+  const total=resolution.rows.length;
+  const cleared=state.importSimulation.linhas.filter(row=>row.duplicate_key && !resolution.rows.find(final=>final.linha===row.linha)?.id_ses).length;
+  const message=[
+    \`Confirmar a importação de \${total} patrimônios?\`,
+    "",
+    "O lote será gravado em uma única transação.",
+    "Se qualquer linha falhar, nenhum patrimônio será mantido.",
+    cleared ? \`\${cleared} linha(s) serão importadas sem ID SES conforme suas decisões.\` : ""
+  ].filter(Boolean).join("\\n");
+
+  if(!window.confirm(message)) return;
+
+  state.importBusy=true;
+  renderImport();
+  try {
+    const result=await applyAssetImport({
+      nome_arquivo:state.importFileName,
+      linhas:resolution.rows
+    });
+
+    state.importLastResult=result;
+    state.assets=await listAssets();
+    state.recentHistory=[];
+    state.importHistoryLoaded=false;
+    state.importFileName="";
+    state.importHeaders=[];
+    state.importRows=[];
+    state.importMapping={};
+    resetImportSimulation();
+    toast(\`\${result.total_importado} patrimônio(s) importado(s) com sucesso.\`,"success");
+    renderImport();
+  } catch(error) {
+    toast(\`Importação não aplicada: \${error.message}\`,"error");
+    state.importBusy=false;
+    renderImport();
+    return;
+  }
+  state.importBusy=false;
 }
 
 function placeholder(title, description) {
