@@ -1129,3 +1129,13 @@ button:disabled { opacity: .65; cursor: wait; }
 .report-template-preview-signatures span{min-width:120px;flex:1;text-align:center;border-top:1px solid var(--border);padding-top:7px;font-size:11px;color:var(--muted)}
 @media(max-width:1000px){.label-a4-controls{grid-template-columns:1fr 1fr}.label-a4-controls .primary-button{grid-column:1/-1}}
 @media(max-width:700px){.label-a4-controls{grid-template-columns:1fr}.label-a4-help{border-left:0;border-top:2px solid var(--border);padding:10px 0}.label-selection-toolbar{padding:12px}.report-template-preview{padding:13px}}
+
+/* Usuários e permissões 1.9.0 */
+.user-admin-form{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px;padding:16px 20px;align-items:end}
+.user-admin-form .primary-button,.user-admin-form .ghost-button{justify-self:start}
+.user-admin-note{padding:0 20px 12px;color:var(--muted);font-size:12px}
+.user-permission-list{display:grid;gap:8px;margin:14px 0}
+.user-permission-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,225px);gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:9px}
+.user-permission-row span{display:grid;gap:3px}
+.user-permission-row small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+@media(max-width:700px){.user-admin-form,.user-permission-row{grid-template-columns:1fr}}
