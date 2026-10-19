@@ -4053,6 +4053,147 @@ async function canvasBlob(canvas) {
   return await new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Falha ao gerar PNG.")), "image/png"));
 }
 
+async function qrDataUrlForAsset(asset, size=220) {
+  if(!window.QRCode) throw new Error("Biblioteca de QR Code não carregada.");
+  const holder=document.createElement("div");
+  holder.style.cssText="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;background:#fff";
+  document.body.appendChild(holder);
+  try {
+    new window.QRCode(holder,{
+      text:assetPublicUrl(asset),
+      width:size,
+      height:size,
+      colorDark:"#000000",
+      colorLight:"#ffffff",
+      correctLevel:window.QRCode.CorrectLevel.L
+    });
+    await new Promise(resolve=>setTimeout(resolve,20));
+    const canvas=holder.querySelector("canvas");
+    if(canvas) return canvas.toDataURL("image/png");
+    const img=holder.querySelector("img");
+    if(img?.src) return img.src;
+    throw new Error(`QR Code não foi gerado para ${asset.id_interna}.`);
+  } finally {
+    holder.remove();
+  }
+}
+
+async function printSelectedLabelsA4() {
+  if(state.labelPrintBusy) return;
+  const assets=sortAssets(
+    state.assets.filter(asset=>state.labelSelected.has(asset.id) && !asset.removido),
+    "id"
+  );
+  if(!assets.length) return;
+  const start=Math.min(30,Math.max(1,Number(state.labelStartPosition)||1));
+  const popup=window.open("","_blank","width=1000,height=800");
+  if(!popup) {
+    toast("O navegador bloqueou a janela de impressão.","error");
+    return;
+  }
+
+  popup.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas Patrimônio+</title></head><body style="font-family:Arial,sans-serif;padding:30px"><h2>Gerando etiquetas…</h2><p>Não feche esta janela.</p></body></html>');
+  popup.document.close();
+
+  state.labelPrintBusy=true;
+  if(state.currentView==="etiquetas") renderLabels();
+
+  try {
+    const prepared=[];
+    for(let index=0; index<assets.length; index++) {
+      const asset=assets[index];
+      prepared.push({
+        asset,
+        qr:await qrDataUrlForAsset(asset,210)
+      });
+      if(index>0 && index%50===0) await new Promise(resolve=>setTimeout(resolve,0));
+    }
+
+    const blanks=start-1;
+    const totalSlots=blanks+prepared.length;
+    const pageCount=Math.ceil(totalSlots/30);
+    const pages=Array.from({length:pageCount},()=>Array(30).fill(null));
+    prepared.forEach((entry,index)=>{
+      const absolute=blanks+index;
+      pages[Math.floor(absolute/30)][absolute%30]=entry;
+    });
+
+    const bgUrl=new URL("./assets/layout-etiqueta-patrimonio.png",window.location.href).href;
+    const pagesHtml=pages.map((page,pageIndex)=>`
+      <section class="sheet">
+        ${page.map(entry=>`<div class="slot">${entry ? `
+          <div class="label" style="background-image:url('${escapeHtml(bgUrl)}')">
+            <img class="qr" src="${escapeHtml(entry.qr)}" alt="">
+            <div class="label-id">${escapeHtml(entry.asset.id_interna)}</div>
+          </div>
+        ` : ""}</div>`).join("")}
+      </section>
+    `).join("");
+
+    popup.document.open();
+    popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas Patrimônio+ — ${assets.length}</title>
+      <style>
+        @page{size:A4 portrait;margin:0}
+        *{box-sizing:border-box}
+        html,body{margin:0;padding:0;background:#fff}
+        body{font-family:Arial,sans-serif}
+        .sheet{
+          width:210mm;
+          height:297mm;
+          padding:5mm;
+          display:grid;
+          grid-template-columns:repeat(3,1fr);
+          grid-template-rows:repeat(10,1fr);
+          break-after:page;
+          page-break-after:always;
+          overflow:hidden;
+        }
+        .sheet:last-child{break-after:auto;page-break-after:auto}
+        .slot{display:flex;align-items:center;justify-content:center;overflow:hidden}
+        .label{
+          position:relative;
+          width:65mm;
+          height:25.32mm;
+          background-repeat:no-repeat;
+          background-size:100% 100%;
+          background-position:center;
+          overflow:hidden;
+        }
+        .qr{
+          position:absolute;
+          left:5.51%;
+          top:12.38%;
+          width:30.50%;
+          height:78.33%;
+          object-fit:fill;
+          background:#fff;
+        }
+        .label-id{
+          position:absolute;
+          left:44%;
+          right:3%;
+          top:74%;
+          height:18%;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          color:#fff;
+          font-weight:900;
+          font-size:10pt;
+          line-height:1;
+          white-space:nowrap;
+        }
+      </style></head><body>${pagesHtml}<script>window.addEventListener("load",()=>{setTimeout(()=>window.print(),150);});<\/script></body></html>`);
+    popup.document.close();
+  } catch(error) {
+    popup.close();
+    toast(`Não foi possível gerar a folha de etiquetas: ${error.message}`,"error");
+  } finally {
+    state.labelPrintBusy=false;
+    if(state.currentView==="etiquetas") renderLabels();
+  }
+}
+
 async function generateSelectedLabels() {
   const assets = state.assets.filter(a=>state.labelSelected.has(a.id) && !a.removido);
   if (!assets.length) return;
