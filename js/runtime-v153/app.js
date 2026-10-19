@@ -5,7 +5,8 @@ import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/catalogo.js?v=1.6.0";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
-import { renderLogin } from "./pages/login.js";
+import { renderLogin, renderPasswordChange } from "./pages/login.js";
+import { renderUsers } from "./pages/users.js?v=1.9.0";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
@@ -112,6 +113,7 @@ function shell() {
         <button class="nav-item" data-view="relatorios">Relatórios</button>
         <button class="nav-item" data-view="historico">Histórico</button>
         <button class="nav-item" data-view="configuracoes">Configurações</button>
+        ${hasAccess("usuarios.consultar") ? '<button class="nav-item" data-view="usuarios">Usuários e permissões</button>' : ""}
       </nav>
       <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
     </aside>
@@ -305,6 +307,7 @@ function render() {
     case "relatorios": renderReports(); break;
     case "historico": renderHistory(); break;
     case "configuracoes": renderSettings(); break;
+    case "usuarios": if(hasAccess("usuarios.consultar")) renderUsers(document.querySelector("#viewRoot")); else renderDashboard(); break;
     default: renderDashboard();
   }
 }
@@ -648,6 +651,7 @@ function renderHistory() {
 function userProfile() {
   return String(state.session?.user?.perfil || "").toUpperCase();
 }
+function hasAccess(code) { return state.session?.user?.permissoes?.[code] === true; }
 function canEditAssets() { return state.session?.user?.permissoes?.["patrimonios.editar"] === true; }
 function canMoveAssets() { return state.session?.user?.permissoes?.["patrimonios.movimentar"] === true; }
 function canMaintainAssets() { return state.session?.user?.permissoes?.["manutencoes.abrir"] === true; }
@@ -4577,11 +4581,11 @@ async function start() {
   }
 
   state.session = await getSession();
-  if (!state.session) renderLogin(appRoot); else if(state.session.user?.troca_senha_obrigatoria) renderLogin(appRoot); else { shell(); await loadData(); }
+  if (!state.session) renderLogin(appRoot); else if(state.session.user?.troca_senha_obrigatoria) renderPasswordChange(appRoot); else { shell(); await loadData(); }
   onAuthChange(async (session) => {
     if (publicTokenFromHash()) return;
     state.session = session;
-    if (!session) renderLogin(appRoot); else if(session.user?.troca_senha_obrigatoria) renderLogin(appRoot); else { shell(); await loadData(); }
+    if (!session) renderLogin(appRoot); else if(session.user?.troca_senha_obrigatoria) renderPasswordChange(appRoot); else { shell(); await loadData(); }
   });
 }
 
