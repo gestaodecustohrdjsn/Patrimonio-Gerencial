@@ -24,6 +24,11 @@ BEGIN
   END IF;
 END $$;
 
+-- Unicidade de login sem diferenciar caixa ou espaços laterais.
+-- Se houver duplicados legados, a migration falhará e fará rollback integral.
+CREATE UNIQUE INDEX IF NOT EXISTS usuarios_email_normalizado_unico
+  ON usuarios ((lower(btrim(email))));
+
 CREATE TABLE IF NOT EXISTS permissoes (
   codigo text PRIMARY KEY,
   modulo text NOT NULL,
@@ -255,6 +260,7 @@ CREATE OR REPLACE FUNCTION atualizar_permissoes_individuais_patrimonio(
 ) RETURNS void LANGUAGE plpgsql AS $
 DECLARE
   item jsonb;
+  anteriores jsonb;
 BEGIN
   IF p_usuario = p_administrador THEN
     RAISE EXCEPTION 'Não é permitido alterar as próprias permissões';
@@ -273,14 +279,16 @@ BEGIN
       RAISE EXCEPTION 'Permissão individual inválida';
     END IF;
   END LOOP;
+  SELECT coalesce(jsonb_agg(jsonb_build_object('codigo',permissao_codigo,'permitido',permitido)),'[]'::jsonb)
+  INTO anteriores FROM usuarios_permissoes WHERE usuario_id=p_usuario;
   DELETE FROM usuarios_permissoes WHERE usuario_id=p_usuario;
   INSERT INTO usuarios_permissoes(usuario_id,permissao_codigo,permitido,atualizado_por)
   SELECT p_usuario,x.value->>'codigo',(x.value->>'permitido')::boolean,p_administrador
   FROM jsonb_array_elements(p_excecoes) AS x(value);
   UPDATE sessoes SET revogado_em=now()
   WHERE usuario_id=p_usuario AND revogado_em IS NULL;
-  INSERT INTO historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
-  VALUES('usuarios',p_usuario,'PERMISSOES_ALTERADAS',p_excecoes,p_administrador);
+  INSERT INTO historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+  VALUES('usuarios',p_usuario,'PERMISSOES_ALTERADAS',anteriores,p_excecoes,p_administrador);
 END;
 $;
 
