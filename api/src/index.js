@@ -318,7 +318,7 @@ async function simulateAssetImport(sql, rawRows) {
         row.duplicate_key=key;
         row.duplicate_existing=exists;
         row.needs_id_resolution=true;
-        row.warnings.push(exists ? "ID SES já existe no banco e precisa ser removida deste lote" : "ID SES repetida no arquivo; escolha qual linha manterá a identificação");
+        row.warnings.push(exists ? "ID SES já existe no banco; confirme se deseja compartilhá-la também neste lote" : "ID SES repetida no arquivo; revise como deseja mantê-la");
       }
     }
   }
@@ -895,10 +895,19 @@ export default {
         if(!nomeArquivo) return responseJson({ok:false,error:"Nome do arquivo é obrigatório."},400,env,request);
 
         const simulacao=await simulateAssetImport(sql,linhas);
-        if(simulacao.resumo.error>0 || simulacao.grupos_id_ses.length>0) {
+        const confirmadas=new Set(
+          (Array.isArray(b.id_ses_confirmadas)?b.id_ses_confirmadas:[])
+            .map(value=>normalizeCatalogText(value))
+            .filter(Boolean)
+        );
+        const gruposPendentes=simulacao.grupos_id_ses.filter(group=>!confirmadas.has(group.key));
+        if(simulacao.resumo.error>0 || gruposPendentes.length>0) {
           return responseJson({
             ok:false,
-            error:"O lote final ainda possui erros ou ID SES pendentes. Execute a simulação novamente.",
+            error:simulacao.resumo.error>0
+              ? "O lote final ainda possui erros. Execute a simulação novamente."
+              : "Há ID SES duplicada sem confirmação explícita.",
+            grupos_pendentes:gruposPendentes,
             simulacao
           },409,env,request);
         }
