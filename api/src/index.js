@@ -539,9 +539,19 @@ export default {
         if(!constantTimeEqual(hash,old[0].password_hash)) return responseJson({ok:false,error:"Senha atual inválida."},403,env,request);
         const salt=randomSalt(); const iterations=310000;
         const newHash=await passwordHash(newPassword,salt,iterations);
-        await sql`update usuarios set password_hash=${newHash},password_salt=${salt},password_iterations=${iterations},troca_senha_obrigatoria=false,atualizado_em=now() where id=${user.id}::uuid`;
-        await sql`update sessoes set revogado_em=now() where usuario_id=${user.id}::uuid and revogado_em is null`;
-        await sql`insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id) values('usuarios',${user.id}::uuid,'SENHA_ALTERADA','{}'::jsonb,${user.id}::uuid)`;
+        await sql`
+          with senha_atualizada as (
+            update usuarios set password_hash=${newHash},password_salt=${salt},
+              password_iterations=${iterations},troca_senha_obrigatoria=false,atualizado_em=now()
+            where id=${user.id}::uuid returning id
+          ), sessoes_revogadas as (
+            update sessoes set revogado_em=now()
+            where usuario_id=${user.id}::uuid and revogado_em is null returning id
+          ), auditoria as (
+            insert into historico_alteracoes(tabela,registro_id,operacao,dados_novos,usuario_id)
+            select 'usuarios',id,'SENHA_ALTERADA','{}'::jsonb,${user.id}::uuid
+            from senha_atualizada returning id
+          ) select id from senha_atualizada`;
         return responseJson({ok:true,reautenticar:true},200,env,request);
       }
       if (request.method === "GET" && url.pathname === "/api/me" && user.troca_senha_obrigatoria) return responseJson({ok:true,user:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,perfil_acesso:user.perfil_acesso,troca_senha_obrigatoria:true,permissoes:{}}},200,env,request);
@@ -1464,6 +1474,7 @@ export default {
       console.error(error);
       const msg=String(error?.message||"");
       if(msg.startsWith("VALIDATION:")) return responseJson({ok:false,error:msg.slice("VALIDATION:".length)},400,env,request);
+      if ((error?.code==="23505" || msg.includes("duplicate key")) && (String(error?.constraint||"").includes("usuarios_email") || msg.includes("usuarios_email"))) return responseJson({ok:false,error:"Este e-mail já possui uma conta cadastrada. Consulte a listagem de usuários antes de tentar novamente."},409,env,request);
       if(msg.includes("duplicate key")&&msg.includes("id_ses")) return responseJson({ok:false,error:"Este ID SES já está cadastrado."},409,env,request);
       return responseJson({ok:false,error:"Erro interno no serviço."},500,env,request);
     }
