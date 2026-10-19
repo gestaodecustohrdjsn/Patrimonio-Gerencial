@@ -113,7 +113,7 @@ function shell() {
         <label class="full sigem-field"><span class="field-title">Item do Catálogo <span class="optional-note">(Opcional)</span></span><input id="sigemSearch" autocomplete="off" placeholder="Pesquise e selecione o item do Catálogo"><input id="descricaoPadraoId" type="hidden"><div id="sigemResults" class="search-results" hidden></div><small>Esta é a descrição principal exibida nas listagens quando houver vínculo com o catálogo.</small></label>
         <label class="full">Descrição complementar *<input id="descricao" required maxlength="180" placeholder="Ex.: preta com rodinhas"></label>
         <label>Tipo *<select id="tipo" required><option value="">Selecione</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="tipoSigemHint" class="sigem-type-hint">Sem item do Catálogo, o Tipo é definido manualmente.</small></label>
-        <label>ID SES<input id="idSes" maxlength="50"></label>
+        <label>ID SES<input id="idSes" maxlength="50"><small>Pode se repetir em casos legados, mas o sistema solicitará confirmação.</small></label>
       </div></fieldset>
 
       <fieldset class="form-section"><legend>Aquisição e valores</legend><div class="form-grid">
@@ -3298,6 +3298,24 @@ async function submitAsset(event) {
     if (!confirmSigemTypeOverride(payload.tipo_id, sigemType, state.selectedSigem?.descricao || "")) return;
     payload.confirmar_tipo_divergente = true;
   }
+
+  if (payload.id_ses) {
+    const key=normalizeText(payload.id_ses);
+    const current=state.assetFormMode==="edit" ? selectedAsset() : null;
+    const changed=state.assetFormMode==="create" || normalizeText(current?.id_ses)!==key;
+    const duplicates=changed
+      ? state.assets.filter(asset=>asset.id!==current?.id && normalizeText(asset.id_ses)===key)
+      : [];
+    if(duplicates.length) {
+      const refs=duplicates.slice(0,5).map(asset=>asset.id_interna).filter(Boolean).join(", ");
+      const ok=window.confirm(
+        `A ID SES "${payload.id_ses}" já está vinculada a ${duplicates.length} patrimônio(s)${refs?` (${refs})`:""}.\n\nA repetição é permitida, mas não é o cenário ideal. Deseja manter esta mesma ID SES também neste patrimônio?`
+      );
+      if(!ok) return;
+      payload.confirmar_id_ses_duplicada=true;
+    }
+  }
+
   button.disabled = true; button.textContent = "Salvando…";
   try {
     let saved;
