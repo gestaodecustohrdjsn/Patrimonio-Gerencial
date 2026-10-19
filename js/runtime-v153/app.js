@@ -2561,7 +2561,7 @@ function guessMapping(headers) {
 }
 
 function mappingOptions(selected) {
-  return \`<option value="">Não importar</option>\${state.importHeaders.map((h) => \`<option value="\${escapeHtml(h)}" \${h === selected ? "selected" : ""}>\${escapeHtml(h)}</option>\`).join("")}\`;
+  return `<option value="">Não importar</option>${state.importHeaders.map((h) => `<option value="${escapeHtml(h)}" ${h === selected ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}`;
 }
 
 async function readImportCsvFile(file) {
@@ -2608,37 +2608,37 @@ function importSourceRows() {
 function duplicateChoiceOptions(group) {
   const current=state.importDuplicateChoices[group.key]||"";
   const keepOptions=group.existing_in_db ? "" : group.linhas.map(row =>
-    \`<option value="KEEP:\${row.linha}" \${current===\`KEEP:\${row.linha}\`?"selected":""}>Manter ID na linha \${row.linha} — \${escapeHtml(row.descricao_catalogo)}</option>\`
+    `<option value="KEEP:${row.linha}" ${current===`KEEP:${row.linha}`?"selected":""}>Manter ID na linha ${row.linha} — ${escapeHtml(row.descricao_catalogo)}</option>`
   ).join("");
-  return \`
-    <option value="" \${!current?"selected":""}>Escolha como resolver…</option>
-    \${keepOptions}
-    <option value="CLEAR_ALL" \${current==="CLEAR_ALL"?"selected":""}>Importar todas estas linhas sem ID SES</option>
-  \`;
+  return `
+    <option value="" ${!current?"selected":""}>Escolha como resolver…</option>
+    ${keepOptions}
+    <option value="CLEAR_ALL" ${current==="CLEAR_ALL"?"selected":""}>Importar todas estas linhas sem ID SES</option>
+  `;
 }
 
 function importDuplicateGroupsHtml() {
   const groups=state.importSimulation?.grupos_id_ses||[];
   if (!groups.length) return "";
-  return \`
+  return `
     <section class="import-step import-duplicates-step">
       <div class="step-title"><span>4</span><div><h2>Resolver ID SES duplicadas</h2><p>Nenhuma ID será removida automaticamente. Escolha explicitamente qual patrimônio mantém a identificação, ou importe o grupo sem ID SES.</p></div></div>
       <div class="duplicate-group-list">
-        \${groups.map(group=>\`<article class="duplicate-group">
+        ${groups.map(group=>`<article class="duplicate-group">
           <div class="duplicate-group-head">
-            <div><strong>ID SES \${escapeHtml(group.id_ses)}</strong><small>\${group.existing_in_db?"Esta ID já existe no banco. Nenhuma linha deste lote pode mantê-la.":"Esta ID aparece em mais de uma linha do arquivo."}</small></div>
-            <span class="badge">\${group.linhas.length} linha(s)</span>
+            <div><strong>ID SES ${escapeHtml(group.id_ses)}</strong><small>${group.existing_in_db?"Esta ID já existe no banco. Nenhuma linha deste lote pode mantê-la.":"Esta ID aparece em mais de uma linha do arquivo."}</small></div>
+            <span class="badge">${group.linhas.length} linha(s)</span>
           </div>
           <div class="duplicate-lines">
-            \${group.linhas.map(row=>\`<div class="duplicate-line"><span>Linha \${row.linha}</span><strong>\${escapeHtml(row.descricao_catalogo)}</strong><small>\${escapeHtml(row.centro||"Centro não identificado")}</small></div>\`).join("")}
+            ${group.linhas.map(row=>`<div class="duplicate-line"><span>Linha ${row.linha}</span><strong>${escapeHtml(row.descricao_catalogo)}</strong><small>${escapeHtml(row.centro||"Centro não identificado")}</small></div>`).join("")}
           </div>
           <label>Decisão
-            <select class="duplicate-choice" data-duplicate-key="\${escapeHtml(group.key)}">\${duplicateChoiceOptions(group)}</select>
+            <select class="duplicate-choice" data-duplicate-key="${escapeHtml(group.key)}">${duplicateChoiceOptions(group)}</select>
           </label>
-        </article>\`).join("")}
+        </article>`).join("")}
       </div>
     </section>
-  \`;
+  `;
 }
 
 function importResolutionState() {
@@ -2681,15 +2681,15 @@ function importResolutionState() {
 function importHistoryHtml() {
   if(!state.importHistoryLoaded) return '<div class="loading">Carregando histórico de importações…</div>';
   if(!state.importHistory.length) return '<div class="empty">Nenhuma importação patrimonial concluída ainda.</div>';
-  return \`<div class="table-wrap"><table>
+  return `<div class="table-wrap"><table>
     <thead><tr><th>Data</th><th>Arquivo</th><th>Usuário</th><th>Importados</th></tr></thead>
-    <tbody>\${state.importHistory.map(item=>\`<tr>
-      <td>\${escapeHtml(historyDateTime(item.criado_em))}</td>
-      <td><strong>\${escapeHtml(item.nome_arquivo)}</strong></td>
-      <td>\${escapeHtml(item.usuario?.nome||"Sistema")}</td>
-      <td>\${Number(item.total_importado||0)}</td>
-    </tr>\`).join("")}</tbody>
-  </table></div>\`;
+    <tbody>${state.importHistory.map(item=>`<tr>
+      <td>${escapeHtml(historyDateTime(item.criado_em))}</td>
+      <td><strong>${escapeHtml(item.nome_arquivo)}</strong></td>
+      <td>${escapeHtml(item.usuario?.nome||"Sistema")}</td>
+      <td>${Number(item.total_importado||0)}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
 }
 
 async function refreshImportHistory() {
@@ -2699,7 +2699,7 @@ async function refreshImportHistory() {
     if(state.currentView==="importacao") renderImport();
   } catch(error) {
     state.importHistoryLoaded=true;
-    toast(\`Não foi possível carregar o histórico de importações: \${error.message}\`,"error");
+    toast(`Não foi possível carregar o histórico de importações: ${error.message}`,"error");
   }
 }
 
@@ -2715,66 +2715,66 @@ function renderImport() {
   const summary=simulation?.resumo||{};
   const pendingGroups=resolution.unresolved;
 
-  document.querySelector("#viewRoot").innerHTML = \`
+  document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header"><div><h1>Importação patrimonial segura</h1><p>Simule, resolva pendências e só então grave o lote inteiro em uma única transação.</p></div></div>
 
-    \${state.importLastResult ? \`<div class="catalog-alert success import-success-banner"><strong>Última importação concluída.</strong><span>\${Number(state.importLastResult.total_importado||0)} patrimônio(s) importado(s) do arquivo \${escapeHtml(state.importLastResult.nome_arquivo||"")}.</span></div>\` : ""}
+    ${state.importLastResult ? `<div class="catalog-alert success import-success-banner"><strong>Última importação concluída.</strong><span>${Number(state.importLastResult.total_importado||0)} patrimônio(s) importado(s) do arquivo ${escapeHtml(state.importLastResult.nome_arquivo||"")}.</span></div>` : ""}
 
     <section class="import-step">
       <div class="step-title"><span>1</span><div><h2>Selecionar arquivo</h2><p>CSV em UTF-8 ou Windows-1252, separado por vírgula ou ponto e vírgula.</p></div></div>
-      <label class="file-drop"><input id="importFile" type="file" accept=".csv,text/csv"><strong>\${state.importFileName || "Escolher arquivo CSV"}</strong><small>\${hasFile ? \`\${state.importRows.length} linha(s) encontradas\` : "Nenhum arquivo selecionado"}</small></label>
+      <label class="file-drop"><input id="importFile" type="file" accept=".csv,text/csv"><strong>${state.importFileName || "Escolher arquivo CSV"}</strong><small>${hasFile ? `${state.importRows.length} linha(s) encontradas` : "Nenhum arquivo selecionado"}</small></label>
     </section>
 
-    \${hasFile ? \`<section class="import-step">
+    ${hasFile ? `<section class="import-step">
       <div class="step-title"><span>2</span><div><h2>Mapear colunas</h2><p>Item do Catálogo e Aquisição são obrigatórios. Informe Centro de custo por nome, código ou ambos.</p></div></div>
-      <div class="mapping-grid">\${IMPORT_FIELDS.map(([f,l]) => \`<label>\${l}<select data-import-map="\${f}">\${mappingOptions(state.importMapping[f])}</select></label>\`).join("")}</div>
+      <div class="mapping-grid">${IMPORT_FIELDS.map(([f,l]) => `<label>${l}<select data-import-map="${f}">${mappingOptions(state.importMapping[f])}</select></label>`).join("")}</div>
       <div class="import-note"><strong>Regra de classificação:</strong> o Tipo será sempre herdado do Catálogo. A classificação do arquivo é usada apenas para avisar divergências.</div>
-      <div class="import-actions"><button class="primary-button" data-action="validate-import" \${state.importBusy?"disabled":""}>Simular importação</button></div>
-    </section>\` : ""}
+      <div class="import-actions"><button class="primary-button" data-action="validate-import" ${state.importBusy?"disabled":""}>Simular importação</button></div>
+    </section>` : ""}
 
-    \${simulation ? \`<section class="import-step">
+    ${simulation ? `<section class="import-step">
       <div class="step-title"><span>3</span><div><h2>Resultado da simulação</h2><p>Nenhum patrimônio foi gravado. Esta etapa é somente leitura.</p></div></div>
       <div class="import-summary import-summary-wide">
-        <article><strong>\${Number(summary.total||0)}</strong><span>Linhas</span></article>
-        <article><strong>\${Number(summary.catalogo_encontrado||0)}</strong><span>Catálogo reconhecido</span></article>
-        <article><strong>\${Number(summary.centros_encontrados||0)}</strong><span>Centros reconhecidos</span></article>
-        <article><strong>\${Number(summary.warning||0)}</strong><span>Com avisos</span></article>
-        <article><strong>\${Number(summary.error||0)}</strong><span>Com erros</span></article>
-        <article><strong>\${Number(summary.grupos_id_ses||0)}</strong><span>Grupos ID SES</span></article>
+        <article><strong>${Number(summary.total||0)}</strong><span>Linhas</span></article>
+        <article><strong>${Number(summary.catalogo_encontrado||0)}</strong><span>Catálogo reconhecido</span></article>
+        <article><strong>${Number(summary.centros_encontrados||0)}</strong><span>Centros reconhecidos</span></article>
+        <article><strong>${Number(summary.warning||0)}</strong><span>Com avisos</span></article>
+        <article><strong>${Number(summary.error||0)}</strong><span>Com erros</span></article>
+        <article><strong>${Number(summary.grupos_id_ses||0)}</strong><span>Grupos ID SES</span></article>
       </div>
 
       <div class="table-wrap import-preview-table"><table class="import-table">
         <thead><tr><th>Linha</th><th>Item do Catálogo</th><th>Centro</th><th>ID SES</th><th>Valor final</th><th>Situação</th></tr></thead>
-        <tbody>\${simulation.linhas.slice(0,250).map(row=>\`<tr>
-          <td>\${row.linha}</td>
-          <td><strong>\${escapeHtml(row.item_catalogo?.descricao||row.descricao_catalogo||"—")}</strong><small class="row-note">\${row.catalog_match==="ALIAS"?"Via de-para":row.catalog_match==="EXATO"?"Correspondência exata":"Não reconhecido"}</small></td>
-          <td>\${escapeHtml(row.centro?.nome||"—")}</td>
-          <td>\${escapeHtml(row.id_ses_original||"—")}</td>
-          <td>\${row.valor_final!=null&&Number.isFinite(Number(row.valor_final))?money(Number(row.valor_final)):"—"}</td>
-          <td><span class="validation-\${row.level}">\${escapeHtml([...row.errors,...row.warnings].join(" · ")||"Pronto")}</span></td>
-        </tr>\`).join("")}</tbody>
+        <tbody>${simulation.linhas.slice(0,250).map(row=>`<tr>
+          <td>${row.linha}</td>
+          <td><strong>${escapeHtml(row.item_catalogo?.descricao||row.descricao_catalogo||"—")}</strong><small class="row-note">${row.catalog_match==="ALIAS"?"Via de-para":row.catalog_match==="EXATO"?"Correspondência exata":"Não reconhecido"}</small></td>
+          <td>${escapeHtml(row.centro?.nome||"—")}</td>
+          <td>${escapeHtml(row.id_ses_original||"—")}</td>
+          <td>${row.valor_final!=null&&Number.isFinite(Number(row.valor_final))?money(Number(row.valor_final)):"—"}</td>
+          <td><span class="validation-${row.level}">${escapeHtml([...row.errors,...row.warnings].join(" · ")||"Pronto")}</span></td>
+        </tr>`).join("")}</tbody>
       </table></div>
-      \${simulation.linhas.length>250?'<p class="import-note">Mostrando as primeiras 250 linhas. Todas as linhas foram validadas.</p>':""}
-    </section>\` : ""}
+      ${simulation.linhas.length>250?'<p class="import-note">Mostrando as primeiras 250 linhas. Todas as linhas foram validadas.</p>':""}
+    </section>` : ""}
 
-    \${importDuplicateGroupsHtml()}
+    ${importDuplicateGroupsHtml()}
 
-    \${simulation ? \`<section class="import-step import-final-step">
-      <div class="step-title"><span>\${(simulation.grupos_id_ses||[]).length?5:4}</span><div><h2>Confirmação final</h2><p>O servidor repetirá todas as validações. Se uma única linha falhar, o PostgreSQL desfaz o lote inteiro.</p></div></div>
-      \${resolution.hardErrors>0 ? \`<div class="catalog-alert error"><strong>\${resolution.hardErrors} linha(s) ainda possuem erro.</strong><span>Corrija o arquivo ou o Catálogo/Centro de Custo e simule novamente.</span></div>\` : ""}
-      \${pendingGroups>0 ? \`<div class="catalog-alert warning"><strong>\${pendingGroups} grupo(s) de ID SES aguardam decisão.</strong><span>Nenhuma identificação será removida sem sua escolha.</span></div>\` : ""}
-      \${resolution.ready ? '<div class="catalog-alert success"><strong>Lote pronto para importação.</strong><span>A gravação será atômica: tudo ou nada.</span></div>' : ""}
+    ${simulation ? `<section class="import-step import-final-step">
+      <div class="step-title"><span>${(simulation.grupos_id_ses||[]).length?5:4}</span><div><h2>Confirmação final</h2><p>O servidor repetirá todas as validações. Se uma única linha falhar, o PostgreSQL desfaz o lote inteiro.</p></div></div>
+      ${resolution.hardErrors>0 ? `<div class="catalog-alert error"><strong>${resolution.hardErrors} linha(s) ainda possuem erro.</strong><span>Corrija o arquivo ou o Catálogo/Centro de Custo e simule novamente.</span></div>` : ""}
+      ${pendingGroups>0 ? `<div class="catalog-alert warning"><strong>${pendingGroups} grupo(s) de ID SES aguardam decisão.</strong><span>Nenhuma identificação será removida sem sua escolha.</span></div>` : ""}
+      ${resolution.ready ? '<div class="catalog-alert success"><strong>Lote pronto para importação.</strong><span>A gravação será atômica: tudo ou nada.</span></div>' : ""}
       <div class="import-actions">
         <button class="ghost-button" data-action="clear-import-simulation">Limpar simulação</button>
-        <button class="primary-button" data-action="run-import" \${!resolution.ready||state.importBusy?"disabled":""}>\${state.importBusy?"Importando…":\`Importar \${Number(summary.total||0)} patrimônio(s)\`}</button>
+        <button class="primary-button" data-action="run-import" ${!resolution.ready||state.importBusy?"disabled":""}>${state.importBusy?"Importando…":`Importar ${Number(summary.total||0)} patrimônio(s)`}</button>
       </div>
-    </section>\` : ""}
+    </section>` : ""}
 
     <section class="panel import-history-panel">
       <div class="panel-header"><div><h2>Histórico de importações</h2><small>Lotes concluídos com sucesso.</small></div></div>
-      \${importHistoryHtml()}
+      ${importHistoryHtml()}
     </section>
-  \`;
+  `;
 
   document.querySelector("#importFile")?.addEventListener("change", handleImportFile);
   document.querySelectorAll("[data-import-map]").forEach(el=>el.addEventListener("change",()=>{
@@ -2809,7 +2809,7 @@ async function handleImportFile(event) {
     resetImportSimulation();
     renderImport();
   } catch(error) {
-    toast(\`Não foi possível ler o arquivo: \${error.message}\`,"error");
+    toast(`Não foi possível ler o arquivo: ${error.message}`,"error");
   }
 }
 
@@ -2820,7 +2820,7 @@ async function validateImport() {
   if(!state.importMapping.aquisicao) missing.push("Aquisição");
   if(!state.importMapping.centro && !state.importMapping.centro_codigo) missing.push("Centro de custo ou Código do centro");
   if(missing.length) {
-    toast(\`Mapeie os campos obrigatórios: \${missing.join(", ")}.\`,"error");
+    toast(`Mapeie os campos obrigatórios: ${missing.join(", ")}.`,"error");
     return;
   }
 
@@ -2832,7 +2832,7 @@ async function validateImport() {
     state.importDuplicateChoices={};
     toast("Simulação concluída. Nenhum dado foi gravado.","success");
   } catch(error) {
-    toast(\`Não foi possível simular a importação: \${error.message}\`,"error");
+    toast(`Não foi possível simular a importação: ${error.message}`,"error");
   } finally {
     state.importBusy=false;
     renderImport();
@@ -2846,11 +2846,11 @@ async function runImport() {
   const total=resolution.rows.length;
   const cleared=state.importSimulation.linhas.filter(row=>row.duplicate_key && !resolution.rows.find(final=>final.linha===row.linha)?.id_ses).length;
   const message=[
-    \`Confirmar a importação de \${total} patrimônios?\`,
+    `Confirmar a importação de ${total} patrimônios?`,
     "",
     "O lote será gravado em uma única transação.",
     "Se qualquer linha falhar, nenhum patrimônio será mantido.",
-    cleared ? \`\${cleared} linha(s) serão importadas sem ID SES conforme suas decisões.\` : ""
+    cleared ? `${cleared} linha(s) serão importadas sem ID SES conforme suas decisões.` : ""
   ].filter(Boolean).join("\\n");
 
   if(!window.confirm(message)) return;
@@ -2872,10 +2872,10 @@ async function runImport() {
     state.importRows=[];
     state.importMapping={};
     resetImportSimulation();
-    toast(\`\${result.total_importado} patrimônio(s) importado(s) com sucesso.\`,"success");
+    toast(`${result.total_importado} patrimônio(s) importado(s) com sucesso.`,"success");
     renderImport();
   } catch(error) {
-    toast(\`Importação não aplicada: \${error.message}\`,"error");
+    toast(`Importação não aplicada: ${error.message}`,"error");
     state.importBusy=false;
     renderImport();
     return;
