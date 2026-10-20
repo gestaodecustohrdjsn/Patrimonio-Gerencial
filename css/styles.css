@@ -1139,3 +1139,10 @@ button:disabled { opacity: .65; cursor: wait; }
 .user-permission-row span{display:grid;gap:3px}
 .user-permission-row small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 @media(max-width:700px){.user-admin-form,.user-permission-row{grid-template-columns:1fr}}
+
+/* Identificação da conta no rodapé lateral (homologação 1.9.2) */
+.sidebar-account{display:flex;align-items:center;gap:10px;min-width:0;padding:11px 9px;margin-bottom:9px;background:var(--surface-soft);border:1px solid var(--border);border-radius:11px}
+.sidebar-account-avatar{width:34px;height:34px;min-width:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--primary);color:white;font-size:14px;font-weight:700}
+.sidebar-account-details{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.sidebar-account-details strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text)}
+.sidebar-account-details small{font-size:11px;color:var(--muted)}
