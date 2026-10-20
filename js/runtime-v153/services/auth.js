@@ -28,15 +28,30 @@ export async function signIn(email, password) {
     body: { email, password }
   });
   storeToken(data.token);
-  const session = { user: data.user };
+  let user=data.user;
+  if (!user.troca_senha_obrigatoria) {
+    const me=await apiRequest("/api/me");
+    user=me.user;
+  }
+  const session = { user };
   notify(session);
   return session;
 }
 
 export async function signOut() {
-  try { await apiRequest("/api/auth/logout", { method: "POST" }); } catch {}
+  const token=getStoredToken();
   storeToken(null);
   notify(null);
+  if (!token) return;
+  try {
+    await apiRequest("/api/auth/logout", {
+      method:"POST",
+      auth:false,
+      headers:{"Authorization":`Bearer ${token}`}
+    });
+  } catch {
+    // Logout local imediato; tokens já revogados pelo servidor permanecem inválidos.
+  }
 }
 
 export function onAuthChange(callback) {

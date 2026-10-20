@@ -5,7 +5,8 @@ import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/catalogo.js?v=1.6.0";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
-import { renderLogin } from "./pages/login.js";
+import { renderLogin, renderPasswordChange } from "./pages/login.js?v=1.9.1";
+import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
@@ -107,16 +108,17 @@ function shell() {
         <button class="nav-item" data-view="patrimonios">Patrimônios</button>
         <button class="nav-item" data-view="centros">Centros de custo</button>
         <button class="nav-item" data-view="catalogo">Catálogo</button>
-        ${canEditAssets() ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
+        ${hasAccess("importacoes.simular") ? '<button class="nav-item" data-view="importacao">Importação</button>' : ""}
         <button class="nav-item" data-view="etiquetas">Etiquetas</button>
         <button class="nav-item" data-view="relatorios">Relatórios</button>
         <button class="nav-item" data-view="historico">Histórico</button>
         <button class="nav-item" data-view="configuracoes">Configurações</button>
+        ${hasAccess("usuarios.consultar") ? '<button class="nav-item" data-view="usuarios">Usuários e permissões</button>' : ""}
       </nav>
-      <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
+      <div class="sidebar-footer"><div class="sidebar-account" aria-label="Conta conectada"><span class="sidebar-account-avatar" aria-hidden="true">${escapeHtml(String(state.session?.user?.nome||"U").trim().charAt(0).toUpperCase())}</span><span class="sidebar-account-details"><strong title="${escapeHtml(state.session?.user?.nome||"Usuário")}">${escapeHtml(state.session?.user?.nome||"Usuário")}</strong><small>${escapeHtml(({ADMIN:"Administrador",GESTOR:"Gestor",OPERADOR:"Operador",AUXILIAR:"Operador",CONSULTA:"Consulta"})[String(state.session?.user?.perfil_acesso||state.session?.user?.perfil||"").toUpperCase()]||"Perfil não identificado")}</small></span></div><button class="logout-button" id="logoutButton">Sair</button></div>
     </aside>
     <main class="main">
-      <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div>${canEditAssets() ? '<button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>' : ""}</header>
+      <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div>${canCreateAssets() ? '<button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>' : ""}</header>
       <section id="viewRoot" class="content"><div class="loading">Carregando dados…</div></section>
     </main>
   </div>
@@ -305,6 +307,7 @@ function render() {
     case "relatorios": renderReports(); break;
     case "historico": renderHistory(); break;
     case "configuracoes": renderSettings(); break;
+    case "usuarios": if(hasAccess("usuarios.consultar")) renderUsers(document.querySelector("#viewRoot")); else renderDashboard(); break;
     default: renderDashboard();
   }
 }
@@ -453,7 +456,7 @@ function renderDashboard() {
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
   const visibilityLabel = state.showDashboardValue ? "Ocultar valor" : "Mostrar valor";
   document.querySelector("#viewRoot").innerHTML = `
-    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div>${canEditAssets() ? '<button class="primary-button" data-action="new">+ Cadastrar patrimônio</button>' : ""}</div>
+    <div class="page-header"><div><h1>Visão geral</h1><p>Dados do banco patrimonial.</p></div>${canCreateAssets() ? '<button class="primary-button" data-action="new">+ Cadastrar patrimônio</button>' : ""}</div>
     <div class="cards cards-three">
       <article class="card"><span class="muted">Número de patrimônios</span><div class="metric">${visibleAssets.length}</div></article>
       <article class="card"><span class="muted">Patrimônios ativos</span><div class="metric">${active}</div></article>
@@ -648,10 +651,12 @@ function renderHistory() {
 function userProfile() {
   return String(state.session?.user?.perfil || "").toUpperCase();
 }
-function canEditAssets() { return ["ADMIN", "AUXILIAR"].includes(userProfile()); }
-function canMoveAssets() { return ["ADMIN", "AUXILIAR"].includes(userProfile()); }
-function canMaintainAssets() { return ["ADMIN", "AUXILIAR"].includes(userProfile()); }
-function canDeleteAssets() { return userProfile() === "ADMIN"; }
+function hasAccess(code) { return state.session?.user?.permissoes?.[code] === true; }
+function canEditAssets() { return hasAccess("patrimonios.editar"); }
+function canCreateAssets() { return hasAccess("patrimonios.cadastrar"); }
+function canMoveAssets() { return state.session?.user?.permissoes?.["patrimonios.movimentar"] === true; }
+function canMaintainAssets() { return state.session?.user?.permissoes?.["manutencoes.abrir"] === true; }
+function canDeleteAssets() { return state.session?.user?.permissoes?.["patrimonios.excluir"] === true; }
 
 function iconSvg(name) {
   const icons = {
@@ -914,7 +919,7 @@ function renderAssets() {
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header">
       <div><h1>${state.showRemoved ? "Patrimônios removidos" : "Patrimônios"}</h1><p>Painel operacional para consulta e gestão rápida do acervo.</p></div>
-      <div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver ativos" : "Ver removidos"}</button>${canEditAssets() ? '<button class="primary-button" data-action="new">+ Novo patrimônio</button>' : ""}</div>
+      <div class="header-actions"><button class="ghost-button" data-action="toggle-removed">${state.showRemoved ? "Ver ativos" : "Ver removidos"}</button>${canCreateAssets() ? '<button class="primary-button" data-action="new">+ Novo patrimônio</button>' : ""}</div>
     </div>
     ${filterPanelHtml("assetFilters", "Pesquisa e filtros")}
     <section class="panel">
@@ -2302,10 +2307,23 @@ function catalogValueSourceName(value) {
 
 async function renderCatalog() {
   const root = document.querySelector("#viewRoot");
-  if (!canDeleteAssets()) {
+  if (!hasAccess("catalogo.editar")) {
     root.innerHTML = `
-      <div class="page-header"><div><h1>Catálogo</h1><p>Itens de referência para o cadastro patrimonial.</p></div></div>
-      <div class="placeholder">Somente administradores podem alterar o Catálogo.</div>`;
+      <div class="page-header"><div><h1>Catálogo</h1><p>Consulta de itens de referência patrimonial.</p></div></div>
+      <section class="panel"><div class="panel-header"><h2>Pesquisar no Catálogo</h2></div>
+      <div class="config-toolbar"><label>Descrição do item<input id="catalogConsultQuery" type="search" placeholder="Digite pelo menos duas letras"></label></div>
+      <div id="catalogConsultResults" class="table-wrap"><div class="placeholder">Digite um termo para consultar.</div></div></section>`;
+    const input=root.querySelector("#catalogConsultQuery");
+    const results=root.querySelector("#catalogConsultResults");
+    input.addEventListener("input",debounce(async()=>{
+      const term=input.value.trim();
+      if(term.length<2){results.innerHTML='<div class="placeholder">Digite pelo menos duas letras.</div>';return;}
+      try {
+        const items=await searchCatalog(term,50);
+        if(input.value.trim()!==term)return;
+        results.innerHTML=items.length?`<table><thead><tr><th>Descrição</th><th>Tipo</th></tr></thead><tbody>${items.map(i=>`<tr><td>${escapeHtml(i.descricao||"—")}</td><td>${escapeHtml(typeName(i.tipo_id))}</td></tr>`).join("")}</tbody></table>`:'<div class="empty">Nenhum item encontrado.</div>';
+      } catch(e) {toast(e.message,"error");}
+    },250));
     return;
   }
 
@@ -2756,7 +2774,7 @@ async function saveReportTemplateFromSettings() {
 
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
-  if (!canDeleteAssets()) {
+  if (!hasAccess("configuracoes.templates")) {
     root.innerHTML = `
       <div class="page-header"><div><h1>Configurações</h1><p>Parâmetros administrativos do Patrimônio+.</p></div></div>
       <div class="placeholder">Somente administradores podem alterar as configurações do sistema.</div>`;
@@ -2892,7 +2910,7 @@ function renderSettings() {
 }
 
 function renderCenters() {
-  const canManage = canDeleteAssets();
+  const canManage = hasAccess("centros.gerenciar");
   const active = state.centers.filter(center => center.ativo).length;
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header">
@@ -2942,7 +2960,7 @@ function openCenterForm(centerId = null) {
 
 async function submitCenterForm(event) {
   event.preventDefault();
-  if (!canDeleteAssets()) return;
+  if (!hasAccess("centros.gerenciar")) return;
   const payload = {
     codigo: document.querySelector("#centerCode").value.trim(),
     nome: document.querySelector("#centerName").value.trim()
@@ -2972,7 +2990,7 @@ async function submitCenterForm(event) {
 
 async function toggleCenter(centerId) {
   const center = state.centers.find(row => row.id === centerId);
-  if (!center || !canDeleteAssets()) return;
+  if (!center || !hasAccess("centros.gerenciar")) return;
   const next = !center.ativo;
   const detail = !next && Number(center.patrimonios || 0) > 0
     ? `\n\n${center.patrimonios} patrimônio(s) permanecem vinculados ao centro, mas ele deixará de aparecer para novos cadastros e movimentações.`
@@ -2990,7 +3008,7 @@ async function toggleCenter(centerId) {
 
 async function removeCenter(centerId) {
   const center = state.centers.find(row => row.id === centerId);
-  if (!center || !canDeleteAssets()) return;
+  if (!center || !hasAccess("centros.gerenciar")) return;
   const confirmation = window.prompt(
     `Exclusão definitiva de "${center.nome}".\n\nIsso só será permitido se o centro nunca tiver sido usado.\nDigite exatamente o código para confirmar: ${center.codigo}`
   );
@@ -3350,7 +3368,7 @@ async function refreshImportHistory() {
 }
 
 function renderImport() {
-  if (!canEditAssets()) {
+  if (!hasAccess("importacoes.simular")) {
     document.querySelector("#viewRoot").innerHTML = '<div class="page-header"><div><h1>Importação</h1><p>Importação patrimonial em lote.</p></div></div><div class="placeholder">Seu perfil possui acesso somente para consulta.</div>';
     return;
   }
@@ -3525,6 +3543,7 @@ async function runImport() {
   state.importBusy=true;
   renderImport();
   try {
+    if(!hasAccess("importacoes.executar")) {toast("Sem permissão para executar importações.","error");return;}
     const result=await applyAssetImport({
       nome_arquivo:state.importFileName,
       linhas:resolution.rows,
@@ -4577,11 +4596,11 @@ async function start() {
   }
 
   state.session = await getSession();
-  if (!state.session) renderLogin(appRoot); else { shell(); await loadData(); }
+  if (!state.session) renderLogin(appRoot); else if(state.session.user?.troca_senha_obrigatoria) renderPasswordChange(appRoot); else { shell(); await loadData(); }
   onAuthChange(async (session) => {
     if (publicTokenFromHash()) return;
     state.session = session;
-    if (!session) renderLogin(appRoot); else { shell(); await loadData(); }
+    if (!session) renderLogin(appRoot); else if(session.user?.troca_senha_obrigatoria) renderPasswordChange(appRoot); else { shell(); await loadData(); }
   });
 }
 
