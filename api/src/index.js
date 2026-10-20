@@ -562,7 +562,8 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/permissoes") {
         if(!hasPermission(userPermissions,"usuarios.consultar")) return responseJson({ok:false,error:"Acesso negado."},403,env,request);
         const rows=await sql`select codigo,modulo,descricao,exclusiva_admin from permissoes order by modulo,codigo`;
-        return responseJson({ok:true,permissoes:rows},200,env,request);
+        const rules=await sql`select perfil,permissao_codigo,permitido from perfis_permissoes order by perfil,permissao_codigo`;
+        return responseJson({ok:true,permissoes:rows,regras_perfis:rules},200,env,request);
       }
       if(request.method==="GET" && url.pathname==="/api/usuarios") {
         if(!hasPermission(userPermissions,"usuarios.consultar")) return responseJson({ok:false,error:"Acesso negado."},403,env,request);
