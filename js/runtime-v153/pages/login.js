@@ -12,7 +12,7 @@ export function renderLogin(root) {
         <form id="loginForm" class="login-form">
           <label>E-mail<input id="loginEmail" type="email" required autocomplete="username"></label>
           <label>Senha<input id="loginPassword" type="password" required autocomplete="current-password"></label>
-          <button class="primary-button" id="loginButton" type="submit">Entrar</button><small style="display:block;margin-top:12px;color:#66808c">Infraestrutura: API Patrimônio+ · build 1.9.1 — homologação</small>
+          <button class="primary-button" id="loginButton" type="submit">Entrar</button><small style="display:block;margin-top:12px;color:#66808c">Patrimônio+ · versão 1.9.3</small>
         </form>
       </section>
     </main>`;
