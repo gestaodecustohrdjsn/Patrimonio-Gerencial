@@ -1,5 +1,5 @@
 import { database } from "./db.js";
-import { randomToken, randomSalt, sha256, passwordHash, constantTimeEqual } from "./security.js";
+import { randomToken, randomSalt, sha256, passwordHash, constantTimeEqual, newPasswordIterations, DEFAULT_PBKDF2_ITERATIONS } from "./security.js";
 import { loadUserPermissions, hasPermission, normalizeProfile } from "./permissions.js";
 
 function corsHeaders(env, request) {
@@ -496,7 +496,7 @@ export default {
         const password = String(body.password || "");
         if (!email || password.length < 10) return responseJson({ok:false,error:"Informe e-mail e senha com pelo menos 10 caracteres."},400,env,request);
         const salt = randomSalt();
-        const iterations = Number(env.PASSWORD_ITERATIONS || 310000);
+        const iterations = newPasswordIterations(env.PASSWORD_ITERATIONS || DEFAULT_PBKDF2_ITERATIONS);
         const hash = await passwordHash(password,salt,iterations);
         const rows = await sql`update usuarios set password_hash=${hash},password_salt=${salt},password_iterations=${iterations},falhas_login=0,bloqueado_ate=null,atualizado_em=now() where lower(email)=${email} returning id,email`;
         if (!rows.length) return responseJson({ok:false,error:"Usuário não encontrado."},404,env,request);
@@ -510,7 +510,7 @@ export default {
         const rows=await sql`select id,nome,email,perfil,perfil_acesso,troca_senha_obrigatoria,ativo,password_hash,password_salt,password_iterations,falhas_login,bloqueado_ate from usuarios where lower(email)=${email} limit 1`;
         const u=rows[0];
         if (!u || !u.ativo || !u.password_hash || (u.bloqueado_ate && new Date(u.bloqueado_ate)>new Date())) return responseJson({ok:false,error:"E-mail ou senha inválidos."},401,env,request);
-        const hash=await passwordHash(password,u.password_salt,u.password_iterations||310000);
+        const hash=await passwordHash(password,u.password_salt,u.password_iterations||DEFAULT_PBKDF2_ITERATIONS);
         if (!constantTimeEqual(hash,u.password_hash)) {
           const failures=Number(u.falhas_login||0)+1;
           if (failures>=5) await sql`update usuarios set falhas_login=0,bloqueado_ate=now()+interval '15 minutes' where id=${u.id}::uuid`;
@@ -535,9 +535,9 @@ export default {
         const oldPassword=String(b.senha_atual||""); const newPassword=String(b.nova_senha||"");
         if(newPassword.length<10 || newPassword.length>256) return responseJson({ok:false,error:"A senha deve ter entre 10 e 256 caracteres."},400,env,request);
         const old=await sql`select password_hash,password_salt,password_iterations from usuarios where id=${user.id}::uuid`;
-        const hash=await passwordHash(oldPassword,old[0].password_salt,old[0].password_iterations||310000);
+        const hash=await passwordHash(oldPassword,old[0].password_salt,old[0].password_iterations||DEFAULT_PBKDF2_ITERATIONS);
         if(!constantTimeEqual(hash,old[0].password_hash)) return responseJson({ok:false,error:"Senha atual inválida."},403,env,request);
-        const salt=randomSalt(); const iterations=310000;
+        const salt=randomSalt(); const iterations=newPasswordIterations(env.PASSWORD_ITERATIONS || DEFAULT_PBKDF2_ITERATIONS);
         const newHash=await passwordHash(newPassword,salt,iterations);
         await sql`
           with senha_atualizada as (
@@ -576,7 +576,7 @@ export default {
         const nome=String(b.nome||"").trim().slice(0,180), email=String(b.email||"").trim().toLowerCase(), perfil=normalizeProfile(b.perfil_acesso);
         const senha=String(b.senha_temporaria||"");
         if(!nome||!/^\S+@\S+\.\S+$/.test(email)||senha.length<10||senha.length>256|| !["ADMIN","GESTOR","OPERADOR","CONSULTA"].includes(b.perfil_acesso)) return responseJson({ok:false,error:"Informe nome, e-mail, perfil e senha temporária de 10 a 256 caracteres."},400,env,request);
-        const salt=randomSalt(), iterations=310000, hash=await passwordHash(senha,salt,iterations);
+        const salt=randomSalt(), iterations=newPasswordIterations(env.PASSWORD_ITERATIONS || DEFAULT_PBKDF2_ITERATIONS), hash=await passwordHash(senha,salt,iterations);
         const legacy=perfil==="ADMIN"?"ADMIN":perfil==="CONSULTA"?"CONSULTA":"AUXILIAR";
         const added=await sql`
         with criado as (
@@ -656,7 +656,7 @@ export default {
           if(!hasPermission(userPermissions,"usuarios.redefinir_senha")||targetId===user.id)return responseJson({ok:false,error:"Acesso negado."},403,env,request);
           const b=await bodyJson(request), senha=String(b.senha_temporaria||"");
           if(senha.length<10||senha.length>256)return responseJson({ok:false,error:"A senha deve ter entre 10 e 256 caracteres."},400,env,request);
-          const salt=randomSalt(),iterations=310000,hash=await passwordHash(senha,salt,iterations);
+          const salt=randomSalt(),iterations=newPasswordIterations(env.PASSWORD_ITERATIONS || DEFAULT_PBKDF2_ITERATIONS),hash=await passwordHash(senha,salt,iterations);
           const rows=await sql`
         with redefinido as (
           update usuarios set password_hash=${hash},password_salt=${salt},password_iterations=${iterations},
