@@ -21,7 +21,18 @@ export async function sha256(value) {
   return toHex(digest);
 }
 
-export async function passwordHash(password, saltHex, iterations = 310000) {
+export const MAX_PBKDF2_ITERATIONS = 100000;
+export const DEFAULT_PBKDF2_ITERATIONS = MAX_PBKDF2_ITERATIONS;
+
+export function newPasswordIterations(value = DEFAULT_PBKDF2_ITERATIONS) {
+  const iterations = Number(value);
+  if (!Number.isSafeInteger(iterations) || iterations < 10000 || iterations > MAX_PBKDF2_ITERATIONS) {
+    throw new Error("Configuração inválida de PBKDF2: use de 10000 a 100000 iterações.");
+  }
+  return iterations;
+}
+
+export async function passwordHash(password, saltHex, iterations = DEFAULT_PBKDF2_ITERATIONS) {
   const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(password),
