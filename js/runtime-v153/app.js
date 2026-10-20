@@ -1,7 +1,7 @@
 import { hasApiConfig } from "./lib/api.js";
 import { money, normalizeMoney, typeName, escapeHtml, debounce } from "./lib/utils.js";
 import { toast } from "./components/toast.js";
-import { getSession, signOut, onAuthChange } from "./services/auth.js?v=1.9.1";
+import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/catalogo.js?v=1.6.0";
 import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
@@ -115,7 +115,7 @@ function shell() {
         <button class="nav-item" data-view="configuracoes">Configurações</button>
         ${hasAccess("usuarios.consultar") ? '<button class="nav-item" data-view="usuarios">Usuários e permissões</button>' : ""}
       </nav>
-      <div class="sidebar-footer"><span class="badge">API conectada</span><button class="logout-button" id="logoutButton">Sair</button></div>
+      <div class="sidebar-footer"><div class="sidebar-account" aria-label="Conta conectada"><span class="sidebar-account-avatar" aria-hidden="true">${escapeHtml(String(state.session?.user?.nome||"U").trim().charAt(0).toUpperCase())}</span><span class="sidebar-account-details"><strong title="${escapeHtml(state.session?.user?.nome||"Usuário")}">${escapeHtml(state.session?.user?.nome||"Usuário")}</strong><small>${escapeHtml(({ADMIN:"Administrador",GESTOR:"Gestor",OPERADOR:"Operador",AUXILIAR:"Operador",CONSULTA:"Consulta"})[String(state.session?.user?.perfil_acesso||state.session?.user?.perfil||"").toUpperCase()]||"Perfil não identificado")}</small></span></div><button class="logout-button" id="logoutButton">Sair</button></div>
     </aside>
     <main class="main">
       <header class="topbar"><button class="icon-button" id="menuButton">☰</button><div class="search-wrap"><input id="globalSearch" type="search" placeholder="Pesquisar ID, descrição, centro ou marca…"></div>${canCreateAssets() ? '<button class="secondary-button" id="quickAddButton">+ Novo patrimônio</button>' : ""}</header>
