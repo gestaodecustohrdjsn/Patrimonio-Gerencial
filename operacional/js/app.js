@@ -24,7 +24,11 @@ const state = {
   globalHistoryLoading: false,
   online: navigator.onLine,
   scannerStream: null,
-  scannerTimer: null
+  scannerTimer: null,
+  newCatalog: null,
+  newCatalogResults: [],
+  newCatalogTimer: null,
+  newCatalogRequest: 0
 };
 
 function esc(value) {
@@ -191,8 +195,9 @@ function operationCard(id,title,subtitle,icon,img,badge,primary) {
   const iconHtml = img ? '<img src="' + img + '" alt="">' : esc(icon || "•");
   return '<button class="operation-card' + (primary ? ' primary-operation' : '') + '" id="' + id + '" type="button">' +
     (badge ? '<span class="coming-badge">' + esc(badge) + '</span>' : '') +
-    '<span class="operation-icon">' + iconHtml + '</span><strong>' + esc(title) + '</strong><small>' + esc(subtitle) + '</small></button>';
+    '<span class="operation-icon">' + iconHtml + '</span><strong>' + esc(title) + '</strong></button>';
 }
+
 async function loadSummary() {
   if (state.summaryLoading || !state.online) return;
   state.summaryLoading = true;
@@ -210,23 +215,19 @@ async function loadSummary() {
 function renderHome() {
   const view = document.querySelector("#viewRoot");
   const s = state.summary;
-  const firstName = (currentUser() || "Operador").split(" ")[0];
-  view.innerHTML = '<section class="hero"><div class="hero-kicker">Painel operacional</div>' +
-    '<h1>Olá, ' + esc(firstName) + '.</h1><p>' +
-    (s ? esc(s.total) + ' patrimônios cadastrados. Escolha uma operação para começar.' : 'Escolha uma operação para começar.') +
-    '</p></section>' +
+  view.innerHTML = '<div class="dashboard-heading"><h1>Painel Operacional</h1></div>' +
     (state.summaryLoading ? '<div class="loading-line"></div>' : '') +
     '<div class="stats">' + stat(s && s.ativos,"Ativos") + stat(s && s.em_manutencao,"Em manutenção") +
     stat(s && s.inativados,"Inativados") + stat(s && s.moveis,"Móveis") + '</div>' +
-    '<div class="section-head"><div><h2>Operações</h2><p>Acesso rápido às atividades de campo</p></div></div>' +
+    '<div class="section-head compact"><div><h2>Operações</h2></div></div>' +
     '<div class="operation-grid">' +
-      operationCard("scanHome","Escanear item","Leia o QR da etiqueta e abra a ficha.","","../assets/icons/qrcode_icon.png","",true) +
-      (can("patrimonios.cadastrar") ? operationCard("newHome","Novo patrimônio","Cadastre um novo bem.","","../assets/icons/adicionar_icon.png","","") : "") +
-      operationCard("auditHome","Iniciar auditoria","Conferência patrimonial guiada.","✓","","Em breve","") +
-      operationCard("searchHome","Procurar patrimônio","Busque por ID, descrição, setor e filtros.","⌕","","","") +
+      operationCard("scanHome","Escanear item","","","../assets/icons/qrcode_icon.png","",true) +
+      (can("patrimonios.cadastrar") ? operationCard("newHome","Novo patrimônio","","","../assets/icons/adicionar_icon.png","","") : "") +
+      operationCard("auditHome","Iniciar auditoria","","✓","","Em breve","") +
+      operationCard("searchHome","Procurar patrimônio","","⌕","","","") +
     '</div>' +
     '<button class="quick-card" id="syncHome" type="button"><span class="quick-icon">↻</span><div><strong>Sincronização</strong><span>' +
-    (state.online ? 'Conectado ao servidor' : 'Sem conexão') + ' · fila offline será ativada na próxima etapa</span></div><span>›</span></button>';
+    (state.online ? 'Online' : 'Offline') + '</span></div><span>›</span></button>';
   document.querySelector("#scanHome").addEventListener("click",openScanner);
   const newButton = document.querySelector("#newHome");
   if (newButton) newButton.addEventListener("click",openNew);
@@ -345,8 +346,9 @@ function infoBox(label,value,extra) {
 function assetAction(id,title,subtitle,img,icon,extra) {
   return '<button class="asset-action ' + (extra || '') + '" id="' + id + '" type="button"><span class="action-icon">' +
     (img ? '<img src="' + img + '" alt="">' : esc(icon || "")) +
-    '</span><span><strong>' + esc(title) + '</strong><small>' + esc(subtitle) + '</small></span></button>';
+    '</span><strong>' + esc(title) + '</strong></button>';
 }
+
 function renderAsset() {
   const a = state.currentAsset, view = document.querySelector("#viewRoot");
   if (!a) { view.innerHTML = '<div class="empty">Nenhum patrimônio selecionado.</div>'; return; }
@@ -354,37 +356,45 @@ function renderAsset() {
   const secondary = a.descricoes_padrao && a.descricoes_padrao.descricao && a.descricao && a.descricao !== a.descricoes_padrao.descricao ? a.descricao : "";
   const inactive = a.removido === true;
   let maintenanceButton = "";
-  if (a.em_manutencao && can("manutencoes.concluir")) maintenanceButton = assetAction("maintAction","Resolver manutenção","Registrar saída / conclusão.","../assets/icons/manutencao_icon.png");
-  if (!a.em_manutencao && can("manutencoes.abrir")) maintenanceButton = assetAction("maintAction","Enviar à manutenção","Abrir manutenção do bem.","../assets/icons/manutencao_icon.png");
-  view.innerHTML = '<section class="asset-hero">' +
-    '<div class="asset-idline"><span class="id">ID ' + esc(a.id_interna || "—") + (a.id_ses ? ' · SES ' + esc(a.id_ses) : '') + '</span>' +
-    '<button class="soft-button" id="scanAgain" type="button" style="min-height:34px;padding:7px 9px">QR</button></div>' +
-    '<h1>' + esc(displayName) + '</h1>' + (secondary ? '<div class="secondary-name">' + esc(secondary) + '</div>' : '') +
-    '<div class="asset-location"><span>Centro de custo atual</span><strong>' + esc((a.centros_custo && a.centros_custo.nome) || "—") + '</strong></div>' +
-    '<div class="status-row">' +
-      assetPill(inactive ? "Inativado" : "Ativo",inactive ? "danger" : "ok") +
-      assetPill(a.mobilidade === "MOVEL" ? "Móvel" : "Fixo","") +
-      (a.em_manutencao ? assetPill("Em manutenção","warn") : "") +
-      assetPill(conservationName(a.estado_conservacao),"") +
-    '</div></section>' +
-    '<div class="section-head"><div><h2>Ações</h2><p>Disponíveis conforme suas permissões</p></div></div>' +
-    '<div class="action-grid">' +
-      (!inactive && can("patrimonios.movimentar") ? assetAction("moveAction","Movimentar","Alterar centro de custo.","../assets/icons/movimentar_icon.png") : "") +
-      maintenanceButton +
-      (((inactive && can("patrimonios.restaurar")) || (!inactive && can("patrimonios.inativar"))) ? assetAction("toggleAction",inactive ? "Reativar" : "Inativar",inactive ? "Retornar o bem à operação." : "Retirar o bem da operação.","","⏻") : "") +
-      (can("patrimonios.editar") ? assetAction("editAction","Editar informações","Dados, condição e mobilidade.","../assets/icons/editar_icon.png") : "") +
-      assetAction("stockAction","Depósito / Estoque","Estrutura reservada para a próxima evolução.","","▣","future") +
+  if (a.em_manutencao && can("manutencoes.concluir")) maintenanceButton = assetAction("maintAction","Resolver manutenção","","../assets/icons/manutencao_icon.png");
+  if (!a.em_manutencao && can("manutencoes.abrir")) maintenanceButton = assetAction("maintAction","Enviar à manutenção","","../assets/icons/manutencao_icon.png");
+  const statusClass = inactive ? "danger" : "ok";
+  const statusText = inactive ? "Inativado" : "Ativo";
+  const disableIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M6.5 17.5 17.5 6.5"></path></svg>';
+
+  view.innerHTML = '<section class="asset-identity">' +
+    '<div class="asset-identity-head"><div class="asset-reference"><span>ID ' + esc(a.id_interna || "—") + '</span>' +
+      (a.id_ses ? '<span class="ses">SES ' + esc(a.id_ses) + '</span>' : '') + '</div></div>' +
+    '<div class="asset-identity-body"><h1>' + esc(displayName) + '</h1>' +
+      (secondary ? '<div class="secondary-name">' + esc(secondary) + '</div>' : '') +
+      '<div class="identity-location"><span>Centro de custo atual</span><strong>' + esc((a.centros_custo && a.centros_custo.nome) || "—") + '</strong></div>' +
+      '<div class="identity-status-grid">' +
+        '<div class="identity-status"><span>Situação</span><strong class="' + statusClass + '">' + statusText + '</strong></div>' +
+        '<div class="identity-status"><span>Mobilidade</span><strong>' + (a.mobilidade === "MOVEL" ? "Móvel" : "Fixo") + '</strong></div>' +
+        '<div class="identity-status full"><span>Conservação</span><strong>' + esc(conservationName(a.estado_conservacao)) + '</strong></div>' +
+        (a.em_manutencao ? '<div class="identity-maintenance">Em manutenção</div>' : '') +
+      '</div>' +
     '</div>' +
-    '<div class="section-head"><div><h2>Informações</h2><p>Ficha patrimonial</p></div></div>' +
-    '<div class="info-grid">' +
-      infoBox("Tipo",typeName(a.tipo_id)) + infoBox("Estado",conservationName(a.estado_conservacao)) +
-      infoBox("Marca / Modelo",a.marca_modelo || "—") + infoBox("Aquisição",acquisitionName(a.tipo_aquisicao)) +
-      infoBox("Data de aquisição",formatDate(a.data_aquisicao)) + infoBox("Valor",money(a.valor_aquisicao)) +
-      infoBox("Nota fiscal",a.nota_fiscal_numero || "—") + infoBox("ID SES",a.id_ses || "—") +
-      (a.mobilidade === "MOVEL" ? infoBox("Centros permitidos",(a.centros_permitidos || []).map(function(c){return c.nome;}).join(", ") || "Nenhum adicional","full") : "") +
-    '</div>' +
-    (can("historico.individual") ? '<button class="ghost detail-toggle" id="assetHistoryButton" type="button">Consultar histórico deste patrimônio</button>' : '');
-  document.querySelector("#scanAgain").addEventListener("click",openScanner);
+    '<footer class="asset-model"><span>Marca / Modelo</span><strong>' + esc(a.marca_modelo || "—") + '</strong></footer>' +
+  '</section>' +
+  '<div class="section-head compact"><div><h2>Ações</h2></div></div>' +
+  '<div class="action-grid">' +
+    (!inactive && can("patrimonios.movimentar") ? assetAction("moveAction","Movimentar","","../assets/icons/movimentar_icon.png") : "") +
+    maintenanceButton +
+    (((inactive && can("patrimonios.restaurar")) || (!inactive && can("patrimonios.inativar"))) ?
+      '<button class="asset-action" id="toggleAction" type="button"><span class="action-icon inline-svg">' + disableIcon + '</span><strong>' + (inactive ? "Reativar" : "Inativar") + '</strong></button>' : "") +
+    (can("patrimonios.editar") ? assetAction("editAction","Editar informações","","../assets/icons/editar_icon.png") : "") +
+    assetAction("stockAction","Depósito / Estoque","","","▣","future") +
+  '</div>' +
+  '<div class="section-head compact"><div><h2>Informações</h2></div></div>' +
+  '<div class="info-grid">' +
+    infoBox("Tipo",typeName(a.tipo_id)) + infoBox("Estado",conservationName(a.estado_conservacao)) +
+    infoBox("Aquisição",acquisitionName(a.tipo_aquisicao)) + infoBox("Data de aquisição",formatDate(a.data_aquisicao)) +
+    infoBox("Valor",money(a.valor_aquisicao)) + infoBox("Nota fiscal",a.nota_fiscal_numero || "—") +
+    (a.mobilidade === "MOVEL" ? infoBox("Centros permitidos",(a.centros_permitidos || []).map(function(c){return c.nome;}).join(", ") || "Nenhum adicional","full") : "") +
+  '</div>' +
+  (can("historico.individual") ? '<button class="ghost detail-toggle" id="assetHistoryButton" type="button">Consultar histórico deste patrimônio</button>' : '');
+
   const move = document.querySelector("#moveAction"); if (move) move.addEventListener("click",openMove);
   const maint = document.querySelector("#maintAction"); if (maint) maint.addEventListener("click",openMaintenance);
   const toggle = document.querySelector("#toggleAction"); if (toggle) toggle.addEventListener("click",function(){ go("toggle"); });
@@ -405,7 +415,6 @@ function renderMove() {
     '<label>Centro atual<input value="' + esc((a.centros_custo && a.centros_custo.nome) || "—") + '" disabled></label>' +
     '<label>Novo centro de custo<select name="destino" required>' + options + '</select></label>' +
     '<label>Solicitante<input name="solicitante" required></label>' +
-    '<label>Movimentado por<input name="movimentadoPor" value="' + esc(currentUser()) + '" required></label>' +
     '<label>Recebido por<input name="recebidoPor" required></label>' +
     '<label>Observação<textarea name="observacao" placeholder="Opcional"></textarea></label>' +
     '<div class="form-actions"><button class="ghost" type="button" id="cancelMove">Cancelar</button><button class="primary" type="submit">Confirmar movimentação</button></div>' +
@@ -421,7 +430,7 @@ async function submitMove(event) {
   try {
     const a = state.currentAsset;
     const data = await apiRequest("/api/patrimonios/" + a.id + "/movimentar",{method:"POST",body:{
-      destinoCentroCustoId:fd.get("destino"), solicitante:fd.get("solicitante"), movimentadoPor:fd.get("movimentadoPor"),
+      destinoCentroCustoId:fd.get("destino"), solicitante:fd.get("solicitante"), movimentadoPor:currentUser(),
       recebidoPor:fd.get("recebidoPor"), observacao:fd.get("observacao") || null, mobilidade:a.mobilidade || "FIXO",
       centrosPermitidosIds:(a.centros_permitidos || []).map(function(c){return c.id;})
     }});
@@ -452,7 +461,6 @@ function renderMaintenance() {
       '<section class="panel"><div class="confirm-box"><strong>' + esc(open.tipo) + '</strong><br>' + esc(open.descricao) + '</div>' +
       '<form id="finishMaintenanceForm" class="form-grid" style="margin-top:14px">' +
       '<label>Responsável pela manutenção<input name="responsavel" required></label>' +
-      '<label>Entregue ao centro por<input name="entregue" value="' + esc(currentUser()) + '" required></label>' +
       '<label>Recebido no centro por<input name="recebido" required></label>' +
       '<label>Observação de conclusão<textarea name="observacao"></textarea></label>' +
       '<div class="form-actions"><button class="ghost" type="button" id="cancelMaintenance">Cancelar</button><button class="primary" type="submit">Concluir manutenção</button></div>' +
@@ -464,7 +472,6 @@ function renderMaintenance() {
       '<label>Tipo<select name="tipo" required><option value="CORRETIVA">Corretiva</option><option value="PREVENTIVA">Preventiva</option></select></label>' +
       '<label>Descrição<textarea name="descricao" required placeholder="Descreva o problema ou serviço"></textarea></label>' +
       '<label>Solicitante<input name="solicitante" required></label>' +
-      '<label>Encaminhado por<input name="encaminhado" value="' + esc(currentUser()) + '" required></label>' +
       '<label>Recebido na manutenção por<input name="recebido" required></label>' +
       '<div class="form-actions"><button class="ghost" type="button" id="cancelMaintenance">Cancelar</button><button class="primary" type="submit">Registrar manutenção</button></div>' +
       '</form></section>';
@@ -479,7 +486,7 @@ async function submitOpenMaintenance(event) {
   try {
     await apiRequest("/api/patrimonios/" + state.currentAsset.id + "/manutencoes",{method:"POST",body:{
       tipo:fd.get("tipo"), descricao:fd.get("descricao"), solicitante:fd.get("solicitante"),
-      encaminhado_por:fd.get("encaminhado"), recebido_manutencao_por:fd.get("recebido")
+      encaminhado_por:currentUser(), recebido_manutencao_por:fd.get("recebido")
     }});
     await refreshAsset(); state.summary = null; toast("Manutenção registrada.","success"); go("asset");
   } catch (error) { handleApiFailure(error,"Não foi possível registrar manutenção."); button.disabled = false; }
@@ -490,7 +497,7 @@ async function submitFinishMaintenance(event,id) {
   button.disabled = true;
   try {
     await apiRequest("/api/manutencoes/" + id + "/concluir",{method:"POST",body:{
-      responsavel_manutencao:fd.get("responsavel"), entregue_centro_por:fd.get("entregue"),
+      responsavel_manutencao:fd.get("responsavel"), entregue_centro_por:currentUser(),
       recebido_centro_por:fd.get("recebido"), observacao_conclusao:fd.get("observacao") || null
     }});
     await refreshAsset(); state.summary = null; toast("Manutenção concluída.","success"); go("asset");
@@ -576,14 +583,87 @@ async function submitEdit(event,forceDuplicate) {
   }
 }
 
-async function openNew() { if (!can("patrimonios.cadastrar")) return; await ensureCenters(); go("new"); }
+async function openNew() {
+  if (!can("patrimonios.cadastrar")) return;
+  state.newCatalog = null;
+  state.newCatalogResults = [];
+  await ensureCenters();
+  go("new");
+}
+function validTypeId(value) { return [1,2,3].includes(Number(value)); }
+function renderCatalogResults() {
+  const box = document.querySelector("#newCatalogResults");
+  if (!box) return;
+  const rows = state.newCatalogResults || [];
+  box.innerHTML = rows.length ? rows.map(function(item){
+    return '<button class="catalog-option" type="button" data-catalog-id="' + esc(item.id) + '">' +
+      '<span><strong>' + esc(item.descricao || "—") + '</strong><small>' + esc(item.origem === "PROPRIO" ? "Catálogo Próprio" : "SIGEM") + '</small></span>' +
+      '<span class="catalog-meta">' + esc(typeName(item.tipo_id)) + (item.valor_padrao != null ? '<small>' + esc(money(item.valor_padrao)) + '</small>' : '') + '</span></button>';
+  }).join("") : '<div class="catalog-message">Nenhum item encontrado.</div>';
+  box.hidden = false;
+  box.querySelectorAll("[data-catalog-id]").forEach(function(button){
+    button.addEventListener("click",function(){
+      const item = state.newCatalogResults.find(function(row){ return row.id === button.dataset.catalogId; });
+      if (item) selectNewCatalog(item);
+    });
+  });
+}
+async function searchNewCatalog(term) {
+  const query = String(term || "").trim();
+  if (query.length < 2) {
+    state.newCatalogResults = [];
+    const box = document.querySelector("#newCatalogResults");
+    if (box) box.hidden = true;
+    return;
+  }
+  const requestId = ++state.newCatalogRequest;
+  const box = document.querySelector("#newCatalogResults");
+  if (box) { box.hidden = false; box.innerHTML = '<div class="catalog-message">Pesquisando…</div>'; }
+  try {
+    const params = new URLSearchParams({q:query,limit:"20"});
+    const data = await apiRequest("/api/catalogo?" + params.toString());
+    if (requestId !== state.newCatalogRequest) return;
+    state.newCatalogResults = data.itens || [];
+    renderCatalogResults();
+  } catch (error) {
+    if (box) box.innerHTML = '<div class="catalog-message">Não foi possível consultar o Catálogo.</div>';
+  }
+}
+function updateNewCatalogState() {
+  const type = document.querySelector("#newType");
+  const hint = document.querySelector("#newTypeHint");
+  const selected = document.querySelector("#newCatalogSelected");
+  if (!type || !hint || !selected) return;
+  if (state.newCatalog && validTypeId(state.newCatalog.tipo_id)) {
+    type.value = String(state.newCatalog.tipo_id);
+    type.disabled = true;
+    hint.textContent = "Classificação herdada do Catálogo.";
+    selected.innerHTML = '<strong>' + esc(state.newCatalog.descricao) + '</strong><span>' + esc(typeName(state.newCatalog.tipo_id)) + '</span>';
+    selected.hidden = false;
+  } else {
+    type.disabled = false;
+    hint.textContent = "Sem item vinculado, selecione a classificação.";
+    selected.hidden = true;
+  }
+}
+function selectNewCatalog(item) {
+  state.newCatalog = item;
+  const input = document.querySelector("#newCatalogSearch");
+  const box = document.querySelector("#newCatalogResults");
+  if (input) input.value = item.descricao || "";
+  if (box) box.hidden = true;
+  updateNewCatalogState();
+}
 function renderNew() {
   const view = document.querySelector("#viewRoot");
   const today = new Date().toISOString().slice(0,10);
-  view.innerHTML = '<div class="page-title"><h1>Novo patrimônio</h1><p>Cadastro operacional rápido. A ID interna será gerada pelo servidor.</p></div>' +
+  view.innerHTML = '<div class="page-title"><h1>Novo patrimônio</h1></div>' +
     '<section class="panel"><form id="newForm" class="form-grid">' +
-    '<label>Descrição<input name="descricao" required></label><label>ID SES<input name="id_ses"></label>' +
-    '<label>Tipo<select name="tipo_id" required><option value="">Selecione…</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select></label>' +
+    '<label>Descrição / Item do Catálogo<div class="catalog-search-wrap"><input id="newCatalogSearch" type="search" autocomplete="off" placeholder="Digite para buscar no Catálogo…"><div id="newCatalogResults" class="catalog-results" hidden></div></div></label>' +
+    '<div id="newCatalogSelected" class="catalog-selected" hidden></div>' +
+    '<label>Descrição complementar<input name="descricao" required></label>' +
+    '<label>Classificação<select name="tipo_id" id="newType" required><option value="">Selecione…</option><option value="1">Equipamento Médico</option><option value="2">Mobiliário</option><option value="3">Equipamento de Informática</option></select><small id="newTypeHint" class="field-hint">Sem item vinculado, selecione a classificação.</small></label>' +
+    '<label>ID SES<input name="id_ses"></label>' +
     '<label>Centro de custo<select name="centro" required><option value="">Selecione…</option>' + centerOptions("",false) + '</select></label>' +
     '<label>Marca / Modelo<input name="marca_modelo"></label><label>Data de aquisição<input name="data" type="date" value="' + today + '" required></label>' +
     '<label>Tipo de aquisição<select name="aquisicao" required><option value="COMPRA">Compra</option><option value="DOACAO">Doação</option><option value="LOCACAO">Locação</option></select></label>' +
@@ -593,21 +673,40 @@ function renderNew() {
     '<div id="newAllowedBox" hidden><label>Centros de custo permitidos</label><div class="checkbox-list">' + allowedCentersHtml([],"") + '</div></div>' +
     '<div class="form-actions"><button class="ghost" type="button" id="cancelNew">Cancelar</button><button class="primary" type="submit">Cadastrar patrimônio</button></div>' +
     '</form></section>';
+
   document.querySelector("#cancelNew").addEventListener("click",function(){ go("home"); });
   document.querySelector("#newMobility").addEventListener("change",function(event){ document.querySelector("#newAllowedBox").hidden = event.target.value !== "MOVEL"; });
+  document.querySelector("#newCatalogSearch").addEventListener("input",function(event){
+    const value = event.target.value;
+    if (!state.newCatalog || value.trim() !== String(state.newCatalog.descricao || "").trim()) {
+      state.newCatalog = null;
+      updateNewCatalogState();
+    }
+    clearTimeout(state.newCatalogTimer);
+    state.newCatalogTimer = setTimeout(function(){ searchNewCatalog(value); },250);
+  });
   document.querySelector("#newForm").addEventListener("submit",function(event){ submitNew(event,false); });
+  updateNewCatalogState();
 }
 async function submitNew(event,forceDuplicate) {
   if (event && event.preventDefault) event.preventDefault();
   const form = event.currentTarget || document.querySelector("#newForm"), button = form.querySelector('button[type="submit"]'), fd = new FormData(form);
+  const selectedType = state.newCatalog && validTypeId(state.newCatalog.tipo_id) ? Number(state.newCatalog.tipo_id) : Number(fd.get("tipo_id"));
+  if (!selectedType) { toast("Selecione uma classificação válida.","error"); return; }
   button.disabled = true;
   const mobility = String(fd.get("mobilidade"));
   const payload = {
-    descricao:String(fd.get("descricao") || "").trim(), id_ses:String(fd.get("id_ses") || "").trim() || null,
-    tipo_id:Number(fd.get("tipo_id")), centro_custo_id:fd.get("centro"), marca_modelo:String(fd.get("marca_modelo") || "").trim() || null,
-    data_aquisicao:fd.get("data"), tipo_aquisicao:fd.get("aquisicao"),
+    descricao:String(fd.get("descricao") || "").trim(),
+    descricao_padrao_id:state.newCatalog ? state.newCatalog.id : null,
+    id_ses:String(fd.get("id_ses") || "").trim() || null,
+    tipo_id:selectedType,
+    centro_custo_id:fd.get("centro"),
+    marca_modelo:String(fd.get("marca_modelo") || "").trim() || null,
+    data_aquisicao:fd.get("data"),
+    tipo_aquisicao:fd.get("aquisicao"),
     valor_aquisicao:fd.get("valor") === "" ? null : Number(fd.get("valor")),
-    estado_conservacao:fd.get("estado"), mobilidade:mobility,
+    estado_conservacao:fd.get("estado"),
+    mobilidade:mobility,
     centros_permitidos_ids:mobility === "MOVEL" ? fd.getAll("allowed") : []
   };
   if (forceDuplicate) payload.confirmar_id_ses_duplicada = true;
