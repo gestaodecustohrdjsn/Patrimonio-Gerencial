@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Patrimônio+">
+  <rect width="512" height="512" rx="112" fill="#104861"/>
+  <path d="M122 132h144c83 0 132 42 132 112 0 73-51 116-136 116h-52v64h-88V132zm88 72v84h47c35 0 53-14 53-42 0-29-18-42-53-42h-47z" fill="#fff"/>
+  <path d="M366 326v-42h-42v-46h42v-42h46v42h42v46h-42v42h-46z" fill="#2c90c9"/>
+</svg>

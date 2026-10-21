@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "Patrimônio+ Operacional",
+  "short_name": "Patrimônio+",
+  "description": "Aplicativo operacional de gestão patrimonial em campo",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f9fb",
+  "theme_color": "#104861",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
