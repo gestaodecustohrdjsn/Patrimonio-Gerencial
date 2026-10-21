@@ -463,7 +463,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.7.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.8.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -851,6 +851,108 @@ export default {
           offset,
           usuarios
         },200,env,request);
+      }
+
+
+      // Patrimônio+ Operacional | endpoints leves para PWA mobile.
+      // A tela inicial nunca baixa a relação completa de patrimônios.
+      if (request.method === "GET" && url.pathname === "/api/operacional/resumo") {
+        if(!hasPermission(userPermissions,"patrimonios.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar patrimônios."},403,env,request);
+        const rows=await sql`
+          select
+            count(*)::int as total,
+            count(*) filter (where p.removido=false)::int as ativos,
+            count(*) filter (where p.removido=true)::int as inativados,
+            count(*) filter (where p.removido=false and p.mobilidade='MOVEL')::int as moveis,
+            count(*) filter (
+              where p.removido=false and exists(
+                select 1 from manutencoes_patrimonio m
+                where m.patrimonio_id=p.id and m.status='ABERTA'
+              )
+            )::int as em_manutencao,
+            max(p.atualizado_em) as atualizado_em
+          from patrimonios p
+        `;
+        return responseJson({ok:true,resumo:rows[0]||{total:0,ativos:0,inativados:0,moveis:0,em_manutencao:0,atualizado_em:null}},200,env,request);
+      }
+
+      const operacionalQrMatch=url.pathname.match(/^\/api\/operacional\/patrimonios\/qr\/([0-9a-f-]{36})$/i);
+      if (request.method === "GET" && operacionalQrMatch) {
+        if(!hasPermission(userPermissions,"patrimonios.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar patrimônios."},403,env,request);
+        const ref=await sql`select id from patrimonios where public_token=${operacionalQrMatch[1]}::uuid limit 1`;
+        if(!ref.length) return responseJson({ok:false,error:"Patrimônio não encontrado para este QR Code."},404,env,request);
+        const patrimonio=await hydrateAsset(sql,ref[0].id);
+        return responseJson({ok:true,patrimonio},200,env,request);
+      }
+
+      const operacionalAssetMatch=url.pathname.match(/^\/api\/operacional\/patrimonios\/([0-9a-f-]{36})$/i);
+      if (request.method === "GET" && operacionalAssetMatch) {
+        if(!hasPermission(userPermissions,"patrimonios.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar patrimônios."},403,env,request);
+        const patrimonio=await hydrateAsset(sql,operacionalAssetMatch[1]);
+        if(!patrimonio) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
+        return responseJson({ok:true,patrimonio},200,env,request);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/operacional/patrimonios/buscar") {
+        if(!hasPermission(userPermissions,"patrimonios.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar patrimônios."},403,env,request);
+        const q=String(url.searchParams.get("q")||"").trim().slice(0,120);
+        const qLike="%"+q+"%";
+        const centroRaw=String(url.searchParams.get("centro_id")||"").trim();
+        const centro=/^[0-9a-f-]{36}$/i.test(centroRaw)?centroRaw:null;
+        const tipoRaw=Number(url.searchParams.get("tipo_id")||0);
+        const tipo=[1,2,3].includes(tipoRaw)?tipoRaw:null;
+        const situacao=["ATIVOS","INATIVADOS"].includes(String(url.searchParams.get("situacao")||"").toUpperCase())
+          ? String(url.searchParams.get("situacao")).toUpperCase()
+          : null;
+        const mobilidade=["FIXO","MOVEL"].includes(String(url.searchParams.get("mobilidade")||"").toUpperCase())
+          ? String(url.searchParams.get("mobilidade")).toUpperCase()
+          : null;
+        const manutencao=["SIM","NAO"].includes(String(url.searchParams.get("manutencao")||"").toUpperCase())
+          ? String(url.searchParams.get("manutencao")).toUpperCase()
+          : null;
+        const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||40)));
+
+        const rows=await sql`
+          select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,
+            p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,
+            p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
+            exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
+            json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
+            case when d.id is null then null else json_build_object(
+              'id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,
+              'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor
+            ) end as descricoes_padrao,
+            coalesce((
+              select json_agg(json_build_object('id',cp.id,'codigo',cp.codigo,'nome',cp.nome) order by cp.nome)
+              from patrimonio_centros_permitidos pcp
+              join centros_custo cp on cp.id=pcp.centro_custo_id
+              where pcp.patrimonio_id=p.id
+            ),'[]'::json) as centros_permitidos
+          from patrimonios p
+          join centros_custo c on c.id=p.centro_custo_id
+          left join descricoes_padrao d on d.id=p.descricao_padrao_id
+          where (
+            ${q}='' or
+            p.id_interna ilike ${qLike} or
+            coalesce(p.id_ses,'') ilike ${qLike} or
+            coalesce(p.descricao,'') ilike ${qLike} or
+            coalesce(d.descricao,'') ilike ${qLike} or
+            coalesce(p.marca_modelo,'') ilike ${qLike} or
+            c.nome ilike ${qLike}
+          )
+          and (${centro}::text is null or p.centro_custo_id=${centro}::uuid)
+          and (${tipo}::int is null or p.tipo_id=${tipo}::int)
+          and (${situacao}::text is null
+            or (${situacao}='ATIVOS' and p.removido=false)
+            or (${situacao}='INATIVADOS' and p.removido=true))
+          and (${mobilidade}::text is null or p.mobilidade=${mobilidade})
+          and (${manutencao}::text is null
+            or (${manutencao}='SIM' and exists(select 1 from manutencoes_patrimonio mm where mm.patrimonio_id=p.id and mm.status='ABERTA'))
+            or (${manutencao}='NAO' and not exists(select 1 from manutencoes_patrimonio mm where mm.patrimonio_id=p.id and mm.status='ABERTA')))
+          order by p.removido asc,p.atualizado_em desc,p.id_interna asc
+          limit ${limit}
+        `;
+        return responseJson({ok:true,patrimonios:rows,limit},200,env,request);
       }
 
             if (request.method === "GET" && url.pathname === "/api/centros") {
