@@ -39,3 +39,15 @@ A tela inicial não usa `GET /api/patrimonios`. O PWA utiliza endpoints específ
 - resolução de conflitos;
 - desenho funcional do módulo de Auditoria;
 - desenho funcional de Depósito / Estoque.
+
+
+## Refinamento 0.2.1
+
+- painel inicial simplificado, sem saudação e textos auxiliares;
+- botões operacionais sem descrições redundantes;
+- ficha individual redesenhada como cartão de identidade patrimonial;
+- Marca / Modelo movido para o rodapé da identificação principal;
+- ID SES removida da grade inferior por já estar no cabeçalho;
+- botão de inativação com ícone vetorial embutido;
+- operador logado removido dos formulários de movimentação e manutenção e registrado implicitamente pela sessão;
+- Novo Patrimônio com busca no Catálogo, vínculo por descricao_padrao_id e classificação herdada do item selecionado.
