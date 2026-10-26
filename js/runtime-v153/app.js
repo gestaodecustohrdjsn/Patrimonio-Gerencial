@@ -2957,8 +2957,10 @@ function renderSettings() {
   }
 
   const templateOpen = state.settingsOpenCard === "template";
+  const lossTemplateOpen = state.settingsOpenCard === "loss-template";
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
   const template=normalizeReportTemplateClient(state.reportTemplate);
+  const lossTemplate=normalizeLossTermTemplateClient(state.lossTermTemplate);
 
   root.innerHTML = `
     <div class="page-header">
@@ -3030,6 +3032,8 @@ function renderSettings() {
         </div>
       </section>
 
+      ${lossTemplateSettingsCardHtml(lossTemplateOpen,lossTemplate)}
+
       <section class="settings-card ${qrTemplateOpen ? "is-open" : ""}">
         <button class="settings-card-toggle" type="button" data-setting-card="qr-template" aria-expanded="${qrTemplateOpen}">
           <div class="settings-card-icon">QR</div>
@@ -3058,6 +3062,9 @@ function renderSettings() {
       if(state.settingsOpenCard==="template" && !state.reportTemplateLoaded) {
         ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
       }
+      if(state.settingsOpenCard==="loss-template" && !state.lossTermTemplateLoaded) {
+        ensureLossTermTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
     });
   });
 
@@ -3078,9 +3085,18 @@ function renderSettings() {
     renderSettings();
   });
   document.querySelector('[data-action="save-report-template"]')?.addEventListener("click",saveReportTemplateFromSettings);
+  document.querySelector('[data-action="reset-loss-template"]')?.addEventListener("click",()=>{
+    state.lossTermTemplate=defaultLossTermTemplateClient();
+    state.lossTermTemplateLoaded=true;
+    renderSettings();
+  });
+  document.querySelector('[data-action="save-loss-template"]')?.addEventListener("click",saveLossTermTemplateFromSettings);
 
   if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
     ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
+  if(lossTemplateOpen && !state.lossTermTemplateLoaded && !state.lossTermTemplateBusy) {
+    ensureLossTermTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
 }
 
