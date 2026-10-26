@@ -51,3 +51,14 @@ A tela inicial não usa `GET /api/patrimonios`. O PWA utiliza endpoints específ
 - botão de inativação com ícone vetorial embutido;
 - operador logado removido dos formulários de movimentação e manutenção e registrado implicitamente pela sessão;
 - Novo Patrimônio com busca no Catálogo, vínculo por descricao_padrao_id e classificação herdada do item selecionado.
+
+
+## Perda patrimonial 0.3.0
+
+- estado terminal PERDIDO separado de inativação;
+- formulário de perda com motivo, data, responsáveis e observações;
+- geração de Termo de Perda por impressão/salvar PDF;
+- snapshot do patrimônio e do template no momento da ocorrência;
+- filtro específico para patrimônios perdidos;
+- patrimônios perdidos ficam fora das contagens operacionais;
+- template do termo preparado para validação pela Qualidade.
