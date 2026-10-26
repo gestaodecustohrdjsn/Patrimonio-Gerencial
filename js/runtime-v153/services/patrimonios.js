@@ -45,3 +45,20 @@ export async function getPublicAsset(token) {
   const data = await apiRequest(`/api/public/patrimonio/${encodeURIComponent(token)}`, { auth: false });
   return data.patrimonio || null;
 }
+
+
+export async function registerAssetLoss(id, payload) {
+  const data = await apiRequest(`/api/patrimonios/${encodeURIComponent(id)}/perda`, {
+    method: "POST",
+    body: payload
+  });
+  return {
+    patrimonio:data.patrimonio || null,
+    perda:data.perda || null
+  };
+}
+
+export async function getAssetLoss(id) {
+  const data = await apiRequest(`/api/patrimonios/${encodeURIComponent(id)}/perda`);
+  return data.perda || null;
+}
