@@ -3,7 +3,7 @@ import { getSession, signIn, signOut, changePassword, onAuthChange } from "./aut
 
 const root = document.querySelector("#appRoot");
 const toastRoot = document.querySelector("#toast");
-const version = String((window.OPERACIONAL_CONFIG && window.OPERACIONAL_CONFIG.VERSION) || "0.2.0");
+const version = String((window.OPERACIONAL_CONFIG && window.OPERACIONAL_CONFIG.VERSION) || "0.3.0");
 
 const state = {
   session: null,
@@ -28,7 +28,9 @@ const state = {
   newCatalog: null,
   newCatalogResults: [],
   newCatalogTimer: null,
-  newCatalogRequest: 0
+  newCatalogRequest: 0,
+  lossRecord: null,
+  lossLoading: false
 };
 
 function esc(value) {
@@ -66,7 +68,8 @@ function operationLabel(op) {
     REATIVACAO:"Reativação", MOBILIDADE_ALTERADA:"Alteração de mobilidade",
     CENTRO_PERMITIDO_ADICIONADO:"Centro permitido adicionado",
     CENTRO_PERMITIDO_REMOVIDO:"Centro permitido removido",
-    MANUTENCAO_ABERTA:"Entrada em manutenção", MANUTENCAO_CONCLUIDA:"Saída da manutenção"
+    MANUTENCAO_ABERTA:"Entrada em manutenção", MANUTENCAO_CONCLUIDA:"Saída da manutenção",
+    PERDA_PATRIMONIAL:"Perda patrimonial"
   };
   return map[op] || String(op || "Operação").replaceAll("_"," ");
 }
@@ -95,13 +98,14 @@ function viewInfo() {
     maintenance:["Manutenção","Operação"], toggle:["Situação do patrimônio","Operação"],
     edit:["Editar patrimônio","Dados operacionais"], new:["Novo patrimônio","Cadastro operacional"],
     audit:["Auditorias","Módulo em preparação"], sync:["Sincronização","Operações offline"],
-    histories:["Históricos","Auditoria operacional"], assetHistory:["Histórico do patrimônio","Rastreabilidade"]
+    histories:["Históricos","Auditoria operacional"], assetHistory:["Histórico do patrimônio","Rastreabilidade"],
+    loss:["Perda patrimonial","Registro formal"]
   };
   return all[state.view] || all.home;
 }
 function backTarget() {
   if (state.view === "home") return null;
-  if (["move","maintenance","toggle","edit","assetHistory"].includes(state.view)) return "asset";
+  if (["move","maintenance","toggle","edit","assetHistory","loss"].includes(state.view)) return "asset";
   if (state.view === "asset") return state.assetReturnView || "home";
   return "home";
 }
@@ -133,7 +137,7 @@ function render() {
   const map = {
     home:renderHome, search:renderSearch, asset:renderAsset, move:renderMove,
     maintenance:renderMaintenance, toggle:renderToggle, edit:renderEdit, new:renderNew,
-    audit:renderAudit, sync:renderSync, histories:renderHistories, assetHistory:renderAssetHistory
+    audit:renderAudit, sync:renderSync, histories:renderHistories, assetHistory:renderAssetHistory, loss:renderLoss
   };
   (map[state.view] || renderHome)();
 }
@@ -275,7 +279,8 @@ function renderSearch() {
       '<option value="2"' + (f.tipo_id==="2"?' selected':'') + '>Mobiliário</option>' +
       '<option value="3"' + (f.tipo_id==="3"?' selected':'') + '>Informática</option></select></label>' +
     '<label>Situação<select name="situacao"><option value="">Todos</option><option value="ATIVOS"' + (f.situacao==="ATIVOS"?' selected':'') + '>Ativos</option>' +
-      '<option value="INATIVADOS"' + (f.situacao==="INATIVADOS"?' selected':'') + '>Inativados</option></select></label>' +
+      '<option value="INATIVADOS"' + (f.situacao==="INATIVADOS"?' selected':'') + '>Inativados</option>' +
+      '<option value="PERDIDOS"' + (f.situacao==="PERDIDOS"?' selected':'') + '>Perdidos</option></select></label>' +
     '<label>Mobilidade<select name="mobilidade"><option value="">Todas</option><option value="FIXO"' + (f.mobilidade==="FIXO"?' selected':'') + '>Fixo</option>' +
       '<option value="MOVEL"' + (f.mobilidade==="MOVEL"?' selected':'') + '>Móvel</option></select></label>' +
     '<label>Manutenção<select name="manutencao"><option value="">Todas</option><option value="SIM"' + (f.manutencao==="SIM"?' selected':'') + '>Em manutenção</option>' +
@@ -298,15 +303,17 @@ function renderSearch() {
   document.querySelector("#searchForm").addEventListener("submit",runSearch);
 }
 function searchResultHtml(a) {
-  return '<button class="result-card" type="button" data-result-id="' + esc(a.id) + '">' +
+  return '<button class="result-card' + (a.perdido ? ' is-lost' : '') + '" type="button" data-result-id="' + esc(a.id) + '">' +
     '<div class="result-top"><span class="result-id">ID ' + esc(a.id_interna || "—") + (a.id_ses ? ' · SES ' + esc(a.id_ses) : '') + '</span><span>›</span></div>' +
     '<h3>' + esc((a.descricoes_padrao && a.descricoes_padrao.descricao) || a.descricao || "Patrimônio") + '</h3>' +
     '<div class="result-meta"><span class="mini-tag">' + esc((a.centros_custo && a.centros_custo.nome) || "Sem centro") + '</span>' +
     '<span class="mini-tag">' + (a.mobilidade === "MOVEL" ? "Móvel" : "Fixo") + '</span>' +
-    (a.em_manutencao ? '<span class="mini-tag warn">Em manutenção</span>' : '') +
-    (a.removido ? '<span class="mini-tag danger">Inativado</span>' : '') +
+    (a.perdido ? '<span class="mini-tag lost">Perdido</span>' : '') +
+    (!a.perdido && a.em_manutencao ? '<span class="mini-tag warn">Em manutenção</span>' : '') +
+    (!a.perdido && a.removido ? '<span class="mini-tag danger">Inativado</span>' : '') +
     '</div></button>';
 }
+
 async function runSearch(event) {
   event.preventDefault();
   if (!state.online) { toast("A busca online precisa de conexão.","error"); return; }
@@ -333,6 +340,7 @@ function openAsset(asset,returnView) {
   state.assetReturnView = returnView || "home";
   state.assetHistory = null;
   state.maintenanceRows = null;
+  state.lossRecord = asset && asset.perda ? asset.perda : null;
   go("asset");
 }
 async function refreshAsset() {
@@ -354,38 +362,46 @@ function renderAsset() {
   if (!a) { view.innerHTML = '<div class="empty">Nenhum patrimônio selecionado.</div>'; return; }
   const displayName = (a.descricoes_padrao && a.descricoes_padrao.descricao) || a.descricao || "Patrimônio";
   const secondary = a.descricoes_padrao && a.descricoes_padrao.descricao && a.descricao && a.descricao !== a.descricoes_padrao.descricao ? a.descricao : "";
-  const inactive = a.removido === true;
+  const lost = a.perdido === true;
+  const inactive = !lost && a.removido === true;
   let maintenanceButton = "";
-  if (a.em_manutencao && can("manutencoes.concluir")) maintenanceButton = assetAction("maintAction","Resolver manutenção","","../assets/icons/manutencao_icon.png");
-  if (!a.em_manutencao && can("manutencoes.abrir")) maintenanceButton = assetAction("maintAction","Enviar à manutenção","","../assets/icons/manutencao_icon.png");
-  const statusClass = inactive ? "danger" : "ok";
-  const statusText = inactive ? "Inativado" : "Ativo";
+  if (!lost && !inactive && a.em_manutencao && can("manutencoes.concluir")) maintenanceButton = assetAction("maintAction","Resolver manutenção","","../assets/icons/manutencao_icon.png");
+  if (!lost && !inactive && !a.em_manutencao && can("manutencoes.abrir")) maintenanceButton = assetAction("maintAction","Enviar à manutenção","","../assets/icons/manutencao_icon.png");
+  const statusClass = lost ? "danger" : (inactive ? "danger" : "ok");
+  const statusText = lost ? "Perdido" : (inactive ? "Inativado" : "Ativo");
   const disableIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M6.5 17.5 17.5 6.5"></path></svg>';
 
-  view.innerHTML = '<section class="asset-identity">' +
+  view.innerHTML = '<section class="asset-identity' + (lost ? ' is-lost' : '') + '">' +
     '<div class="asset-identity-head"><div class="asset-reference"><span>ID ' + esc(a.id_interna || "—") + '</span>' +
-      (a.id_ses ? '<span class="ses">SES ' + esc(a.id_ses) + '</span>' : '') + '</div></div>' +
+      (a.id_ses ? '<span class="ses">SES ' + esc(a.id_ses) + '</span>' : '') +
+      (lost ? '<span class="lost-reference">PERDIDO</span>' : '') + '</div></div>' +
     '<div class="asset-identity-body"><h1>' + esc(displayName) + '</h1>' +
       (secondary ? '<div class="secondary-name">' + esc(secondary) + '</div>' : '') +
-      '<div class="identity-location"><span>Centro de custo atual</span><strong>' + esc((a.centros_custo && a.centros_custo.nome) || "—") + '</strong></div>' +
+      '<div class="identity-location"><span>Centro de custo de referência</span><strong>' + esc((a.centros_custo && a.centros_custo.nome) || "—") + '</strong></div>' +
       '<div class="identity-status-grid">' +
         '<div class="identity-status"><span>Situação</span><strong class="' + statusClass + '">' + statusText + '</strong></div>' +
         '<div class="identity-status"><span>Mobilidade</span><strong>' + (a.mobilidade === "MOVEL" ? "Móvel" : "Fixo") + '</strong></div>' +
         '<div class="identity-status full"><span>Conservação</span><strong>' + esc(conservationName(a.estado_conservacao)) + '</strong></div>' +
-        (a.em_manutencao ? '<div class="identity-maintenance">Em manutenção</div>' : '') +
+        (!lost && a.em_manutencao ? '<div class="identity-maintenance">Em manutenção</div>' : '') +
       '</div>' +
     '</div>' +
     '<footer class="asset-model"><span>Marca / Modelo</span><strong>' + esc(a.marca_modelo || "—") + '</strong></footer>' +
   '</section>' +
   '<div class="section-head compact"><div><h2>Ações</h2></div></div>' +
   '<div class="action-grid">' +
-    (!inactive && can("patrimonios.movimentar") ? assetAction("moveAction","Movimentar","","../assets/icons/movimentar_icon.png") : "") +
-    maintenanceButton +
-    (((inactive && can("patrimonios.restaurar")) || (!inactive && can("patrimonios.inativar"))) ?
-      '<button class="asset-action" id="toggleAction" type="button"><span class="action-icon inline-svg">' + disableIcon + '</span><strong>' + (inactive ? "Reativar" : "Inativar") + '</strong></button>' : "") +
-    (can("patrimonios.editar") ? assetAction("editAction","Editar informações","","../assets/icons/editar_icon.png") : "") +
-    assetAction("stockAction","Depósito / Estoque","","","▣","future") +
+    (lost
+      ? assetAction("lossTermAction","Termo de Perda","","","≡","")
+      : (
+        (!inactive && can("patrimonios.movimentar") ? assetAction("moveAction","Movimentar","","../assets/icons/movimentar_icon.png") : "") +
+        maintenanceButton +
+        (((inactive && can("patrimonios.restaurar")) || (!inactive && can("patrimonios.inativar"))) ?
+          '<button class="asset-action" id="toggleAction" type="button"><span class="action-icon inline-svg">' + disableIcon + '</span><strong>' + (inactive ? "Reativar" : "Inativar") + '</strong></button>' : "") +
+        (can("patrimonios.editar") ? assetAction("editAction","Editar informações","","../assets/icons/editar_icon.png") : "") +
+        (!inactive && can("patrimonios.registrar_perda") ? assetAction("lossAction","Perda","","","!","loss-action") : "") +
+        assetAction("stockAction","Depósito / Estoque","","","▣","future")
+      )) +
   '</div>' +
+  (lost && a.perda ? '<div class="loss-summary"><strong>Perda registrada em ' + esc(formatDate(a.perda.data_ocorrencia)) + '</strong><span>' + esc(lossReasonLabel(a.perda.motivo)) + '</span></div>' : '') +
   '<div class="section-head compact"><div><h2>Informações</h2></div></div>' +
   '<div class="info-grid">' +
     infoBox("Tipo",typeName(a.tipo_id)) + infoBox("Estado",conservationName(a.estado_conservacao)) +
@@ -399,8 +415,168 @@ function renderAsset() {
   const maint = document.querySelector("#maintAction"); if (maint) maint.addEventListener("click",openMaintenance);
   const toggle = document.querySelector("#toggleAction"); if (toggle) toggle.addEventListener("click",function(){ go("toggle"); });
   const edit = document.querySelector("#editAction"); if (edit) edit.addEventListener("click",openEdit);
-  document.querySelector("#stockAction").addEventListener("click",function(){ toast("Depósito / Estoque está reservado para a próxima evolução."); });
+  const loss = document.querySelector("#lossAction"); if (loss) loss.addEventListener("click",openLoss);
+  const term = document.querySelector("#lossTermAction"); if (term) term.addEventListener("click",openLoss);
+  const stock = document.querySelector("#stockAction"); if (stock) stock.addEventListener("click",function(){ toast("Depósito / Estoque está reservado para a próxima evolução."); });
   const hist = document.querySelector("#assetHistoryButton"); if (hist) hist.addEventListener("click",openAssetHistory);
+}
+
+function lossReasonLabel(value) {
+  return ({
+    ROUBO_FURTO:"Roubo / Furto",
+    DANO_IRREPARAVEL:"Dano irreparável / perda total",
+    EXTRAVIO:"Extravio",
+    OUTRO:"Outro"
+  })[String(value || "")] || "—";
+}
+
+async function openLoss() {
+  state.view = "loss";
+  render();
+  if (state.currentAsset && state.currentAsset.perdido && !state.lossRecord) {
+    state.lossLoading = true;
+    renderLoss();
+    try {
+      const data = await apiRequest("/api/patrimonios/" + state.currentAsset.id + "/perda");
+      state.lossRecord = data.perda || null;
+    } catch (error) {
+      handleApiFailure(error,"Não foi possível consultar o registro de perda.");
+    } finally {
+      state.lossLoading = false;
+      if (state.view === "loss") renderLoss();
+    }
+  }
+}
+
+function renderLoss() {
+  const view = document.querySelector("#viewRoot");
+  const a = state.currentAsset;
+  if (!a) { view.innerHTML = '<div class="empty">Nenhum patrimônio selecionado.</div>'; return; }
+  if (state.lossLoading) {
+    view.innerHTML = '<div class="loading-line"></div><div class="empty">Carregando registro de perda…</div>';
+    return;
+  }
+
+  if (a.perdido) {
+    const loss = state.lossRecord || a.perda;
+    if (!loss) {
+      view.innerHTML = '<div class="empty">A perda está registrada, mas o termo não pôde ser carregado.</div>';
+      return;
+    }
+    view.innerHTML = '<div class="page-title"><h1>Termo de Perda</h1><p>ID ' + esc(a.id_interna || "—") + '</p></div>' +
+      '<section class="panel loss-detail">' +
+        '<div class="loss-status-banner">Perda patrimonial registrada</div>' +
+        '<div class="info-grid">' +
+          infoBox("Motivo",lossReasonLabel(loss.motivo)) +
+          infoBox("Data da ocorrência",formatDate(loss.data_ocorrencia)) +
+          infoBox("Centro de custo",loss.centro_custo_nome || (a.centros_custo && a.centros_custo.nome) || "—","full") +
+          infoBox("Responsável do Patrimônio",loss.responsavel_patrimonio || "—","full") +
+          infoBox("Diretor Administrativo",loss.diretor_administrativo || "—","full") +
+          infoBox("Coordenador do setor",loss.coordenador_setor || "—","full") +
+          (loss.motivo_detalhe ? infoBox("Detalhamento",loss.motivo_detalhe,"full") : "") +
+          (loss.observacoes ? infoBox("Observações",loss.observacoes,"full") : "") +
+        '</div>' +
+        '<button class="primary detail-toggle" id="printLossTerm" type="button">Imprimir / Salvar PDF</button>' +
+      '</section>';
+    document.querySelector("#printLossTerm").addEventListener("click",function(){ printLossTerm(loss); });
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0,10);
+  view.innerHTML = '<div class="page-title"><h1>Registrar perda</h1><p>Esta operação retira definitivamente o bem da contagem operacional, preservando seu histórico.</p></div>' +
+    '<section class="panel"><form id="lossForm" class="form-grid">' +
+      '<label>Patrimônio<input value="ID ' + esc(a.id_interna || "—") + ' · ' + esc((a.descricoes_padrao && a.descricoes_padrao.descricao) || a.descricao || "Patrimônio") + '" disabled></label>' +
+      '<label>Centro de custo / setor<input value="' + esc((a.centros_custo && a.centros_custo.nome) || "—") + '" disabled></label>' +
+      '<label>Data da ocorrência<input name="data_ocorrencia" type="date" value="' + today + '" required></label>' +
+      '<label>Motivo<select name="motivo" id="lossReason" required>' +
+        '<option value="">Selecione…</option><option value="ROUBO_FURTO">Roubo / Furto</option>' +
+        '<option value="DANO_IRREPARAVEL">Dano irreparável / perda total</option><option value="EXTRAVIO">Extravio</option><option value="OUTRO">Outro</option>' +
+      '</select></label>' +
+      '<label id="lossReasonDetailBox" hidden>Detalhamento do motivo<textarea name="motivo_detalhe" placeholder="Descreva a ocorrência"></textarea></label>' +
+      '<label>Responsável pelo Setor de Patrimônio<input name="responsavel_patrimonio" required></label>' +
+      '<label>Diretor Administrativo<input name="diretor_administrativo" required></label>' +
+      '<label>Coordenador do Centro de Custo / Setor<input name="coordenador_setor" required></label>' +
+      '<label>Observações<textarea name="observacoes" placeholder="Opcional"></textarea></label>' +
+      '<label class="loss-confirm"><input name="confirmacao" type="checkbox" value="SIM" required><span>Confirmo que as informações foram conferidas e que este bem deve deixar a contagem operacional.</span></label>' +
+      '<div class="form-actions"><button class="ghost" type="button" id="cancelLoss">Cancelar</button><button class="danger-button" type="submit">Registrar perda</button></div>' +
+    '</form></section>';
+
+  document.querySelector("#cancelLoss").addEventListener("click",function(){ go("asset"); });
+  document.querySelector("#lossReason").addEventListener("change",function(event){
+    const box = document.querySelector("#lossReasonDetailBox");
+    box.hidden = event.target.value !== "OUTRO";
+    box.querySelector("textarea").required = event.target.value === "OUTRO";
+  });
+  document.querySelector("#lossForm").addEventListener("submit",submitLoss);
+}
+
+async function submitLoss(event) {
+  event.preventDefault();
+  if (!window.confirm("Registrar esta perda? O patrimônio sairá definitivamente da contagem operacional.")) return;
+  const form = event.currentTarget, button = form.querySelector('button[type="submit"]'), fd = new FormData(form);
+  button.disabled = true; button.textContent = "Registrando…";
+  try {
+    const data = await apiRequest("/api/patrimonios/" + state.currentAsset.id + "/perda",{method:"POST",body:{
+      data_ocorrencia:fd.get("data_ocorrencia"),
+      motivo:fd.get("motivo"),
+      motivo_detalhe:String(fd.get("motivo_detalhe") || "").trim() || null,
+      responsavel_patrimonio:String(fd.get("responsavel_patrimonio") || "").trim(),
+      diretor_administrativo:String(fd.get("diretor_administrativo") || "").trim(),
+      coordenador_setor:String(fd.get("coordenador_setor") || "").trim(),
+      observacoes:String(fd.get("observacoes") || "").trim() || null
+    }});
+    state.currentAsset = data.patrimonio;
+    state.lossRecord = data.perda;
+    state.summary = null;
+    toast("Perda patrimonial registrada.","success");
+    renderLoss();
+  } catch (error) {
+    handleApiFailure(error,"Não foi possível registrar a perda.");
+    button.disabled = false; button.textContent = "Registrar perda";
+  }
+}
+
+function printLossTerm(loss) {
+  const snapshot = loss.patrimonio_snapshot || {};
+  const template = loss.template_snapshot || {};
+  const popup = window.open("","_blank","width=900,height=800");
+  if (!popup) { toast("O navegador bloqueou a janela de impressão.","error"); return; }
+  const logo = template.logo_data_url ? '<img class="logo" src="' + esc(template.logo_data_url) + '">' : '';
+  const validation = template.validado_qualidade
+    ? '<div class="validated">MODELO VALIDADO PELA QUALIDADE · VERSÃO ' + esc(template.versao || "—") + '</div>'
+    : '<div class="draft">MODELO PENDENTE DE VALIDAÇÃO DA QUALIDADE</div>';
+  const itemName = snapshot.descricao_catalogo || snapshot.descricao || "Patrimônio";
+  popup.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Termo de Perda - ' + esc(snapshot.id_interna || "") + '</title><style>' +
+    '@page{size:A4;margin:16mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1d2f38;font-size:11pt;line-height:1.45;margin:0}' +
+    '.header{display:flex;gap:16px;align-items:center;border-bottom:2px solid #173e50;padding-bottom:12px}.logo{max-width:90px;max-height:65px}.header h1{margin:0;font-size:16pt}.header p{margin:3px 0 0;color:#566b75}.validated,.draft{margin:12px 0;padding:7px 10px;text-align:center;font-size:8pt;font-weight:bold;border-radius:4px}.validated{background:#e8f3ed;color:#286247}.draft{background:#fff0de;color:#8a4f12;border:1px solid #e8c79d}' +
+    '.intro{margin:18px 0}.box{border:1px solid #cad7dc;border-radius:6px;padding:12px;margin:10px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{border-bottom:1px solid #d7e1e5;padding:7px 0}.field.full{grid-column:1/-1}.label{display:block;font-size:8pt;text-transform:uppercase;color:#6b7f88;font-weight:bold}.value{display:block;margin-top:2px;font-weight:600}.signatures{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:55px}.signature{text-align:center;border-top:1px solid #374d56;padding-top:6px;font-size:9pt}.signature strong{display:block;font-size:9pt}.footer{margin-top:40px;border-top:1px solid #d5dfe3;padding-top:8px;display:flex;justify-content:space-between;color:#70828a;font-size:8pt}' +
+    '</style></head><body>' +
+    '<header class="header">' + logo + '<div><h1>' + esc(template.titulo || "Termo de Registro de Perda Patrimonial") + '</h1><p>' + esc(template.instituicao || "") + (template.unidade ? ' · ' + esc(template.unidade) : '') + '</p></div></header>' +
+    validation +
+    '<p class="intro">' + esc(template.texto_abertura || "") + '</p>' +
+    '<section class="box"><div class="grid">' +
+      '<div class="field"><span class="label">ID interna</span><span class="value">' + esc(snapshot.id_interna || "—") + '</span></div>' +
+      '<div class="field"><span class="label">ID SES</span><span class="value">' + esc(snapshot.id_ses || "—") + '</span></div>' +
+      '<div class="field full"><span class="label">Patrimônio</span><span class="value">' + esc(itemName) + '</span></div>' +
+      '<div class="field full"><span class="label">Marca / Modelo</span><span class="value">' + esc(snapshot.marca_modelo || "—") + '</span></div>' +
+      '<div class="field full"><span class="label">Centro de custo / setor</span><span class="value">' + esc(loss.centro_custo_nome || "—") + '</span></div>' +
+    '</div></section>' +
+    '<section class="box"><div class="grid">' +
+      '<div class="field"><span class="label">Data da ocorrência</span><span class="value">' + esc(formatDate(loss.data_ocorrencia)) + '</span></div>' +
+      '<div class="field"><span class="label">Motivo</span><span class="value">' + esc(lossReasonLabel(loss.motivo)) + '</span></div>' +
+      (loss.motivo_detalhe ? '<div class="field full"><span class="label">Detalhamento</span><span class="value">' + esc(loss.motivo_detalhe) + '</span></div>' : '') +
+      (loss.observacoes ? '<div class="field full"><span class="label">Observações</span><span class="value">' + esc(loss.observacoes) + '</span></div>' : '') +
+    '</div></section>' +
+    '<p>' + esc(template.texto_fechamento || "") + '</p>' +
+    '<section class="signatures">' +
+      '<div class="signature"><strong>' + esc(loss.responsavel_patrimonio) + '</strong>' + esc(template.assinatura_responsavel_patrimonio || "Responsável pelo Patrimônio") + '</div>' +
+      '<div class="signature"><strong>' + esc(loss.diretor_administrativo) + '</strong>' + esc(template.assinatura_diretor_administrativo || "Diretor Administrativo") + '</div>' +
+      '<div class="signature"><strong>' + esc(loss.coordenador_setor) + '</strong>' + esc(template.assinatura_coordenador_setor || "Coordenador do Setor") + '</div>' +
+    '</section>' +
+    '<footer class="footer"><span>' + esc(template.rodape || "") + '</span><span>Patrimônio+</span></footer>' +
+    '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},150);});<\/script>' +
+    '</body></html>');
+  popup.document.close();
 }
 
 async function openMove() { await ensureCenters(); go("move"); }
