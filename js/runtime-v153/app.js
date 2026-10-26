@@ -333,6 +333,7 @@ function historyActionLabel(event) {
     "patrimonios:CENTRO_PERMITIDO_REMOVIDO": "Removeu centro permitido",
     "patrimonios:MANUTENCAO_ABERTA": "Abriu manutenção",
     "patrimonios:MANUTENCAO_CONCLUIDA": "Concluiu manutenção",
+    "patrimonios:PERDA_PATRIMONIAL": "Registrou perda patrimonial",
     "centros_custo:CADASTRO": "Cadastrou centro de custo",
     "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
     "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
@@ -450,7 +451,7 @@ async function refreshDashboardHistory() {
 }
 
 function renderDashboard() {
-  const visibleAssets = state.assets.filter((asset) => !asset.removido);
+  const visibleAssets = state.assets.filter((asset) => !asset.removido && !asset.perdido);
   const active = visibleAssets.filter((asset) => asset.status === "ATIVO").length;
   const total = visibleAssets.reduce((sum, asset) => sum + Number(asset.valor_aquisicao || 0), 0);
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
@@ -657,6 +658,7 @@ function canCreateAssets() { return hasAccess("patrimonios.cadastrar"); }
 function canMoveAssets() { return state.session?.user?.permissoes?.["patrimonios.movimentar"] === true; }
 function canMaintainAssets() { return state.session?.user?.permissoes?.["manutencoes.abrir"] === true; }
 function canDeleteAssets() { return state.session?.user?.permissoes?.["patrimonios.excluir"] === true; }
+function canRegisterLoss() { return state.session?.user?.permissoes?.["patrimonios.registrar_perda"] === true; }
 
 function iconSvg(name) {
   const icons = {
@@ -676,7 +678,7 @@ function actionIcon(action, asset, title, icon, disabled = false) {
 function defaultFilters() {
   return {
     q: "", centro: "", tipo: "", status: "", aquisicao: "", conservacao: "",
-    sigem: "", valor: "", idSes: "", dataDe: "", dataAte: "", ordenacao: "id"
+    sigem: "", valor: "", idSes: "", perda: "", dataDe: "", dataAte: "", ordenacao: "id"
   };
 }
 
@@ -700,6 +702,8 @@ function assetMatchesFilters(asset, f) {
   if (f.valor === "nao" && !(asset.valor_aquisicao === null || asset.valor_aquisicao === undefined || asset.valor_aquisicao === "")) return false;
   if (f.idSes === "sim" && !asset.id_ses) return false;
   if (f.idSes === "nao" && asset.id_ses) return false;
+  if (f.perda === "sim" && !asset.perdido) return false;
+  if (f.perda === "nao" && asset.perdido) return false;
   const date = normalizeDateOnly(asset.data_aquisicao);
   if (f.dataDe && date && date < f.dataDe) return false;
   if (f.dataAte && date && date > f.dataAte) return false;
@@ -719,10 +723,10 @@ function sortAssets(items, order) {
 
 function filteredByPanel(key, includeRemoved = false) {
   const f = ensureFilters(key);
-  return sortAssets(
-    state.assets.filter(a => includeRemoved ? true : !a.removido).filter(a => assetMatchesFilters(a, f)),
-    f.ordenacao
-  );
+  const source = key === "assetFilters"
+    ? state.assets.filter(a => includeRemoved ? (a.removido && !a.perdido) : !a.removido)
+    : state.assets.filter(a => !a.removido && !a.perdido);
+  return sortAssets(source.filter(a => assetMatchesFilters(a, f)), f.ordenacao);
 }
 
 function filterPanelHtml(key, title = "Filtros") {
@@ -740,6 +744,7 @@ function filterPanelHtml(key, title = "Filtros") {
       <label>Vínculo com Catálogo<select data-filter-key="${key}" data-filter-field="sigem"><option value="">Todos</option><option value="sim" ${f.sigem==="sim"?"selected":""}>Com Catálogo</option><option value="nao" ${f.sigem==="nao"?"selected":""}>Sem Catálogo</option></select></label>
       <label>Valor<select data-filter-key="${key}" data-filter-field="valor"><option value="">Todos</option><option value="sim" ${f.valor==="sim"?"selected":""}>Com valor</option><option value="nao" ${f.valor==="nao"?"selected":""}>Sem valor</option></select></label>
       <label>ID SES<select data-filter-key="${key}" data-filter-field="idSes"><option value="">Todos</option><option value="sim" ${f.idSes==="sim"?"selected":""}>Com ID SES</option><option value="nao" ${f.idSes==="nao"?"selected":""}>Sem ID SES</option></select></label>
+      <label>Situação patrimonial<select data-filter-key="${key}" data-filter-field="perda"><option value="">Todos</option><option value="nao" ${f.perda==="nao"?"selected":""}>Em acervo</option><option value="sim" ${f.perda==="sim"?"selected":""}>Perdidos</option></select></label>
       <label>Aquisição de<div class="date-shell"><input type="date" data-filter-key="${key}" data-filter-field="dataDe" value="${escapeHtml(f.dataDe)}"></div></label>
       <label>Aquisição até<div class="date-shell"><input type="date" data-filter-key="${key}" data-filter-field="dataAte" value="${escapeHtml(f.dataAte)}"></div></label>
       <label>Ordenar por<select data-filter-key="${key}" data-filter-field="ordenacao"><option value="id" ${f.ordenacao==="id"?"selected":""}>ID interna</option><option value="descricao" ${f.ordenacao==="descricao"?"selected":""}>Descrição</option><option value="centro" ${f.ordenacao==="centro"?"selected":""}>Centro de custo</option><option value="data" ${f.ordenacao==="data"?"selected":""}>Data de aquisição</option><option value="valor" ${f.ordenacao==="valor"?"selected":""}>Maior valor</option></select></label>
@@ -763,7 +768,11 @@ function mobilityBadge(asset) {
 }
 
 function maintenanceBadge(asset) {
-  return asset.em_manutencao ? '<span class="context-tag context-tag-maintenance">[Em manutenção]</span>' : "";
+  return !asset.perdido && asset.em_manutencao ? '<span class="context-tag context-tag-maintenance">[Em manutenção]</span>' : "";
+}
+
+function lossBadge(asset) {
+  return asset.perdido ? '<span class="context-tag context-tag-loss">[Perdido]</span>' : "";
 }
 
 function centerChipHtml(center, removeAction, removeId) {
@@ -934,18 +943,19 @@ function assetsTable(assets, title = "", withActions = false) {
   const table = `<div class="table-wrap"><table><thead><tr><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Valor</th><th>Status</th><th>ID SES</th>${withActions ? '<th class="actions-head">Ações</th>' : ""}</tr></thead><tbody>${assets.map((asset) => {
     const actions = withActions ? `<td><div class="row-actions">
       ${actionIcon("view-asset", asset, "Visualizar ficha", "view")}
-      ${actionIcon("move-asset", asset, "Movimentar", "move", !canMoveAssets() || asset.removido)}
-      ${actionIcon("maintenance-asset", asset, "Manutenção", "maintenance", !canMaintainAssets() || asset.removido)}
-      ${actionIcon("label-asset", asset, "Gerar etiqueta", "label")}
+      ${actionIcon("move-asset", asset, "Movimentar", "move", !canMoveAssets() || asset.removido || asset.perdido)}
+      ${actionIcon("maintenance-asset", asset, "Manutenção", "maintenance", !canMaintainAssets() || asset.removido || asset.perdido)}
+      ${actionIcon("label-asset", asset, "Gerar etiqueta", "label", asset.perdido)}
     </div></td>` : "";
-    const statusText = asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo");
-    return `<tr class="${asset.removido ? "removed-row" : ""}">
+    const statusText = asset.perdido ? "Perdido" : (asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo"));
+    const rowClass = asset.perdido ? "lost-row" : (asset.removido ? "removed-row" : "");
+    return `<tr class="${rowClass}">
       <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
       <td>${escapeHtml(assetDisplayName(asset))}</td>
-      <td><div class="value-with-badges"><span>${escapeHtml(typeName(asset.tipo_id))}</span>${mobilityBadge(asset)}</div></td>
+      <td><div class="value-with-badges"><span>${escapeHtml(typeName(asset.tipo_id))}</span>${mobilityBadge(asset)}${lossBadge(asset)}</div></td>
       <td>${escapeHtml(asset.centros_custo?.nome || "—")}</td>
       <td>${money(asset.valor_aquisicao)}</td>
-      <td class="${asset.status === "ATIVO" ? "status-active" : "status-inactive"}"><div class="value-with-badges"><span>${escapeHtml(statusText)}</span>${maintenanceBadge(asset)}</div></td>
+      <td class="${asset.perdido ? "status-lost" : (asset.status === "ATIVO" ? "status-active" : "status-inactive")}"><div class="value-with-badges"><span>${escapeHtml(statusText)}</span>${maintenanceBadge(asset)}</div></td>
       <td>${escapeHtml(asset.id_ses || "—")}</td>${actions}
     </tr>`;
   }).join("")}</tbody></table></div>`;
@@ -970,18 +980,20 @@ async function openAssetDetail(id) {
 function renderAssetDetail(loadingHistory = false) {
   const asset = selectedAsset();
   if (!asset) { state.currentView = "patrimonios"; renderAssets(); return; }
-  const editAllowed = canEditAssets() && !asset.removido;
-  const actionButtons = asset.removido
-    ? `<button class="ghost-button" data-action="restore">Restaurar</button>${canDeleteAssets() ? `<button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : ""}`
-    : `<button class="ghost-button" data-action="move" ${canMoveAssets() ? "" : "disabled"}>${iconSvg("move")} Movimentar</button>
-       <button class="ghost-button" data-action="maintenance" ${canMaintainAssets() ? "" : "disabled"}>${iconSvg("maintenance")} Manutenção</button>
-       <button class="ghost-button" data-action="label">${iconSvg("label")} Gerar etiqueta</button>
-       ${canEditAssets() ? `<button class="edit-action-button ${state.detailEditMode ? "active" : ""}" data-action="toggle-detail-edit-button">${state.detailEditMode ? "Concluir edição" : "Editar"}</button>` : ""}
-       <button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button>`;
+  const editAllowed = canEditAssets() && !asset.removido && !asset.perdido;
+  const actionButtons = asset.perdido
+    ? '<span class="lost-detail-badge">Perdido · somente consulta</span>'
+    : asset.removido
+      ? `<button class="ghost-button" data-action="restore">Restaurar</button>${canDeleteAssets() ? `<button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : ""}`
+      : `<button class="ghost-button" data-action="move" ${canMoveAssets() ? "" : "disabled"}>${iconSvg("move")} Movimentar</button>
+         <button class="ghost-button" data-action="maintenance" ${canMaintainAssets() ? "" : "disabled"}>${iconSvg("maintenance")} Manutenção</button>
+         <button class="ghost-button" data-action="label">${iconSvg("label")} Gerar etiqueta</button>
+         ${canEditAssets() ? `<button class="edit-action-button ${state.detailEditMode ? "active" : ""}" data-action="toggle-detail-edit-button">${state.detailEditMode ? "Concluir edição" : "Editar"}</button>` : ""}
+         <button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button>`;
 
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header detail-header">
-      <div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(assetDisplayName(asset))}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.removido ? " · REMOVIDO" : ""}</p></div>
+      <div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(assetDisplayName(asset))}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.perdido ? " · PERDIDO" : (asset.removido ? " · REMOVIDO" : "")}</p></div>
       <div class="header-actions">${actionButtons}</div>
     </div>
 
@@ -989,12 +1001,12 @@ function renderAssetDetail(loadingHistory = false) {
       <section class="detail-grid">
         ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Item do Catálogo", asset.descricoes_padrao?.descricao || "—"], ["Descrição complementar", asset.descricao || "—"], ["Tipo", typeName(asset.tipo_id)], ["Marca/Modelo", asset.marca_modelo || "—"]])}
         ${detailCard("Aquisição e valores", [["Data de aquisição", formatDate(asset.data_aquisicao)], ["Tipo de aquisição", acquisitionName(asset.tipo_aquisicao)], ["Valor de aquisição", money(asset.valor_aquisicao)], ["Nota fiscal", asset.nota_fiscal_numero || "—"]])}
-        ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ...(asset.mobilidade === "MOVEL" ? [["Mobilidade", "Móvel"]] : []), ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")], ...(asset.em_manutencao ? [["Condição operacional", "Em manutenção"]] : []), ...(asset.mobilidade === "MOVEL" ? [["Centros permitidos", allowedCentersDisplay(asset)]] : [])])}
+        ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ...(asset.mobilidade === "MOVEL" ? [["Mobilidade", "Móvel"]] : []), ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.perdido ? "Perdido" : (asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo"))], ...(asset.em_manutencao ? [["Condição operacional", "Em manutenção"]] : []), ...(asset.mobilidade === "MOVEL" ? [["Centros permitidos", allowedCentersDisplay(asset)]] : [])])}
       </section>`}
 
     <section class="panel"><div class="panel-header"><h2>Histórico</h2></div>${loadingHistory ? '<div class="loading">Carregando histórico…</div>' : historyHtml(asset, state.history)}</section>
 
-    ${!asset.removido ? `<section class="danger-zone"><div><strong>Remover patrimônio</strong><p>Oculta o bem das listas operacionais, preservando histórico e possibilidade de restauração.</p></div><button class="danger-button" data-action="remove">Remover patrimônio</button></section>` : ""}
+    ${!asset.removido && !asset.perdido ? `<section class="danger-zone"><div><strong>Remover patrimônio</strong><p>Oculta o bem das listas operacionais, preservando histórico e possibilidade de restauração.</p></div><button class="danger-button" data-action="remove">Remover patrimônio</button></section>` : ""}
   `;
   bindDynamicActions();
 }
@@ -1171,7 +1183,7 @@ function renderGlobalSearch() {
     ${assetsTable(assets, `Patrimônios · ${assets.length}`)}
     <section class="panel"><div class="panel-header"><h2>Centros de custo · ${centers.length}</h2></div>
       ${centers.length ? `<div class="table-wrap"><table><thead><tr><th>Centro de custo</th><th>Código</th><th>Status</th><th>Patrimônios</th></tr></thead><tbody>${centers.map((center) => {
-        const count = state.assets.filter((asset) => !asset.removido && asset.centros_custo?.id === center.id).length;
+        const count = state.assets.filter((asset) => !asset.removido && !asset.perdido && asset.centros_custo?.id === center.id).length;
         return `<tr class="center-search-row" data-center-id="${center.id}" data-center-name="${escapeHtml(center.nome)}" tabindex="0"><td><strong>${escapeHtml(center.nome)}</strong></td><td>${escapeHtml(center.codigo || "—")}</td><td class="${center.ativo ? "status-active" : "status-inactive"}">${center.ativo ? "Ativo" : "Inativo"}</td><td>${count}</td></tr>`;
       }).join("")}</tbody></table></div>` : '<div class="empty">Nenhum centro de custo encontrado.</div>'}
     </section>`;
@@ -1232,7 +1244,7 @@ function reportRows() {
   if (!f.centro) return [];
   const q = String(f.q || "").trim().toLowerCase();
   const rows = state.assets
-    .filter(asset => !asset.removido && asset.centros_custo?.id === f.centro)
+    .filter(asset => !asset.removido && !asset.perdido && asset.centros_custo?.id === f.centro)
     .filter(asset => {
       if (q && ![asset.id_interna, asset.id_ses, asset.descricao, asset.marca_modelo, asset.descricoes_padrao?.descricao]
         .some(value => String(value || "").toLowerCase().includes(q))) return false;
@@ -4300,7 +4312,7 @@ async function qrDataUrlForAsset(asset, size=220) {
 async function printSelectedLabelsA4() {
   if(state.labelPrintBusy) return;
   const assets=sortAssets(
-    state.assets.filter(asset=>state.labelSelected.has(asset.id) && !asset.removido),
+    state.assets.filter(asset=>state.labelSelected.has(asset.id) && !asset.removido && !asset.perdido),
     "id"
   );
   if(!assets.length) return;
@@ -4414,7 +4426,7 @@ async function printSelectedLabelsA4() {
 }
 
 async function generateSelectedLabels() {
-  const assets = state.assets.filter(a=>state.labelSelected.has(a.id) && !a.removido);
+  const assets = state.assets.filter(a=>state.labelSelected.has(a.id) && !a.removido && !a.perdido);
   if (!assets.length) return;
   try {
     if (!window.QRCode) throw new Error("Biblioteca de QR Code não carregada.");
