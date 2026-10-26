@@ -1277,3 +1277,44 @@ button:disabled { opacity: .65; cursor: wait; }
   height:18px;
   margin:0;
 }
+
+
+/* Gerencial | formulário de perda patrimonial */
+.loss-dialog{
+  width:min(760px,calc(100vw - 28px));
+}
+.loss-dialog .loss-record-banner{
+  margin:0 0 16px;
+  padding:11px 13px;
+  border-radius:10px;
+  background:#f3e7e6;
+  color:#7d4a46;
+  border:1px solid #dec8c5;
+  font-size:12px;
+  font-weight:800;
+  text-align:center;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.loss-detail-grid{
+  margin:0;
+}
+.loss-confirm-row{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  padding:12px 14px;
+  border-radius:10px;
+  border:1px solid #e2c7c4;
+  background:#fff8f7;
+  color:#6f4643;
+  font-size:12px;
+  line-height:1.4;
+  font-weight:700;
+}
+.loss-confirm-row input{
+  width:18px;
+  height:18px;
+  margin:1px 0 0;
+  flex:0 0 auto;
+}
