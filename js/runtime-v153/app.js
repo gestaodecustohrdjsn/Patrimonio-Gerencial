@@ -4,7 +4,7 @@ import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/catalogo.js?v=1.6.0";
-import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset } from "./services/patrimonios.js";
+import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset, registerAssetLoss, getAssetLoss } from "./services/patrimonios.js?v=1.9.4";
 import { renderLogin, renderPasswordChange } from "./pages/login.js?v=1.9.3.1";
 import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
@@ -987,14 +987,15 @@ function renderAssetDetail(loadingHistory = false) {
   if (!asset) { state.currentView = "patrimonios"; renderAssets(); return; }
   const editAllowed = canEditAssets() && !asset.removido && !asset.perdido;
   const actionButtons = asset.perdido
-    ? '<span class="lost-detail-badge">Perdido · somente consulta</span>'
+    ? '<span class="lost-detail-badge">Perdido · somente consulta</span><button class="ghost-button" data-action="loss-term">Termo de Perda</button>'
     : asset.removido
       ? `<button class="ghost-button" data-action="restore">Restaurar</button>${canDeleteAssets() ? `<button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : ""}`
       : `<button class="ghost-button" data-action="move" ${canMoveAssets() ? "" : "disabled"}>${iconSvg("move")} Movimentar</button>
          <button class="ghost-button" data-action="maintenance" ${canMaintainAssets() ? "" : "disabled"}>${iconSvg("maintenance")} Manutenção</button>
          <button class="ghost-button" data-action="label">${iconSvg("label")} Gerar etiqueta</button>
          ${canEditAssets() ? `<button class="edit-action-button ${state.detailEditMode ? "active" : ""}" data-action="toggle-detail-edit-button">${state.detailEditMode ? "Concluir edição" : "Editar"}</button>` : ""}
-         <button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button>`;
+         <button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button>
+         ${canRegisterLoss() ? '<button class="danger-button" data-action="register-loss">Perda</button>' : ""}`;
 
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header detail-header">
@@ -3850,6 +3851,8 @@ function bindDynamicActions() {
   document.querySelectorAll('[data-action="restore"]').forEach(b=>b.addEventListener("click",restoreAsset));
   document.querySelectorAll('[data-action="delete-permanent"]').forEach(b=>b.addEventListener("click",deletePermanentAsset));
   document.querySelectorAll('[data-action="label"]').forEach(b=>b.addEventListener("click",openLabelDialog));
+  document.querySelectorAll('[data-action="register-loss"]').forEach(b=>b.addEventListener("click",()=>openLossDialog(false)));
+  document.querySelectorAll('[data-action="loss-term"]').forEach(b=>b.addEventListener("click",()=>openLossDialog(true)));
 
   document.querySelectorAll('[data-action="view-asset"]').forEach(b=>b.addEventListener("click",()=>openAssetDetail(b.dataset.assetId)));
   document.querySelectorAll('[data-action="move-asset"]').forEach(b=>b.addEventListener("click",()=>{state.selectedAssetId=b.dataset.assetId;openMoveDialog();}));
