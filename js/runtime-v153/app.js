@@ -4232,6 +4232,172 @@ async function deletePermanentAsset() {
 }
 
 
+
+function lossReasonLabel(value) {
+  return ({
+    ROUBO_FURTO:"Roubo / Furto",
+    DANO_IRREPARAVEL:"Dano irreparável / perda total",
+    EXTRAVIO:"Extravio",
+    OUTRO:"Outro"
+  })[String(value || "")] || "—";
+}
+
+function ensureLossDialog() {
+  let dialog=document.querySelector("#lossDialog");
+  if(dialog) return dialog;
+  dialog=document.createElement("dialog");
+  dialog.id="lossDialog";
+  dialog.className="operation-dialog loss-dialog";
+  dialog.innerHTML='<div class="dialog-header"><button type="button" class="back-button" id="closeLossButton">← Voltar</button><h2>Perda patrimonial</h2><p id="lossAssetTitle"></p></div><div id="lossDialogContent"></div>';
+  document.body.appendChild(dialog);
+  dialog.querySelector("#closeLossButton").addEventListener("click",()=>dialog.close());
+  return dialog;
+}
+
+async function openLossDialog(readOnly=false) {
+  const asset=selectedAsset();
+  if(!asset) return;
+  const dialog=ensureLossDialog();
+  const content=dialog.querySelector("#lossDialogContent");
+  dialog.querySelector("#lossAssetTitle").textContent=`${asset.id_interna} · ${assetDisplayName(asset)}`;
+  dialog.showModal();
+
+  if(readOnly || asset.perdido) {
+    content.innerHTML='<div class="loading">Carregando termo de perda…</div>';
+    try {
+      const loss=await getAssetLoss(asset.id);
+      content.innerHTML=`
+        <div class="loss-record-banner">Perda patrimonial registrada</div>
+        <div class="detail-grid loss-detail-grid">
+          ${detailCard("Ocorrência", [["Motivo", lossReasonLabel(loss.motivo)], ["Data da ocorrência", formatDate(loss.data_ocorrencia)], ["Centro de custo", loss.centro_custo_nome || asset.centros_custo?.nome || "—"], ["Detalhamento", loss.motivo_detalhe || "—"], ["Observações", loss.observacoes || "—"]])}
+          ${detailCard("Responsáveis", [["Responsável pelo Patrimônio", loss.responsavel_patrimonio || "—"], ["Diretor Administrativo", loss.diretor_administrativo || "—"], ["Coordenador do setor", loss.coordenador_setor || "—"]])}
+        </div>
+        <div class="dialog-actions"><button type="button" class="primary-button" id="printLossButton">Imprimir / Salvar PDF</button></div>`;
+      content.querySelector("#printLossButton").addEventListener("click",()=>printLossTermGerencial(loss));
+    } catch(error) {
+      content.innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`;
+    }
+    return;
+  }
+
+  content.innerHTML=`
+    <form id="lossFormGerencial" class="maintenance-form">
+      <div class="operation-layout">
+        <section class="operation-section">
+          <div class="operation-section-title"><span>1</span><div><strong>Ocorrência</strong><small>Registre quando e por que o patrimônio foi perdido.</small></div></div>
+          <div class="form-grid">
+            <label>Data da ocorrência<div class="date-shell"><input name="data_ocorrencia" type="date" value="${new Date().toISOString().slice(0,10)}" required></div></label>
+            <label>Motivo<select name="motivo" id="lossReasonGerencial" required>
+              <option value="">Selecione</option>
+              <option value="ROUBO_FURTO">Roubo / Furto</option>
+              <option value="DANO_IRREPARAVEL">Dano irreparável / perda total</option>
+              <option value="EXTRAVIO">Extravio</option>
+              <option value="OUTRO">Outro</option>
+            </select></label>
+            <label class="full" id="lossReasonDetailGerencial" hidden>Detalhamento<textarea name="motivo_detalhe" rows="3" placeholder="Descreva o motivo"></textarea></label>
+          </div>
+        </section>
+        <section class="operation-section">
+          <div class="operation-section-title"><span>2</span><div><strong>Responsáveis</strong><small>Os nomes serão impressos no Termo de Perda.</small></div></div>
+          <div class="stacked-fields">
+            <label>Responsável pelo Setor de Patrimônio<input name="responsavel_patrimonio" required maxlength="160"></label>
+            <label>Diretor Administrativo<input name="diretor_administrativo" required maxlength="160"></label>
+            <label>Coordenador do Centro de Custo / Setor<input name="coordenador_setor" required maxlength="180"></label>
+          </div>
+        </section>
+        <section class="operation-section">
+          <div class="operation-section-title"><span>3</span><div><strong>Observações</strong><small>Campo opcional para complementar o registro.</small></div></div>
+          <textarea name="observacoes" rows="4" placeholder="Observações"></textarea>
+        </section>
+        <label class="loss-confirm-row"><input name="confirmacao" type="checkbox" required><span>Confirmo que este patrimônio deve deixar a contagem operacional e permanecer apenas como registro de respaldo.</span></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="ghost-button" id="cancelLossGerencial">Cancelar</button><button type="submit" class="danger-button">Registrar perda</button></div>
+    </form>`;
+
+  const reason=content.querySelector("#lossReasonGerencial");
+  const detail=content.querySelector("#lossReasonDetailGerencial");
+  reason.addEventListener("change",()=>{
+    const other=reason.value==="OUTRO";
+    detail.hidden=!other;
+    detail.querySelector("textarea").required=other;
+  });
+  content.querySelector("#cancelLossGerencial").addEventListener("click",()=>dialog.close());
+  content.querySelector("#lossFormGerencial").addEventListener("submit",async event=>{
+    event.preventDefault();
+    if(!window.confirm("Registrar esta perda patrimonial? O bem sairá da contagem operacional.")) return;
+    const form=event.currentTarget;
+    const button=form.querySelector('button[type="submit"]');
+    const fd=new FormData(form);
+    button.disabled=true;
+    button.textContent="Registrando…";
+    try {
+      const result=await registerAssetLoss(asset.id,{
+        data_ocorrencia:fd.get("data_ocorrencia"),
+        motivo:fd.get("motivo"),
+        motivo_detalhe:String(fd.get("motivo_detalhe")||"").trim()||null,
+        responsavel_patrimonio:String(fd.get("responsavel_patrimonio")||"").trim(),
+        diretor_administrativo:String(fd.get("diretor_administrativo")||"").trim(),
+        coordenador_setor:String(fd.get("coordenador_setor")||"").trim(),
+        observacoes:String(fd.get("observacoes")||"").trim()||null
+      });
+      if(result.patrimonio) state.assets=state.assets.map(item=>item.id===asset.id ? result.patrimonio : item);
+      state.history=await listAssetHistory(asset.id);
+      toast("Perda patrimonial registrada.","success");
+      dialog.close();
+      renderAssetDetail(false);
+    } catch(error) {
+      toast(error.message,"error");
+      button.disabled=false;
+      button.textContent="Registrar perda";
+    }
+  });
+}
+
+function printLossTermGerencial(loss) {
+  const snapshot=loss.patrimonio_snapshot||{};
+  const template=loss.template_snapshot||{};
+  const popup=window.open("","_blank","width=900,height=800");
+  if(!popup) { toast("O navegador bloqueou a janela de impressão.","error"); return; }
+  const logo=template.logo_data_url ? `<img class="logo" src="${escapeHtml(template.logo_data_url)}">` : "";
+  const itemName=snapshot.descricao_catalogo||snapshot.descricao||"Patrimônio";
+  const validation=template.validado_qualidade
+    ? `<div class="validated">MODELO VALIDADO PELA QUALIDADE · VERSÃO ${escapeHtml(template.versao||"—")}</div>`
+    : '<div class="draft">MODELO PENDENTE DE VALIDAÇÃO DA QUALIDADE</div>';
+  popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Termo de Perda - ${escapeHtml(snapshot.id_interna||"")}</title><style>
+  @page{size:A4;margin:16mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#1d2f38;font-size:11pt;line-height:1.45;margin:0}
+  .header{display:flex;gap:16px;align-items:center;border-bottom:2px solid #173e50;padding-bottom:12px}.logo{max-width:90px;max-height:65px}.header h1{margin:0;font-size:16pt}.header p{margin:3px 0 0;color:#566b75}
+  .validated,.draft{margin:12px 0;padding:7px 10px;text-align:center;font-size:8pt;font-weight:bold;border-radius:4px}.validated{background:#e8f3ed;color:#286247}.draft{background:#fff0de;color:#8a4f12;border:1px solid #e8c79d}
+  .intro{margin:18px 0}.box{border:1px solid #cad7dc;border-radius:6px;padding:12px;margin:10px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{border-bottom:1px solid #d7e1e5;padding:7px 0}.field.full{grid-column:1/-1}.label{display:block;font-size:8pt;text-transform:uppercase;color:#6b7f88;font-weight:bold}.value{display:block;margin-top:2px;font-weight:600}
+  .signatures{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:55px}.signature{text-align:center;border-top:1px solid #374d56;padding-top:6px;font-size:9pt}.signature strong{display:block;font-size:9pt}.footer{margin-top:40px;border-top:1px solid #d5dfe3;padding-top:8px;display:flex;justify-content:space-between;color:#70828a;font-size:8pt}
+  </style></head><body>
+  <header class="header">${logo}<div><h1>${escapeHtml(template.titulo||"Termo de Registro de Perda Patrimonial")}</h1><p>${escapeHtml(template.instituicao||"")}${template.unidade ? " · "+escapeHtml(template.unidade) : ""}</p></div></header>
+  ${validation}
+  <p class="intro">${escapeHtml(template.texto_abertura||"")}</p>
+  <section class="box"><div class="grid">
+  <div class="field"><span class="label">ID interna</span><span class="value">${escapeHtml(snapshot.id_interna||"—")}</span></div>
+  <div class="field"><span class="label">ID SES</span><span class="value">${escapeHtml(snapshot.id_ses||"—")}</span></div>
+  <div class="field full"><span class="label">Patrimônio</span><span class="value">${escapeHtml(itemName)}</span></div>
+  <div class="field full"><span class="label">Marca / Modelo</span><span class="value">${escapeHtml(snapshot.marca_modelo||"—")}</span></div>
+  <div class="field full"><span class="label">Centro de custo / setor</span><span class="value">${escapeHtml(loss.centro_custo_nome||"—")}</span></div>
+  </div></section>
+  <section class="box"><div class="grid">
+  <div class="field"><span class="label">Data da ocorrência</span><span class="value">${escapeHtml(formatDate(loss.data_ocorrencia))}</span></div>
+  <div class="field"><span class="label">Motivo</span><span class="value">${escapeHtml(lossReasonLabel(loss.motivo))}</span></div>
+  ${loss.motivo_detalhe ? `<div class="field full"><span class="label">Detalhamento</span><span class="value">${escapeHtml(loss.motivo_detalhe)}</span></div>` : ""}
+  ${loss.observacoes ? `<div class="field full"><span class="label">Observações</span><span class="value">${escapeHtml(loss.observacoes)}</span></div>` : ""}
+  </div></section>
+  <p>${escapeHtml(template.texto_fechamento||"")}</p>
+  <section class="signatures">
+  <div class="signature"><strong>${escapeHtml(loss.responsavel_patrimonio)}</strong>${escapeHtml(template.assinatura_responsavel_patrimonio||"Responsável pelo Patrimônio")}</div>
+  <div class="signature"><strong>${escapeHtml(loss.diretor_administrativo)}</strong>${escapeHtml(template.assinatura_diretor_administrativo||"Diretor Administrativo")}</div>
+  <div class="signature"><strong>${escapeHtml(loss.coordenador_setor)}</strong>${escapeHtml(template.assinatura_coordenador_setor||"Coordenador do Setor")}</div>
+  </section>
+  <footer class="footer"><span>${escapeHtml(template.rodape||"")}</span><span>Patrimônio+</span></footer>
+  <script>window.addEventListener("load",function(){setTimeout(function(){window.print();},150);});<\/script>
+  </body></html>`);
+  popup.document.close();
+}
+
 async function openMaintenanceDialog(assetId = state.selectedAssetId) {
   const asset = state.assets.find(a=>a.id===assetId);
   if (!asset) return;
