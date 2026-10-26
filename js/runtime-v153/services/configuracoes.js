@@ -19,3 +19,24 @@ export async function saveReportTemplate(configuracao) {
     atualizado_em:data.atualizado_em || null
   };
 }
+
+
+export async function getLossTermTemplate() {
+  const data=await apiRequest("/api/configuracoes/termo-perda");
+  return {
+    configuracao:data.configuracao,
+    atualizado_em:data.atualizado_em || null,
+    atualizado_por:data.atualizado_por || null
+  };
+}
+
+export async function saveLossTermTemplate(configuracao) {
+  const data=await apiRequest("/api/configuracoes/termo-perda",{
+    method:"PUT",
+    body:{configuracao}
+  });
+  return {
+    configuracao:data.configuracao,
+    atualizado_em:data.atualizado_em || null
+  };
+}
