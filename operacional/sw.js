@@ -1,13 +1,13 @@
-const CACHE_NAME = "patrimonio-operacional-v0.3.0";
+const CACHE_NAME = "patrimonio-operacional-v0.3.1";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./css/app.css?v=0.3.0",
-  "./js/config.js?v=0.3.0",
+  "./css/app.css?v=0.3.1",
+  "./js/config.js?v=0.3.1",
   "./js/api.js",
   "./js/auth.js",
-  "./js/app.js?v=0.3.0",
+  "./js/app.js?v=0.3.1",
   "./icons/icon.svg",
   "../assets/icons/adicionar_icon.png",
   "../assets/icons/editar_icon.png",
