@@ -2882,6 +2882,71 @@ async function saveLossTermTemplateFromSettings() {
 }
 
 
+
+function lossTemplateSettingsCardHtml(open, template) {
+  return `
+    <section class="settings-card ${open ? "is-open" : ""}">
+      <button class="settings-card-toggle" type="button" data-setting-card="loss-template" aria-expanded="${open}">
+        <div class="settings-card-icon">TP</div>
+        <div class="settings-card-title">
+          <strong>Template do Termo de Perda Patrimonial</strong>
+          <span>Texto oficial, versão, assinaturas e validação da Qualidade.</span>
+        </div>
+        <span class="settings-card-chevron">${open ? "−" : "+"}</span>
+      </button>
+      <div class="settings-card-content" ${open ? "" : "hidden"}>
+        ${!state.lossTermTemplateLoaded ? '<div class="loading">Carregando template…</div>' : `
+          <div class="report-template-editor">
+            <div class="report-template-intro">
+              <strong>Documento institucional de perda</strong>
+              <p>Ao registrar uma perda, o Patrimônio+ congela uma cópia deste modelo junto ao registro. Alterações futuras não modificam termos antigos.</p>
+            </div>
+
+            <div class="loss-template-validation ${template.validado_qualidade ? "is-valid" : "is-draft"}">
+              <strong>${template.validado_qualidade ? "Modelo validado pela Qualidade" : "Modelo ainda não validado pela Qualidade"}</strong>
+              <span>Versão ${escapeHtml(template.versao || "—")}</span>
+            </div>
+
+            <div class="report-template-step"><span>1</span><div><strong>Identificação do documento</strong><small>Cabeçalho e controle de versão.</small></div></div>
+            <div class="report-template-fields">
+              <label>Instituição<input id="lossTemplateInstitution" maxlength="180" value="${escapeHtml(template.instituicao||"")}"></label>
+              <label>Unidade<input id="lossTemplateUnit" maxlength="180" value="${escapeHtml(template.unidade||"")}"></label>
+              <label class="full">Título do documento<input id="lossTemplateTitle" maxlength="180" value="${escapeHtml(template.titulo||"")}"></label>
+              <label>Versão<input id="lossTemplateVersion" maxlength="40" value="${escapeHtml(template.versao||"1.0")}"></label>
+              <label class="loss-validation-check"><input id="lossTemplateValidated" type="checkbox" ${template.validado_qualidade?"checked":""}> Validado pela Qualidade</label>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>2</span><div><strong>Texto oficial</strong><small>Conteúdo institucional que acompanhará todos os termos novos.</small></div></div>
+              <div class="report-template-fields">
+                <label class="full">Texto de abertura<textarea id="lossTemplateOpening" rows="5" maxlength="1200">${escapeHtml(template.texto_abertura||"")}</textarea></label>
+                <label class="full">Texto de fechamento<textarea id="lossTemplateClosing" rows="4" maxlength="1200">${escapeHtml(template.texto_fechamento||"")}</textarea></label>
+                <label class="full">Rodapé<textarea id="lossTemplateFooter" rows="2" maxlength="400">${escapeHtml(template.rodape||"")}</textarea></label>
+              </div>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>3</span><div><strong>Assinaturas</strong><small>Cargos apresentados abaixo dos nomes preenchidos no registro da perda.</small></div></div>
+              <div class="report-template-fields">
+                <label>Responsável pelo Patrimônio<input id="lossTemplateSignatureAsset" maxlength="160" value="${escapeHtml(template.assinatura_responsavel_patrimonio||"")}"></label>
+                <label>Diretor Administrativo<input id="lossTemplateSignatureDirector" maxlength="160" value="${escapeHtml(template.assinatura_diretor_administrativo||"")}"></label>
+                <label class="full">Coordenador do setor<input id="lossTemplateSignatureCoordinator" maxlength="180" value="${escapeHtml(template.assinatura_coordenador_setor||"")}"></label>
+              </div>
+            </div>
+
+            <div class="settings-editor-actions">
+              <button class="ghost-button" type="button" data-action="reset-loss-template">Restaurar padrão</button>
+              <button class="primary-button" type="button" data-action="save-loss-template">Salvar template</button>
+            </div>
+            ${state.lossTermTemplateMeta?.atualizado_em ? `<small class="settings-update-meta">Última alteração: ${escapeHtml(historyDateTime(state.lossTermTemplateMeta.atualizado_em))}${state.lossTermTemplateMeta?.atualizado_por?.nome ? ` · ${escapeHtml(state.lossTermTemplateMeta.atualizado_por.nome)}` : ""}</small>` : ""}
+          </div>
+        `}
+      </div>
+    </section>
+  `;
+}
+
+
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
   if (!hasAccess("configuracoes.templates")) {
