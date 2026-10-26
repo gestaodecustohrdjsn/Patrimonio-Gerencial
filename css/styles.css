@@ -1205,3 +1205,75 @@ button:disabled { opacity: .65; cursor: wait; }
 .user-reset-form{flex-direction:column;align-items:stretch}
 .user-overview article span{font-size:10px}
 }
+
+
+/* Patrimônio+ | Perda patrimonial */
+.lost-row{
+  opacity:.55;
+  filter:saturate(.55);
+}
+.lost-row:hover td{
+  background:#faf7f7;
+}
+.context-tag-loss{
+  background:#f1e7e6;
+  color:#7d4a46;
+  border-color:#dfc8c5;
+}
+.status-lost{
+  color:#8a4b47;
+  font-weight:800;
+}
+.lost-detail-badge{
+  display:inline-flex;
+  align-items:center;
+  min-height:38px;
+  padding:9px 12px;
+  border-radius:10px;
+  background:#f4e9e8;
+  color:#7d4a46;
+  border:1px solid #e0cbc8;
+  font-size:12px;
+  font-weight:800;
+}
+
+
+/* Template do Termo de Perda */
+.loss-template-validation{
+  margin:14px 0 20px;
+  padding:12px 14px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  border:1px solid var(--border);
+}
+.loss-template-validation strong,
+.loss-template-validation span{display:block}
+.loss-template-validation strong{font-size:13px}
+.loss-template-validation span{font-size:11px;font-weight:800;white-space:nowrap}
+.loss-template-validation.is-valid{
+  background:#edf7f1;
+  border-color:#cfe6d8;
+  color:#2b6b4b;
+}
+.loss-template-validation.is-draft{
+  background:#fff7eb;
+  border-color:#efd8b6;
+  color:#8a5b18;
+}
+.loss-validation-check{
+  display:flex!important;
+  align-items:center;
+  gap:9px;
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:#fafcfd;
+}
+.loss-validation-check input{
+  width:18px;
+  height:18px;
+  margin:0;
+}

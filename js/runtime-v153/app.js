@@ -10,7 +10,7 @@ import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
-import { getReportTemplate, saveReportTemplate } from "./services/configuracoes.js?v=1.8.0";
+import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate } from "./services/configuracoes.js?v=1.9.4";
 
 const state = {
   currentView: "dashboard",
@@ -45,6 +45,10 @@ const state = {
   reportTemplateLoaded: false,
   reportTemplateMeta: null,
   reportTemplateBusy: false,
+  lossTermTemplate: null,
+  lossTermTemplateLoaded: false,
+  lossTermTemplateMeta: null,
+  lossTermTemplateBusy: false,
   historyEvents: [],
   historyTotal: 0,
   historyUsers: [],
@@ -333,6 +337,7 @@ function historyActionLabel(event) {
     "patrimonios:CENTRO_PERMITIDO_REMOVIDO": "Removeu centro permitido",
     "patrimonios:MANUTENCAO_ABERTA": "Abriu manutenção",
     "patrimonios:MANUTENCAO_CONCLUIDA": "Concluiu manutenção",
+    "patrimonios:PERDA_PATRIMONIAL": "Registrou perda patrimonial",
     "centros_custo:CADASTRO": "Cadastrou centro de custo",
     "centros_custo:EDICAO_CADASTRAL": "Editou centro de custo",
     "centros_custo:EXCLUSAO_DEFINITIVA": "Excluiu centro de custo",
@@ -342,7 +347,8 @@ function historyActionLabel(event) {
     "descricoes_padrao:ITEM_CATALOGO_EXCLUIDO": "Excluiu item do Catálogo",
     "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM",
     "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial",
-    "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial"
+    "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial",
+    "configuracoes_sistema:CONFIGURACAO_TERMO_PERDA": "Atualizou template do Termo de Perda"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
@@ -450,7 +456,7 @@ async function refreshDashboardHistory() {
 }
 
 function renderDashboard() {
-  const visibleAssets = state.assets.filter((asset) => !asset.removido);
+  const visibleAssets = state.assets.filter((asset) => !asset.removido && !asset.perdido);
   const active = visibleAssets.filter((asset) => asset.status === "ATIVO").length;
   const total = visibleAssets.reduce((sum, asset) => sum + Number(asset.valor_aquisicao || 0), 0);
   const valueContent = state.showDashboardValue ? money(total) : "R$ ••••••";
@@ -657,6 +663,7 @@ function canCreateAssets() { return hasAccess("patrimonios.cadastrar"); }
 function canMoveAssets() { return state.session?.user?.permissoes?.["patrimonios.movimentar"] === true; }
 function canMaintainAssets() { return state.session?.user?.permissoes?.["manutencoes.abrir"] === true; }
 function canDeleteAssets() { return state.session?.user?.permissoes?.["patrimonios.excluir"] === true; }
+function canRegisterLoss() { return state.session?.user?.permissoes?.["patrimonios.registrar_perda"] === true; }
 
 function iconSvg(name) {
   const icons = {
@@ -676,7 +683,7 @@ function actionIcon(action, asset, title, icon, disabled = false) {
 function defaultFilters() {
   return {
     q: "", centro: "", tipo: "", status: "", aquisicao: "", conservacao: "",
-    sigem: "", valor: "", idSes: "", dataDe: "", dataAte: "", ordenacao: "id"
+    sigem: "", valor: "", idSes: "", perda: "", dataDe: "", dataAte: "", ordenacao: "id"
   };
 }
 
@@ -700,6 +707,8 @@ function assetMatchesFilters(asset, f) {
   if (f.valor === "nao" && !(asset.valor_aquisicao === null || asset.valor_aquisicao === undefined || asset.valor_aquisicao === "")) return false;
   if (f.idSes === "sim" && !asset.id_ses) return false;
   if (f.idSes === "nao" && asset.id_ses) return false;
+  if (f.perda === "sim" && !asset.perdido) return false;
+  if (f.perda === "nao" && asset.perdido) return false;
   const date = normalizeDateOnly(asset.data_aquisicao);
   if (f.dataDe && date && date < f.dataDe) return false;
   if (f.dataAte && date && date > f.dataAte) return false;
@@ -719,10 +728,10 @@ function sortAssets(items, order) {
 
 function filteredByPanel(key, includeRemoved = false) {
   const f = ensureFilters(key);
-  return sortAssets(
-    state.assets.filter(a => includeRemoved ? true : !a.removido).filter(a => assetMatchesFilters(a, f)),
-    f.ordenacao
-  );
+  const source = key === "assetFilters"
+    ? state.assets.filter(a => includeRemoved ? (a.removido && !a.perdido) : !a.removido)
+    : state.assets.filter(a => !a.removido && !a.perdido);
+  return sortAssets(source.filter(a => assetMatchesFilters(a, f)), f.ordenacao);
 }
 
 function filterPanelHtml(key, title = "Filtros") {
@@ -740,6 +749,7 @@ function filterPanelHtml(key, title = "Filtros") {
       <label>Vínculo com Catálogo<select data-filter-key="${key}" data-filter-field="sigem"><option value="">Todos</option><option value="sim" ${f.sigem==="sim"?"selected":""}>Com Catálogo</option><option value="nao" ${f.sigem==="nao"?"selected":""}>Sem Catálogo</option></select></label>
       <label>Valor<select data-filter-key="${key}" data-filter-field="valor"><option value="">Todos</option><option value="sim" ${f.valor==="sim"?"selected":""}>Com valor</option><option value="nao" ${f.valor==="nao"?"selected":""}>Sem valor</option></select></label>
       <label>ID SES<select data-filter-key="${key}" data-filter-field="idSes"><option value="">Todos</option><option value="sim" ${f.idSes==="sim"?"selected":""}>Com ID SES</option><option value="nao" ${f.idSes==="nao"?"selected":""}>Sem ID SES</option></select></label>
+      <label>Situação patrimonial<select data-filter-key="${key}" data-filter-field="perda"><option value="">Todos</option><option value="nao" ${f.perda==="nao"?"selected":""}>Em acervo</option><option value="sim" ${f.perda==="sim"?"selected":""}>Perdidos</option></select></label>
       <label>Aquisição de<div class="date-shell"><input type="date" data-filter-key="${key}" data-filter-field="dataDe" value="${escapeHtml(f.dataDe)}"></div></label>
       <label>Aquisição até<div class="date-shell"><input type="date" data-filter-key="${key}" data-filter-field="dataAte" value="${escapeHtml(f.dataAte)}"></div></label>
       <label>Ordenar por<select data-filter-key="${key}" data-filter-field="ordenacao"><option value="id" ${f.ordenacao==="id"?"selected":""}>ID interna</option><option value="descricao" ${f.ordenacao==="descricao"?"selected":""}>Descrição</option><option value="centro" ${f.ordenacao==="centro"?"selected":""}>Centro de custo</option><option value="data" ${f.ordenacao==="data"?"selected":""}>Data de aquisição</option><option value="valor" ${f.ordenacao==="valor"?"selected":""}>Maior valor</option></select></label>
@@ -763,7 +773,11 @@ function mobilityBadge(asset) {
 }
 
 function maintenanceBadge(asset) {
-  return asset.em_manutencao ? '<span class="context-tag context-tag-maintenance">[Em manutenção]</span>' : "";
+  return !asset.perdido && asset.em_manutencao ? '<span class="context-tag context-tag-maintenance">[Em manutenção]</span>' : "";
+}
+
+function lossBadge(asset) {
+  return asset.perdido ? '<span class="context-tag context-tag-loss">[Perdido]</span>' : "";
 }
 
 function centerChipHtml(center, removeAction, removeId) {
@@ -934,18 +948,19 @@ function assetsTable(assets, title = "", withActions = false) {
   const table = `<div class="table-wrap"><table><thead><tr><th>ID interna</th><th>Descrição</th><th>Tipo</th><th>Centro de custo</th><th>Valor</th><th>Status</th><th>ID SES</th>${withActions ? '<th class="actions-head">Ações</th>' : ""}</tr></thead><tbody>${assets.map((asset) => {
     const actions = withActions ? `<td><div class="row-actions">
       ${actionIcon("view-asset", asset, "Visualizar ficha", "view")}
-      ${actionIcon("move-asset", asset, "Movimentar", "move", !canMoveAssets() || asset.removido)}
-      ${actionIcon("maintenance-asset", asset, "Manutenção", "maintenance", !canMaintainAssets() || asset.removido)}
-      ${actionIcon("label-asset", asset, "Gerar etiqueta", "label")}
+      ${actionIcon("move-asset", asset, "Movimentar", "move", !canMoveAssets() || asset.removido || asset.perdido)}
+      ${actionIcon("maintenance-asset", asset, "Manutenção", "maintenance", !canMaintainAssets() || asset.removido || asset.perdido)}
+      ${actionIcon("label-asset", asset, "Gerar etiqueta", "label", asset.perdido)}
     </div></td>` : "";
-    const statusText = asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo");
-    return `<tr class="${asset.removido ? "removed-row" : ""}">
+    const statusText = asset.perdido ? "Perdido" : (asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo"));
+    const rowClass = asset.perdido ? "lost-row" : (asset.removido ? "removed-row" : "");
+    return `<tr class="${rowClass}">
       <td><strong>${escapeHtml(asset.id_interna)}</strong></td>
       <td>${escapeHtml(assetDisplayName(asset))}</td>
-      <td><div class="value-with-badges"><span>${escapeHtml(typeName(asset.tipo_id))}</span>${mobilityBadge(asset)}</div></td>
+      <td><div class="value-with-badges"><span>${escapeHtml(typeName(asset.tipo_id))}</span>${mobilityBadge(asset)}${lossBadge(asset)}</div></td>
       <td>${escapeHtml(asset.centros_custo?.nome || "—")}</td>
       <td>${money(asset.valor_aquisicao)}</td>
-      <td class="${asset.status === "ATIVO" ? "status-active" : "status-inactive"}"><div class="value-with-badges"><span>${escapeHtml(statusText)}</span>${maintenanceBadge(asset)}</div></td>
+      <td class="${asset.perdido ? "status-lost" : (asset.status === "ATIVO" ? "status-active" : "status-inactive")}"><div class="value-with-badges"><span>${escapeHtml(statusText)}</span>${maintenanceBadge(asset)}</div></td>
       <td>${escapeHtml(asset.id_ses || "—")}</td>${actions}
     </tr>`;
   }).join("")}</tbody></table></div>`;
@@ -970,18 +985,20 @@ async function openAssetDetail(id) {
 function renderAssetDetail(loadingHistory = false) {
   const asset = selectedAsset();
   if (!asset) { state.currentView = "patrimonios"; renderAssets(); return; }
-  const editAllowed = canEditAssets() && !asset.removido;
-  const actionButtons = asset.removido
-    ? `<button class="ghost-button" data-action="restore">Restaurar</button>${canDeleteAssets() ? `<button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : ""}`
-    : `<button class="ghost-button" data-action="move" ${canMoveAssets() ? "" : "disabled"}>${iconSvg("move")} Movimentar</button>
-       <button class="ghost-button" data-action="maintenance" ${canMaintainAssets() ? "" : "disabled"}>${iconSvg("maintenance")} Manutenção</button>
-       <button class="ghost-button" data-action="label">${iconSvg("label")} Gerar etiqueta</button>
-       ${canEditAssets() ? `<button class="edit-action-button ${state.detailEditMode ? "active" : ""}" data-action="toggle-detail-edit-button">${state.detailEditMode ? "Concluir edição" : "Editar"}</button>` : ""}
-       <button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button>`;
+  const editAllowed = canEditAssets() && !asset.removido && !asset.perdido;
+  const actionButtons = asset.perdido
+    ? '<span class="lost-detail-badge">Perdido · somente consulta</span>'
+    : asset.removido
+      ? `<button class="ghost-button" data-action="restore">Restaurar</button>${canDeleteAssets() ? `<button class="danger-button" data-action="delete-permanent">Excluir definitivamente</button>` : ""}`
+      : `<button class="ghost-button" data-action="move" ${canMoveAssets() ? "" : "disabled"}>${iconSvg("move")} Movimentar</button>
+         <button class="ghost-button" data-action="maintenance" ${canMaintainAssets() ? "" : "disabled"}>${iconSvg("maintenance")} Manutenção</button>
+         <button class="ghost-button" data-action="label">${iconSvg("label")} Gerar etiqueta</button>
+         ${canEditAssets() ? `<button class="edit-action-button ${state.detailEditMode ? "active" : ""}" data-action="toggle-detail-edit-button">${state.detailEditMode ? "Concluir edição" : "Editar"}</button>` : ""}
+         <button class="ghost-button" data-action="toggle-status">${asset.status === "ATIVO" ? "Inativar" : "Ativar"}</button>`;
 
   document.querySelector("#viewRoot").innerHTML = `
     <div class="page-header detail-header">
-      <div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(assetDisplayName(asset))}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.removido ? " · REMOVIDO" : ""}</p></div>
+      <div><button class="back-link" data-action="back-assets">← Voltar para patrimônios</button><h1>${escapeHtml(assetDisplayName(asset))}</h1><p>${escapeHtml(asset.id_interna)}${asset.id_ses ? ` · SES ${escapeHtml(asset.id_ses)}` : ""}${asset.perdido ? " · PERDIDO" : (asset.removido ? " · REMOVIDO" : "")}</p></div>
       <div class="header-actions">${actionButtons}</div>
     </div>
 
@@ -989,12 +1006,12 @@ function renderAssetDetail(loadingHistory = false) {
       <section class="detail-grid">
         ${detailCard("Identificação", [["ID interna", asset.id_interna], ["ID SES", asset.id_ses || "—"], ["Item do Catálogo", asset.descricoes_padrao?.descricao || "—"], ["Descrição complementar", asset.descricao || "—"], ["Tipo", typeName(asset.tipo_id)], ["Marca/Modelo", asset.marca_modelo || "—"]])}
         ${detailCard("Aquisição e valores", [["Data de aquisição", formatDate(asset.data_aquisicao)], ["Tipo de aquisição", acquisitionName(asset.tipo_aquisicao)], ["Valor de aquisição", money(asset.valor_aquisicao)], ["Nota fiscal", asset.nota_fiscal_numero || "—"]])}
-        ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ...(asset.mobilidade === "MOVEL" ? [["Mobilidade", "Móvel"]] : []), ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo")], ...(asset.em_manutencao ? [["Condição operacional", "Em manutenção"]] : []), ...(asset.mobilidade === "MOVEL" ? [["Centros permitidos", allowedCentersDisplay(asset)]] : [])])}
+        ${detailCard("Localização e condição", [["Centro de custo", asset.centros_custo?.nome || "—"], ...(asset.mobilidade === "MOVEL" ? [["Mobilidade", "Móvel"]] : []), ["Estado de conservação", conservationName(asset.estado_conservacao)], ["Status", asset.perdido ? "Perdido" : (asset.removido ? "Removido" : (asset.status === "ATIVO" ? "Ativo" : "Inativo"))], ...(asset.em_manutencao ? [["Condição operacional", "Em manutenção"]] : []), ...(asset.mobilidade === "MOVEL" ? [["Centros permitidos", allowedCentersDisplay(asset)]] : [])])}
       </section>`}
 
     <section class="panel"><div class="panel-header"><h2>Histórico</h2></div>${loadingHistory ? '<div class="loading">Carregando histórico…</div>' : historyHtml(asset, state.history)}</section>
 
-    ${!asset.removido ? `<section class="danger-zone"><div><strong>Remover patrimônio</strong><p>Oculta o bem das listas operacionais, preservando histórico e possibilidade de restauração.</p></div><button class="danger-button" data-action="remove">Remover patrimônio</button></section>` : ""}
+    ${!asset.removido && !asset.perdido ? `<section class="danger-zone"><div><strong>Remover patrimônio</strong><p>Oculta o bem das listas operacionais, preservando histórico e possibilidade de restauração.</p></div><button class="danger-button" data-action="remove">Remover patrimônio</button></section>` : ""}
   `;
   bindDynamicActions();
 }
@@ -1171,7 +1188,7 @@ function renderGlobalSearch() {
     ${assetsTable(assets, `Patrimônios · ${assets.length}`)}
     <section class="panel"><div class="panel-header"><h2>Centros de custo · ${centers.length}</h2></div>
       ${centers.length ? `<div class="table-wrap"><table><thead><tr><th>Centro de custo</th><th>Código</th><th>Status</th><th>Patrimônios</th></tr></thead><tbody>${centers.map((center) => {
-        const count = state.assets.filter((asset) => !asset.removido && asset.centros_custo?.id === center.id).length;
+        const count = state.assets.filter((asset) => !asset.removido && !asset.perdido && asset.centros_custo?.id === center.id).length;
         return `<tr class="center-search-row" data-center-id="${center.id}" data-center-name="${escapeHtml(center.nome)}" tabindex="0"><td><strong>${escapeHtml(center.nome)}</strong></td><td>${escapeHtml(center.codigo || "—")}</td><td class="${center.ativo ? "status-active" : "status-inactive"}">${center.ativo ? "Ativo" : "Inativo"}</td><td>${count}</td></tr>`;
       }).join("")}</tbody></table></div>` : '<div class="empty">Nenhum centro de custo encontrado.</div>'}
     </section>`;
@@ -1232,7 +1249,7 @@ function reportRows() {
   if (!f.centro) return [];
   const q = String(f.q || "").trim().toLowerCase();
   const rows = state.assets
-    .filter(asset => !asset.removido && asset.centros_custo?.id === f.centro)
+    .filter(asset => !asset.removido && !asset.perdido && asset.centros_custo?.id === f.centro)
     .filter(asset => {
       if (q && ![asset.id_interna, asset.id_ses, asset.descricao, asset.marca_modelo, asset.descricoes_padrao?.descricao]
         .some(value => String(value || "").toLowerCase().includes(q))) return false;
@@ -2772,6 +2789,165 @@ async function saveReportTemplateFromSettings() {
   }
 }
 
+
+function defaultLossTermTemplateClient() {
+  return {
+    instituicao:"Hospital Regional Dr. José de Simone Netto",
+    unidade:"",
+    titulo:"Termo de Registro de Perda Patrimonial",
+    versao:"1.0",
+    validado_qualidade:false,
+    texto_abertura:"Por meio deste termo, registra-se formalmente a perda do bem patrimonial identificado abaixo, para fins de controle, rastreabilidade e baixa operacional no acervo.",
+    texto_fechamento:"Os signatários declaram ciência das informações registradas e confirmam a ocorrência descrita neste documento.",
+    rodape:"Documento gerado pelo Patrimônio+.",
+    assinatura_responsavel_patrimonio:"Responsável pelo Setor de Patrimônio",
+    assinatura_diretor_administrativo:"Diretor Administrativo",
+    assinatura_coordenador_setor:"Coordenador do Centro de Custo / Setor",
+    logo_data_url:null,
+    logo_nome:null
+  };
+}
+
+function normalizeLossTermTemplateClient(value) {
+  const base=defaultLossTermTemplateClient();
+  const input=value && typeof value==="object" ? value : {};
+  return {...base,...input};
+}
+
+async function ensureLossTermTemplate(force=false) {
+  if(state.lossTermTemplateLoaded && !force) return state.lossTermTemplate;
+  if(state.lossTermTemplateBusy) return state.lossTermTemplate || defaultLossTermTemplateClient();
+  state.lossTermTemplateBusy=true;
+  try {
+    const result=await getLossTermTemplate();
+    state.lossTermTemplate=normalizeLossTermTemplateClient(result.configuracao);
+    state.lossTermTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:result.atualizado_por};
+    state.lossTermTemplateLoaded=true;
+    return state.lossTermTemplate;
+  } catch(error) {
+    state.lossTermTemplate=state.lossTermTemplate || defaultLossTermTemplateClient();
+    toast("Não foi possível carregar o template do Termo de Perda: "+error.message,"error");
+    return state.lossTermTemplate;
+  } finally {
+    state.lossTermTemplateBusy=false;
+  }
+}
+
+function readLossTermTemplateForm() {
+  const current=normalizeLossTermTemplateClient(state.lossTermTemplate);
+  return {
+    instituicao:document.querySelector("#lossTemplateInstitution")?.value.trim() || "",
+    unidade:document.querySelector("#lossTemplateUnit")?.value.trim() || "",
+    titulo:document.querySelector("#lossTemplateTitle")?.value.trim() || "",
+    versao:document.querySelector("#lossTemplateVersion")?.value.trim() || "1.0",
+    validado_qualidade:Boolean(document.querySelector("#lossTemplateValidated")?.checked),
+    texto_abertura:document.querySelector("#lossTemplateOpening")?.value.trim() || "",
+    texto_fechamento:document.querySelector("#lossTemplateClosing")?.value.trim() || "",
+    rodape:document.querySelector("#lossTemplateFooter")?.value.trim() || "",
+    assinatura_responsavel_patrimonio:document.querySelector("#lossTemplateSignatureAsset")?.value.trim() || "",
+    assinatura_diretor_administrativo:document.querySelector("#lossTemplateSignatureDirector")?.value.trim() || "",
+    assinatura_coordenador_setor:document.querySelector("#lossTemplateSignatureCoordinator")?.value.trim() || "",
+    logo_data_url:current.logo_data_url || null,
+    logo_nome:current.logo_nome || null
+  };
+}
+
+async function saveLossTermTemplateFromSettings() {
+  if(state.lossTermTemplateBusy) return;
+  const config=readLossTermTemplateForm();
+  if(!config.titulo || !config.versao) {
+    toast("Informe o título e a versão do Termo de Perda.","error");
+    return;
+  }
+  if(!config.assinatura_responsavel_patrimonio || !config.assinatura_diretor_administrativo || !config.assinatura_coordenador_setor) {
+    toast("Informe os três cargos de assinatura do Termo de Perda.","error");
+    return;
+  }
+
+  state.lossTermTemplateBusy=true;
+  const button=document.querySelector('[data-action="save-loss-template"]');
+  if(button) { button.disabled=true; button.textContent="Salvando…"; }
+  try {
+    const result=await saveLossTermTemplate(config);
+    state.lossTermTemplate=normalizeLossTermTemplateClient(result.configuracao);
+    state.lossTermTemplateLoaded=true;
+    state.lossTermTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:state.session?.user||null};
+    state.recentHistory=[];
+    toast(config.validado_qualidade ? "Template do Termo de Perda salvo como validado pela Qualidade." : "Template do Termo de Perda salvo como rascunho.","success");
+    renderSettings();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    state.lossTermTemplateBusy=false;
+  }
+}
+
+
+
+function lossTemplateSettingsCardHtml(open, template) {
+  return `
+    <section class="settings-card ${open ? "is-open" : ""}">
+      <button class="settings-card-toggle" type="button" data-setting-card="loss-template" aria-expanded="${open}">
+        <div class="settings-card-icon">TP</div>
+        <div class="settings-card-title">
+          <strong>Template do Termo de Perda Patrimonial</strong>
+          <span>Texto oficial, versão, assinaturas e validação da Qualidade.</span>
+        </div>
+        <span class="settings-card-chevron">${open ? "−" : "+"}</span>
+      </button>
+      <div class="settings-card-content" ${open ? "" : "hidden"}>
+        ${!state.lossTermTemplateLoaded ? '<div class="loading">Carregando template…</div>' : `
+          <div class="report-template-editor">
+            <div class="report-template-intro">
+              <strong>Documento institucional de perda</strong>
+              <p>Ao registrar uma perda, o Patrimônio+ congela uma cópia deste modelo junto ao registro. Alterações futuras não modificam termos antigos.</p>
+            </div>
+
+            <div class="loss-template-validation ${template.validado_qualidade ? "is-valid" : "is-draft"}">
+              <strong>${template.validado_qualidade ? "Modelo validado pela Qualidade" : "Modelo ainda não validado pela Qualidade"}</strong>
+              <span>Versão ${escapeHtml(template.versao || "—")}</span>
+            </div>
+
+            <div class="report-template-step"><span>1</span><div><strong>Identificação do documento</strong><small>Cabeçalho e controle de versão.</small></div></div>
+            <div class="report-template-fields">
+              <label>Instituição<input id="lossTemplateInstitution" maxlength="180" value="${escapeHtml(template.instituicao||"")}"></label>
+              <label>Unidade<input id="lossTemplateUnit" maxlength="180" value="${escapeHtml(template.unidade||"")}"></label>
+              <label class="full">Título do documento<input id="lossTemplateTitle" maxlength="180" value="${escapeHtml(template.titulo||"")}"></label>
+              <label>Versão<input id="lossTemplateVersion" maxlength="40" value="${escapeHtml(template.versao||"1.0")}"></label>
+              <label class="loss-validation-check"><input id="lossTemplateValidated" type="checkbox" ${template.validado_qualidade?"checked":""}> Validado pela Qualidade</label>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>2</span><div><strong>Texto oficial</strong><small>Conteúdo institucional que acompanhará todos os termos novos.</small></div></div>
+              <div class="report-template-fields">
+                <label class="full">Texto de abertura<textarea id="lossTemplateOpening" rows="5" maxlength="1200">${escapeHtml(template.texto_abertura||"")}</textarea></label>
+                <label class="full">Texto de fechamento<textarea id="lossTemplateClosing" rows="4" maxlength="1200">${escapeHtml(template.texto_fechamento||"")}</textarea></label>
+                <label class="full">Rodapé<textarea id="lossTemplateFooter" rows="2" maxlength="400">${escapeHtml(template.rodape||"")}</textarea></label>
+              </div>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>3</span><div><strong>Assinaturas</strong><small>Cargos apresentados abaixo dos nomes preenchidos no registro da perda.</small></div></div>
+              <div class="report-template-fields">
+                <label>Responsável pelo Patrimônio<input id="lossTemplateSignatureAsset" maxlength="160" value="${escapeHtml(template.assinatura_responsavel_patrimonio||"")}"></label>
+                <label>Diretor Administrativo<input id="lossTemplateSignatureDirector" maxlength="160" value="${escapeHtml(template.assinatura_diretor_administrativo||"")}"></label>
+                <label class="full">Coordenador do setor<input id="lossTemplateSignatureCoordinator" maxlength="180" value="${escapeHtml(template.assinatura_coordenador_setor||"")}"></label>
+              </div>
+            </div>
+
+            <div class="settings-editor-actions">
+              <button class="ghost-button" type="button" data-action="reset-loss-template">Restaurar padrão</button>
+              <button class="primary-button" type="button" data-action="save-loss-template">Salvar template</button>
+            </div>
+            ${state.lossTermTemplateMeta?.atualizado_em ? `<small class="settings-update-meta">Última alteração: ${escapeHtml(historyDateTime(state.lossTermTemplateMeta.atualizado_em))}${state.lossTermTemplateMeta?.atualizado_por?.nome ? ` · ${escapeHtml(state.lossTermTemplateMeta.atualizado_por.nome)}` : ""}</small>` : ""}
+          </div>
+        `}
+      </div>
+    </section>
+  `;
+}
+
+
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
   if (!hasAccess("configuracoes.templates")) {
@@ -2782,8 +2958,10 @@ function renderSettings() {
   }
 
   const templateOpen = state.settingsOpenCard === "template";
+  const lossTemplateOpen = state.settingsOpenCard === "loss-template";
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
   const template=normalizeReportTemplateClient(state.reportTemplate);
+  const lossTemplate=normalizeLossTermTemplateClient(state.lossTermTemplate);
 
   root.innerHTML = `
     <div class="page-header">
@@ -2855,6 +3033,8 @@ function renderSettings() {
         </div>
       </section>
 
+      ${lossTemplateSettingsCardHtml(lossTemplateOpen,lossTemplate)}
+
       <section class="settings-card ${qrTemplateOpen ? "is-open" : ""}">
         <button class="settings-card-toggle" type="button" data-setting-card="qr-template" aria-expanded="${qrTemplateOpen}">
           <div class="settings-card-icon">QR</div>
@@ -2883,6 +3063,9 @@ function renderSettings() {
       if(state.settingsOpenCard==="template" && !state.reportTemplateLoaded) {
         ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
       }
+      if(state.settingsOpenCard==="loss-template" && !state.lossTermTemplateLoaded) {
+        ensureLossTermTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
     });
   });
 
@@ -2903,9 +3086,18 @@ function renderSettings() {
     renderSettings();
   });
   document.querySelector('[data-action="save-report-template"]')?.addEventListener("click",saveReportTemplateFromSettings);
+  document.querySelector('[data-action="reset-loss-template"]')?.addEventListener("click",()=>{
+    state.lossTermTemplate=defaultLossTermTemplateClient();
+    state.lossTermTemplateLoaded=true;
+    renderSettings();
+  });
+  document.querySelector('[data-action="save-loss-template"]')?.addEventListener("click",saveLossTermTemplateFromSettings);
 
   if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
     ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
+  if(lossTemplateOpen && !state.lossTermTemplateLoaded && !state.lossTermTemplateBusy) {
+    ensureLossTermTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
 }
 
@@ -4300,7 +4492,7 @@ async function qrDataUrlForAsset(asset, size=220) {
 async function printSelectedLabelsA4() {
   if(state.labelPrintBusy) return;
   const assets=sortAssets(
-    state.assets.filter(asset=>state.labelSelected.has(asset.id) && !asset.removido),
+    state.assets.filter(asset=>state.labelSelected.has(asset.id) && !asset.removido && !asset.perdido),
     "id"
   );
   if(!assets.length) return;
@@ -4414,7 +4606,7 @@ async function printSelectedLabelsA4() {
 }
 
 async function generateSelectedLabels() {
-  const assets = state.assets.filter(a=>state.labelSelected.has(a.id) && !a.removido);
+  const assets = state.assets.filter(a=>state.labelSelected.has(a.id) && !a.removido && !a.perdido);
   if (!assets.length) return;
   try {
     if (!window.QRCode) throw new Error("Biblioteca de QR Code não carregada.");
