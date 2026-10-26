@@ -880,7 +880,10 @@ export default {
               )
               when h.tabela='configuracoes_sistema' then jsonb_build_object(
                 'tipo','configuracao',
-                'nome','Template da Relação Patrimonial'
+                'nome',case
+                  when h.operacao='CONFIGURACAO_TERMO_PERDA' then 'Template do Termo de Perda Patrimonial'
+                  else 'Template da Relação Patrimonial'
+                end
               )
               else jsonb_build_object('tipo',h.tabela)
             end as entidade,
@@ -1618,6 +1621,7 @@ export default {
         const b=await bodyJson(request);
         const target=await hydrateAsset(sql,m[1]);
         if(!target) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
+        if(target.perdido) return responseJson({ok:false,error:"Patrimônio com perda registrada não pode ser excluído definitivamente."},409,env,request);
         if(String(b.confirmation||"").trim()!==String(target.id_interna)) return responseJson({ok:false,error:"Confirmação inválida. Digite a ID interna do patrimônio."},400,env,request);
         await sql`select excluir_patrimonio_definitivo_api(${m[1]}::uuid)`;
         return responseJson({ok:true},200,env,request);
@@ -1728,6 +1732,14 @@ export default {
       m=url.pathname.match(/^\/api\/manutencoes\/([0-9a-f-]{36})\/concluir$/i);
       if(m&&request.method==="POST") {
         if(!hasPermission(userPermissions,"manutencoes.concluir")) return responseJson({ok:false,error:"Seu perfil não possui permissão para concluir manutenção."},403,env,request);
+        const maintenanceAsset=await sql`
+          select mp.patrimonio_id,p.perdido
+          from manutencoes_patrimonio mp
+          join patrimonios p on p.id=mp.patrimonio_id
+          where mp.id=${m[1]}::uuid
+          limit 1
+        `;
+        if(maintenanceAsset[0]?.perdido) return responseJson({ok:false,error:"Patrimônio com perda registrada fica somente para consulta."},409,env,request);
         const b=await bodyJson(request);
         if(!String(b.responsavel_manutencao||"").trim()||!String(b.entregue_centro_por||"").trim()||!String(b.recebido_centro_por||"").trim()) return responseJson({ok:false,error:"Informe responsável pela manutenção, quem entregou e quem recebeu no centro."},400,env,request);
         const rows=await sql`update manutencoes_patrimonio set status='CONCLUIDA',data_fim=coalesce(${b.data_fim||null}::date,current_date),atualizado_em=now(),
