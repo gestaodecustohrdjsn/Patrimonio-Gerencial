@@ -10,7 +10,7 @@ import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
-import { getReportTemplate, saveReportTemplate } from "./services/configuracoes.js?v=1.8.0";
+import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate } from "./services/configuracoes.js?v=1.9.4";
 
 const state = {
   currentView: "dashboard",
@@ -45,6 +45,10 @@ const state = {
   reportTemplateLoaded: false,
   reportTemplateMeta: null,
   reportTemplateBusy: false,
+  lossTermTemplate: null,
+  lossTermTemplateLoaded: false,
+  lossTermTemplateMeta: null,
+  lossTermTemplateBusy: false,
   historyEvents: [],
   historyTotal: 0,
   historyUsers: [],
