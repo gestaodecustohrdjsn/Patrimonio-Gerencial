@@ -347,7 +347,8 @@ function historyActionLabel(event) {
     "descricoes_padrao:ITEM_CATALOGO_EXCLUIDO": "Excluiu item do Catálogo",
     "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM",
     "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial",
-    "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial"
+    "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial",
+    "configuracoes_sistema:CONFIGURACAO_TERMO_PERDA": "Atualizou template do Termo de Perda"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
