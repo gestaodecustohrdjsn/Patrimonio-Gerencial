@@ -3,7 +3,7 @@ import { getSession, signIn, signOut, changePassword, onAuthChange } from "./aut
 
 const root = document.querySelector("#appRoot");
 const toastRoot = document.querySelector("#toast");
-const version = String((window.OPERACIONAL_CONFIG && window.OPERACIONAL_CONFIG.VERSION) || "0.3.0");
+const version = String((window.OPERACIONAL_CONFIG && window.OPERACIONAL_CONFIG.VERSION) || "0.3.1");
 
 const state = {
   session: null,
