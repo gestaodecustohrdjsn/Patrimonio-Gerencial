@@ -83,6 +83,54 @@ function defaultReportTemplate() {
   };
 }
 
+function defaultLossTemplate() {
+  return {
+    instituicao: "Hospital Regional Dr. José de Simone Netto",
+    unidade: "",
+    titulo: "Termo de Registro de Perda Patrimonial",
+    versao: "1.0",
+    validado_qualidade: false,
+    texto_abertura: "Por meio deste termo, registra-se formalmente a perda do bem patrimonial identificado abaixo, para fins de controle, rastreabilidade e baixa operacional no acervo.",
+    texto_fechamento: "Os signatários declaram ciência das informações registradas e confirmam a ocorrência descrita neste documento.",
+    rodape: "Documento gerado pelo Patrimônio+.",
+    assinatura_responsavel_patrimonio: "Responsável pelo Setor de Patrimônio",
+    assinatura_diretor_administrativo: "Diretor Administrativo",
+    assinatura_coordenador_setor: "Coordenador do Centro de Custo / Setor",
+    logo_data_url: null,
+    logo_nome: null
+  };
+}
+
+function sanitizeLossTemplate(input) {
+  const base=defaultLossTemplate();
+  const value=input && typeof input==="object" ? input : {};
+  const text=(key,max)=>String(value[key] ?? base[key] ?? "").trim().slice(0,max);
+  let logo=null;
+  const rawLogo=value.logo_data_url;
+  if(rawLogo!==null && rawLogo!==undefined && String(rawLogo).trim()!=="") {
+    logo=String(rawLogo).trim();
+    if(logo.length>400000) throw new Error("VALIDATION:A imagem do logo é grande demais. Use até aproximadamente 300 KB.");
+    if(!/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i.test(logo)) {
+      throw new Error("VALIDATION:Formato de logo inválido. Use PNG, JPG ou WEBP.");
+    }
+  }
+  return {
+    instituicao:text("instituicao",180),
+    unidade:text("unidade",180),
+    titulo:text("titulo",180) || base.titulo,
+    versao:text("versao",40) || base.versao,
+    validado_qualidade:Object.prototype.hasOwnProperty.call(value,"validado_qualidade")?Boolean(value.validado_qualidade):base.validado_qualidade,
+    texto_abertura:text("texto_abertura",1200),
+    texto_fechamento:text("texto_fechamento",1200),
+    rodape:text("rodape",400),
+    assinatura_responsavel_patrimonio:text("assinatura_responsavel_patrimonio",160),
+    assinatura_diretor_administrativo:text("assinatura_diretor_administrativo",160),
+    assinatura_coordenador_setor:text("assinatura_coordenador_setor",180),
+    logo_data_url:logo,
+    logo_nome:logo ? text("logo_nome",180) : null
+  };
+}
+
 function sanitizeReportTemplate(input) {
   const base=defaultReportTemplate();
   const value=input && typeof input==="object" ? input : {};
@@ -432,10 +480,18 @@ async function hydrateAsset(sql, id) {
   const rows = await sql`
     select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,
       p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,
-      p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
+      p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.perdido,p.perdido_em,p.public_token,
       exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
       json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
       case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor) end as descricoes_padrao,
+      case when perda.id is null then null else json_build_object(
+        'id',perda.id,'motivo',perda.motivo,'motivo_detalhe',perda.motivo_detalhe,
+        'data_ocorrencia',perda.data_ocorrencia,'responsavel_patrimonio',perda.responsavel_patrimonio,
+        'diretor_administrativo',perda.diretor_administrativo,'coordenador_setor',perda.coordenador_setor,
+        'centro_custo_nome',perda.centro_custo_nome,'observacoes',perda.observacoes,
+        'template_snapshot',perda.template_snapshot,'patrimonio_snapshot',perda.patrimonio_snapshot,
+        'criado_em',perda.criado_em
+      ) end as perda,
       coalesce((
         select json_agg(json_build_object('id',cp.id,'codigo',cp.codigo,'nome',cp.nome) order by cp.nome)
         from patrimonio_centros_permitidos pcp
@@ -445,6 +501,7 @@ async function hydrateAsset(sql, id) {
     from patrimonios p
     join centros_custo c on c.id=p.centro_custo_id
     left join descricoes_padrao d on d.id=p.descricao_padrao_id
+    left join perdas_patrimonio perda on perda.patrimonio_id=p.id
     where p.id=${id}::uuid
     limit 1
   `;
@@ -462,8 +519,8 @@ export default {
         const r = await sql`select current_database() database,
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
-          (select count(*)::int from patrimonios where removido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.8.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+          (select count(*)::int from patrimonios where removido=false and perdido=false) patrimonios`;
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.9.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -481,7 +538,7 @@ export default {
           from patrimonios p
           join centros_custo c on c.id=p.centro_custo_id
           left join descricoes_padrao d on d.id=p.descricao_padrao_id
-          where p.public_token=${pub[1]}::uuid and p.removido=false
+          where p.public_token=${pub[1]}::uuid and p.removido=false and p.perdido=false
           limit 1`;
         if (!rows.length) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
         return responseJson({ok:true,patrimonio:rows[0]},200,env,request);
@@ -728,6 +785,55 @@ export default {
         return responseJson({ok:true,configuracao:rows[0].valor,atualizado_em:rows[0].atualizado_em},200,env,request);
       }
 
+
+      if (request.method === "GET" && url.pathname === "/api/configuracoes/termo-perda") {
+        const defaults=defaultLossTemplate();
+        const rows=await sql`
+          select c.valor,c.atualizado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as atualizado_por
+          from configuracoes_sistema c
+          left join usuarios u on u.id=c.atualizado_por
+          where c.chave='TERMO_PERDA_PATRIMONIAL'
+          limit 1
+        `;
+        const stored=rows[0]?.valor && typeof rows[0].valor==="object" ? rows[0].valor : {};
+        return responseJson({
+          ok:true,
+          configuracao:{...defaults,...stored},
+          atualizado_em:rows[0]?.atualizado_em||null,
+          atualizado_por:rows[0]?.atualizado_por||null
+        },200,env,request);
+      }
+
+      if (request.method === "PUT" && url.pathname === "/api/configuracoes/termo-perda") {
+        if(!hasPermission(userPermissions,"configuracoes.templates")) return responseJson({ok:false,error:"Seu perfil não possui permissão para alterar templates."},403,env,request);
+        const b=await bodyJson(request);
+        const config=sanitizeLossTemplate(b.configuracao);
+        const previousRows=await sql`select valor from configuracoes_sistema where chave='TERMO_PERDA_PATRIMONIAL' limit 1`;
+        const previous=previousRows[0]?.valor||null;
+        const previousAudit=previous ? {...previous,logo_data_url:previous.logo_data_url?"[logo configurado]":null} : null;
+        const configAudit={...config,logo_data_url:config.logo_data_url?"[logo configurado]":null};
+        const rows=await sql`
+          insert into configuracoes_sistema(chave,valor,atualizado_por,atualizado_em)
+          values('TERMO_PERDA_PATRIMONIAL',${JSON.stringify(config)}::jsonb,${user.id}::uuid,now())
+          on conflict(chave) do update
+          set valor=excluded.valor,atualizado_por=excluded.atualizado_por,atualizado_em=now()
+          returning valor,atualizado_em
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+          values(
+            'configuracoes_sistema',
+            (select id from configuracoes_sistema where chave='TERMO_PERDA_PATRIMONIAL'),
+            'CONFIGURACAO_TERMO_PERDA',
+            ${previousAudit?JSON.stringify(previousAudit):null}::jsonb,
+            ${JSON.stringify(configAudit)}::jsonb,
+            ${user.id}::uuid
+          )
+        `;
+        return responseJson({ok:true,configuracao:rows[0].valor,atualizado_em:rows[0].atualizado_em},200,env,request);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/historico") {
         if(!hasPermission(userPermissions,"historico.geral")) return responseJson({ok:false,error:"Sem permissão para consultar Histórico Geral."},403,env,request);
         const limit=Math.min(200,Math.max(1,Number(url.searchParams.get("limit")||30)));
@@ -860,12 +966,13 @@ export default {
         if(!hasPermission(userPermissions,"patrimonios.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar patrimônios."},403,env,request);
         const rows=await sql`
           select
-            count(*)::int as total,
-            count(*) filter (where p.removido=false)::int as ativos,
-            count(*) filter (where p.removido=true)::int as inativados,
-            count(*) filter (where p.removido=false and p.mobilidade='MOVEL')::int as moveis,
+            count(*) filter (where p.removido=false and p.perdido=false)::int as total,
+            count(*) filter (where p.removido=false and p.perdido=false)::int as ativos,
+            count(*) filter (where p.removido=true and p.perdido=false)::int as inativados,
+            count(*) filter (where p.perdido=true)::int as perdidos,
+            count(*) filter (where p.removido=false and p.perdido=false and p.mobilidade='MOVEL')::int as moveis,
             count(*) filter (
-              where p.removido=false and exists(
+              where p.removido=false and p.perdido=false and exists(
                 select 1 from manutencoes_patrimonio m
                 where m.patrimonio_id=p.id and m.status='ABERTA'
               )
@@ -873,7 +980,7 @@ export default {
             max(p.atualizado_em) as atualizado_em
           from patrimonios p
         `;
-        return responseJson({ok:true,resumo:rows[0]||{total:0,ativos:0,inativados:0,moveis:0,em_manutencao:0,atualizado_em:null}},200,env,request);
+        return responseJson({ok:true,resumo:rows[0]||{total:0,ativos:0,inativados:0,perdidos:0,moveis:0,em_manutencao:0,atualizado_em:null}},200,env,request);
       }
 
       const operacionalQrMatch=url.pathname.match(/^\/api\/operacional\/patrimonios\/qr\/([0-9a-f-]{36})$/i);
@@ -901,7 +1008,7 @@ export default {
         const centro=/^[0-9a-f-]{36}$/i.test(centroRaw)?centroRaw:null;
         const tipoRaw=Number(url.searchParams.get("tipo_id")||0);
         const tipo=[1,2,3].includes(tipoRaw)?tipoRaw:null;
-        const situacao=["ATIVOS","INATIVADOS"].includes(String(url.searchParams.get("situacao")||"").toUpperCase())
+        const situacao=["ATIVOS","INATIVADOS","PERDIDOS"].includes(String(url.searchParams.get("situacao")||"").toUpperCase())
           ? String(url.searchParams.get("situacao")).toUpperCase()
           : null;
         const mobilidade=["FIXO","MOVEL"].includes(String(url.searchParams.get("mobilidade")||"").toUpperCase())
@@ -915,7 +1022,7 @@ export default {
         const rows=await sql`
           select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,
             p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,
-            p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
+            p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.perdido,p.perdido_em,p.public_token,
             exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
             json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
             case when d.id is null then null else json_build_object(
@@ -943,13 +1050,14 @@ export default {
           and (${centro}::text is null or p.centro_custo_id=${centro}::uuid)
           and (${tipo}::int is null or p.tipo_id=${tipo}::int)
           and (${situacao}::text is null
-            or (${situacao}='ATIVOS' and p.removido=false)
-            or (${situacao}='INATIVADOS' and p.removido=true))
+            or (${situacao}='ATIVOS' and p.removido=false and p.perdido=false)
+            or (${situacao}='INATIVADOS' and p.removido=true and p.perdido=false)
+            or (${situacao}='PERDIDOS' and p.perdido=true))
           and (${mobilidade}::text is null or p.mobilidade=${mobilidade})
           and (${manutencao}::text is null
             or (${manutencao}='SIM' and exists(select 1 from manutencoes_patrimonio mm where mm.patrimonio_id=p.id and mm.status='ABERTA'))
             or (${manutencao}='NAO' and not exists(select 1 from manutencoes_patrimonio mm where mm.patrimonio_id=p.id and mm.status='ABERTA')))
-          order by p.removido asc,p.atualizado_em desc,p.id_interna asc
+          order by p.perdido asc,p.removido asc,p.atualizado_em desc,p.id_interna asc
           limit ${limit}
         `;
         return responseJson({ok:true,patrimonios:rows,limit},200,env,request);
@@ -958,7 +1066,7 @@ export default {
             if (request.method === "GET" && url.pathname === "/api/centros") {
         const rows=await sql`
           select c.id,c.codigo,c.nome,c.ativo,
-            (select count(*)::int from patrimonios p where p.centro_custo_id=c.id and p.removido=false) as patrimonios
+            (select count(*)::int from patrimonios p where p.centro_custo_id=c.id and p.removido=false and p.perdido=false) as patrimonios
           from centros_custo c
           order by c.ativo desc,c.nome asc
         `;
@@ -1370,7 +1478,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/patrimonios") {
-        const rows=await sql`select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.public_token,
+        const rows=await sql`select p.id,p.id_interna,p.id_ses,p.descricao,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,p.estado_conservacao,p.mobilidade,p.criado_em,p.atualizado_em,p.removido,p.removido_em,p.perdido,p.perdido_em,p.public_token,
           exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
           json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) centros_custo,
           case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor) end descricoes_padrao,
@@ -1421,6 +1529,7 @@ export default {
         const b=await bodyJson(request);
         const current=await hydrateAsset(sql,m[1]);
         if(!current) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
+        if(current.perdido) return responseJson({ok:false,error:"Patrimônio com perda registrada fica somente para consulta."},409,env,request);
 
         const has=(key)=>Object.prototype.hasOwnProperty.call(b,key);
         const next={
@@ -1514,6 +1623,61 @@ export default {
         return responseJson({ok:true},200,env,request);
       }
 
+      m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/perda$/i);
+      if(m && request.method==="GET") {
+        if(!hasPermission(userPermissions,"patrimonios.consultar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para consultar patrimônios."},403,env,request);
+        const rows=await sql`
+          select p.*, case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as registrado_por_usuario
+          from perdas_patrimonio p
+          left join usuarios u on u.id=p.registrado_por
+          where p.patrimonio_id=${m[1]}::uuid
+          limit 1
+        `;
+        if(!rows.length) return responseJson({ok:false,error:"Este patrimônio não possui perda registrada."},404,env,request);
+        return responseJson({ok:true,perda:rows[0]},200,env,request);
+      }
+      if(m && request.method==="POST") {
+        if(!hasPermission(userPermissions,"patrimonios.registrar_perda")) return responseJson({ok:false,error:"Seu perfil não possui permissão para registrar perda patrimonial."},403,env,request);
+        const target=await hydrateAsset(sql,m[1]);
+        if(!target) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
+        if(target.perdido) return responseJson({ok:false,error:"Este patrimônio já possui perda registrada."},409,env,request);
+        if(target.removido) return responseJson({ok:false,error:"Patrimônio removido não pode ser marcado como perdido."},409,env,request);
+
+        const b=await bodyJson(request);
+        const motivo=String(b.motivo||"").trim().toUpperCase();
+        if(!["ROUBO_FURTO","DANO_IRREPARAVEL","EXTRAVIO","OUTRO"].includes(motivo)) return responseJson({ok:false,error:"Selecione um motivo de perda válido."},400,env,request);
+        if(!String(b.responsavel_patrimonio||"").trim()||!String(b.diretor_administrativo||"").trim()||!String(b.coordenador_setor||"").trim()) {
+          return responseJson({ok:false,error:"Informe o responsável do Patrimônio, o Diretor Administrativo e o Coordenador do setor."},400,env,request);
+        }
+        if(motivo==="OUTRO"&&!String(b.motivo_detalhe||"").trim()) return responseJson({ok:false,error:"Descreva o motivo da perda."},400,env,request);
+
+        const templateRows=await sql`select valor from configuracoes_sistema where chave='TERMO_PERDA_PATRIMONIAL' limit 1`;
+        const template=sanitizeLossTemplate(templateRows[0]?.valor||defaultLossTemplate());
+        const snapshot={
+          id:target.id,id_interna:target.id_interna,id_ses:target.id_ses,
+          descricao:target.descricao,descricao_catalogo:target.descricoes_padrao?.descricao||null,
+          tipo_id:target.tipo_id,marca_modelo:target.marca_modelo,
+          centro_custo:target.centros_custo||null,data_aquisicao:target.data_aquisicao,
+          valor_aquisicao:target.valor_aquisicao,nota_fiscal_numero:target.nota_fiscal_numero,
+          estado_conservacao:target.estado_conservacao,mobilidade:target.mobilidade
+        };
+
+        const rows=await sql`
+          select registrar_perda_patrimonial_api(
+            ${m[1]}::uuid,${motivo},${b.motivo_detalhe||null},${b.data_ocorrencia||null}::date,
+            ${String(b.responsavel_patrimonio).trim()},${String(b.diretor_administrativo).trim()},
+            ${String(b.coordenador_setor).trim()},${b.observacoes||null},${user.id}::uuid,
+            ${JSON.stringify(snapshot)}::jsonb,${JSON.stringify(template)}::jsonb
+          ) as id
+        `;
+        const perdaRows=await sql`
+          select p.*, case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as registrado_por_usuario
+          from perdas_patrimonio p left join usuarios u on u.id=p.registrado_por
+          where p.id=${rows[0].id}::uuid limit 1
+        `;
+        return responseJson({ok:true,perda:perdaRows[0],patrimonio:await hydrateAsset(sql,m[1])},201,env,request);
+      }
+
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/historico$/i);
       if(m&&request.method==="GET") { const rows=await sql`select h.id,h.operacao,h.dados_anteriores,h.dados_novos,h.usuario_id,h.criado_em,
         case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome,'email',u.email) end usuario
@@ -1522,6 +1686,9 @@ export default {
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/movimentar$/i);
       if(m&&request.method==="POST") {
         if(!hasPermission(userPermissions,"patrimonios.movimentar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para movimentar patrimônios."},403,env,request);
+        const target=await hydrateAsset(sql,m[1]);
+        if(!target) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
+        if(target.perdido) return responseJson({ok:false,error:"Patrimônio com perda registrada não pode ser movimentado."},409,env,request);
         const b=await bodyJson(request);
         if(!String(b.solicitante||"").trim()||!String(b.movimentadoPor||"").trim()||!String(b.recebidoPor||"").trim()) return responseJson({ok:false,error:"Solicitante, movimentado por e recebido por são obrigatórios."},400,env,request);
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
@@ -1530,7 +1697,7 @@ export default {
         return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request);
       }
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/(remover|restaurar)$/i);
-      if(m&&request.method==="POST") { if(!hasPermission(userPermissions,m[2]==="remover"?"patrimonios.inativar":"patrimonios.restaurar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para remover patrimônios."},403,env,request); if(m[2]==="remover") await sql`select remover_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; else await sql`select restaurar_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request); }
+      if(m&&request.method==="POST") { const target=await hydrateAsset(sql,m[1]); if(target?.perdido) return responseJson({ok:false,error:"Patrimônio com perda registrada fica somente para consulta."},409,env,request); if(!hasPermission(userPermissions,m[2]==="remover"?"patrimonios.inativar":"patrimonios.restaurar")) return responseJson({ok:false,error:"Seu perfil não possui permissão para remover patrimônios."},403,env,request); if(m[2]==="remover") await sql`select remover_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; else await sql`select restaurar_patrimonio_api(${m[1]}::uuid,${user.id}::uuid)`; return responseJson({ok:true,patrimonio:await hydrateAsset(sql,m[1])},200,env,request); }
 
 
       m=url.pathname.match(/^\/api\/patrimonios\/([0-9a-f-]{36})\/manutencoes$/i);
@@ -1542,6 +1709,9 @@ export default {
       }
       if(m&&request.method==="POST") {
         if(!hasPermission(userPermissions,"manutencoes.abrir")) return responseJson({ok:false,error:"Seu perfil não possui permissão para registrar manutenção."},403,env,request);
+        const target=await hydrateAsset(sql,m[1]);
+        if(!target) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
+        if(target.perdido) return responseJson({ok:false,error:"Patrimônio com perda registrada não pode receber manutenção."},409,env,request);
         const b=await bodyJson(request);
         if(!["PREVENTIVA","CORRETIVA"].includes(String(b.tipo||""))) return responseJson({ok:false,error:"Tipo de manutenção inválido."},400,env,request);
         if(!String(b.descricao||"").trim()) return responseJson({ok:false,error:"Informe a descrição da manutenção."},400,env,request);
