@@ -2788,6 +2788,100 @@ async function saveReportTemplateFromSettings() {
   }
 }
 
+
+function defaultLossTermTemplateClient() {
+  return {
+    instituicao:"Hospital Regional Dr. José de Simone Netto",
+    unidade:"",
+    titulo:"Termo de Registro de Perda Patrimonial",
+    versao:"1.0",
+    validado_qualidade:false,
+    texto_abertura:"Por meio deste termo, registra-se formalmente a perda do bem patrimonial identificado abaixo, para fins de controle, rastreabilidade e baixa operacional no acervo.",
+    texto_fechamento:"Os signatários declaram ciência das informações registradas e confirmam a ocorrência descrita neste documento.",
+    rodape:"Documento gerado pelo Patrimônio+.",
+    assinatura_responsavel_patrimonio:"Responsável pelo Setor de Patrimônio",
+    assinatura_diretor_administrativo:"Diretor Administrativo",
+    assinatura_coordenador_setor:"Coordenador do Centro de Custo / Setor",
+    logo_data_url:null,
+    logo_nome:null
+  };
+}
+
+function normalizeLossTermTemplateClient(value) {
+  const base=defaultLossTermTemplateClient();
+  const input=value && typeof value==="object" ? value : {};
+  return {...base,...input};
+}
+
+async function ensureLossTermTemplate(force=false) {
+  if(state.lossTermTemplateLoaded && !force) return state.lossTermTemplate;
+  if(state.lossTermTemplateBusy) return state.lossTermTemplate || defaultLossTermTemplateClient();
+  state.lossTermTemplateBusy=true;
+  try {
+    const result=await getLossTermTemplate();
+    state.lossTermTemplate=normalizeLossTermTemplateClient(result.configuracao);
+    state.lossTermTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:result.atualizado_por};
+    state.lossTermTemplateLoaded=true;
+    return state.lossTermTemplate;
+  } catch(error) {
+    state.lossTermTemplate=state.lossTermTemplate || defaultLossTermTemplateClient();
+    toast("Não foi possível carregar o template do Termo de Perda: "+error.message,"error");
+    return state.lossTermTemplate;
+  } finally {
+    state.lossTermTemplateBusy=false;
+  }
+}
+
+function readLossTermTemplateForm() {
+  const current=normalizeLossTermTemplateClient(state.lossTermTemplate);
+  return {
+    instituicao:document.querySelector("#lossTemplateInstitution")?.value.trim() || "",
+    unidade:document.querySelector("#lossTemplateUnit")?.value.trim() || "",
+    titulo:document.querySelector("#lossTemplateTitle")?.value.trim() || "",
+    versao:document.querySelector("#lossTemplateVersion")?.value.trim() || "1.0",
+    validado_qualidade:Boolean(document.querySelector("#lossTemplateValidated")?.checked),
+    texto_abertura:document.querySelector("#lossTemplateOpening")?.value.trim() || "",
+    texto_fechamento:document.querySelector("#lossTemplateClosing")?.value.trim() || "",
+    rodape:document.querySelector("#lossTemplateFooter")?.value.trim() || "",
+    assinatura_responsavel_patrimonio:document.querySelector("#lossTemplateSignatureAsset")?.value.trim() || "",
+    assinatura_diretor_administrativo:document.querySelector("#lossTemplateSignatureDirector")?.value.trim() || "",
+    assinatura_coordenador_setor:document.querySelector("#lossTemplateSignatureCoordinator")?.value.trim() || "",
+    logo_data_url:current.logo_data_url || null,
+    logo_nome:current.logo_nome || null
+  };
+}
+
+async function saveLossTermTemplateFromSettings() {
+  if(state.lossTermTemplateBusy) return;
+  const config=readLossTermTemplateForm();
+  if(!config.titulo || !config.versao) {
+    toast("Informe o título e a versão do Termo de Perda.","error");
+    return;
+  }
+  if(!config.assinatura_responsavel_patrimonio || !config.assinatura_diretor_administrativo || !config.assinatura_coordenador_setor) {
+    toast("Informe os três cargos de assinatura do Termo de Perda.","error");
+    return;
+  }
+
+  state.lossTermTemplateBusy=true;
+  const button=document.querySelector('[data-action="save-loss-template"]');
+  if(button) { button.disabled=true; button.textContent="Salvando…"; }
+  try {
+    const result=await saveLossTermTemplate(config);
+    state.lossTermTemplate=normalizeLossTermTemplateClient(result.configuracao);
+    state.lossTermTemplateLoaded=true;
+    state.lossTermTemplateMeta={atualizado_em:result.atualizado_em,atualizado_por:state.session?.user||null};
+    state.recentHistory=[];
+    toast(config.validado_qualidade ? "Template do Termo de Perda salvo como validado pela Qualidade." : "Template do Termo de Perda salvo como rascunho.","success");
+    renderSettings();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    state.lossTermTemplateBusy=false;
+  }
+}
+
+
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
   if (!hasAccess("configuracoes.templates")) {
