@@ -43,7 +43,11 @@ export async function listAssetHistory(id) {
 
 export async function getPublicAsset(token) {
   const data = await apiRequest(`/api/public/patrimonio/${encodeURIComponent(token)}`, { auth: false });
-  return data.patrimonio || null;
+  if (!data.patrimonio) return null;
+  return {
+    ...data.patrimonio,
+    public_configuracao: data.configuracao || null
+  };
 }
 
 
