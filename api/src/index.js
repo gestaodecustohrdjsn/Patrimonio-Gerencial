@@ -607,11 +607,11 @@ export default {
         const rows = await sql`
           select p.id_interna,p.id_ses,p.descricao,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,
             p.estado_conservacao,p.mobilidade,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,
-            p.criado_em,p.atualizado_em,
+            p.atualizado_em,
             exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
-            json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
-            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'tipo_id',d.tipo_id) end as descricoes_padrao,
-            coalesce((select json_agg(json_build_object('id',cp.id,'nome',cp.nome) order by cp.nome)
+            json_build_object('nome',c.nome) as centros_custo,
+            case when d.id is null then null else json_build_object('descricao',d.descricao) end as descricoes_padrao,
+            coalesce((select json_agg(json_build_object('nome',cp.nome) order by cp.nome)
               from patrimonio_centros_permitidos pcp join centros_custo cp on cp.id=pcp.centro_custo_id
               where pcp.patrimonio_id=p.id),'[]'::json) as centros_permitidos
           from patrimonios p
