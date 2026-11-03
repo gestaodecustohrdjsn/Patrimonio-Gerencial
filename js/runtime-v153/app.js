@@ -3131,6 +3131,10 @@ async function savePublicQrConfigFromSettings() {
   if(!config.instituicao || !config.titulo) {
     toast("Informe instituição e título da página pública.","error"); return;
   }
+  const sensitive=[];
+  if(config.campos.valor_aquisicao) sensitive.push("Valor de aquisição");
+  if(config.campos.nota_fiscal) sensitive.push("Nota fiscal");
+  if(sensitive.length && !window.confirm("Atenção: "+sensitive.join(" e ")+" ficará(ão) disponível(is) publicamente para qualquer pessoa que acessar o QR Code.\n\nDeseja continuar?")) return;
   state.publicQrConfigBusy=true;
   const button=document.querySelector('[data-action="save-public-qr"]');
   if(button){button.disabled=true;button.textContent="Salvando…";}
@@ -5180,7 +5184,7 @@ function renderPublicAsset(asset) {
     fields.estado_conservacao ? publicField("Estado de conservação",asset.estado_conservacao ? conservationName(asset.estado_conservacao) : null) : "",
     fields.status ? publicField("Status",statusText) : "",
     fields.manutencao ? publicField("Situação de manutenção",asset.em_manutencao ? "Em manutenção" : "Sem manutenção aberta") : "",
-    fields.centros_permitidos && asset.mobilidade==="MOVEL" ? publicField("Centros permitidos",allowed) : ""
+    fields.centros_permitidos && allowed ? publicField("Centros permitidos",allowed) : ""
   ].join("");
 
   const acquisition=[
