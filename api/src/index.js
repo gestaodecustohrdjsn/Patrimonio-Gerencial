@@ -131,6 +131,77 @@ function sanitizeLossTemplate(input) {
   };
 }
 
+
+function defaultPublicQrConfig() {
+  return {
+    ativo:true,
+    instituicao:"Hospital Regional Dr. José de Simone Netto",
+    titulo:"Consulta pública de patrimônio",
+    subtitulo:"Identificação e situação atual do bem",
+    texto_orientacao:"As informações abaixo são disponibilizadas somente para consulta e identificação do patrimônio.",
+    rodape:"Patrimônio+ · Consulta pública",
+    mensagem_inativo:"Este patrimônio está inativo no acervo.",
+    mensagem_manutencao:"Este patrimônio está atualmente em manutenção.",
+    logo_data_url:null,
+    logo_nome:null,
+    campos:{
+      id_interna:true,
+      id_ses:true,
+      descricao_catalogo:true,
+      descricao_complementar:true,
+      tipo:true,
+      marca_modelo:true,
+      centro_custo:true,
+      mobilidade:true,
+      estado_conservacao:true,
+      status:true,
+      manutencao:true,
+      centros_permitidos:false,
+      forma_aquisicao:false,
+      data_aquisicao:false,
+      valor_aquisicao:false,
+      nota_fiscal:false,
+      ultima_atualizacao:true
+    }
+  };
+}
+
+function sanitizePublicQrConfig(input) {
+  const base=defaultPublicQrConfig();
+  const value=input && typeof input==="object" ? input : {};
+  const text=(key,max)=>String(value[key] ?? base[key] ?? "").trim().slice(0,max);
+  const campos={...base.campos};
+  if(value.campos && typeof value.campos==="object") {
+    for(const key of Object.keys(campos)) {
+      if(Object.prototype.hasOwnProperty.call(value.campos,key)) campos[key]=Boolean(value.campos[key]);
+    }
+  }
+  // ID interna é o identificador mínimo da consulta pública e não pode ser ocultado.
+  campos.id_interna=true;
+  let logo=null;
+  const rawLogo=value.logo_data_url;
+  if(rawLogo!==null && rawLogo!==undefined && String(rawLogo).trim()!=="") {
+    logo=String(rawLogo).trim();
+    if(logo.length>400000) throw new Error("VALIDATION:A imagem do logo é grande demais. Use até aproximadamente 300 KB.");
+    if(!/^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=\r\n]+$/i.test(logo)) {
+      throw new Error("VALIDATION:Formato de logo inválido. Use PNG, JPG ou WEBP.");
+    }
+  }
+  return {
+    ativo:Object.prototype.hasOwnProperty.call(value,"ativo")?Boolean(value.ativo):base.ativo,
+    instituicao:text("instituicao",180),
+    titulo:text("titulo",180) || base.titulo,
+    subtitulo:text("subtitulo",220),
+    texto_orientacao:text("texto_orientacao",600),
+    rodape:text("rodape",300),
+    mensagem_inativo:text("mensagem_inativo",300),
+    mensagem_manutencao:text("mensagem_manutencao",300),
+    logo_data_url:logo,
+    logo_nome:logo ? text("logo_nome",180) : null,
+    campos
+  };
+}
+
 function sanitizeReportTemplate(input) {
   const base=defaultReportTemplate();
   const value=input && typeof input==="object" ? input : {};
@@ -520,18 +591,26 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false and perdido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.9.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.10.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
       if (request.method === "GET" && pub) {
+        const defaults=defaultPublicQrConfig();
+        const configRows=await sql`select valor from configuracoes_sistema where chave='PAGINA_PUBLICA_QR' limit 1`;
+        const stored=configRows[0]?.valor && typeof configRows[0].valor==="object" ? configRows[0].valor : {};
+        const config=sanitizePublicQrConfig({...defaults,...stored,campos:{...defaults.campos,...(stored.campos||{})}});
+        if(!config.ativo) {
+          return responseJson({ok:false,error:"A consulta pública por QR Code está temporariamente indisponível.",publico_desativado:true},403,env,request);
+        }
+
         const rows = await sql`
           select p.id_interna,p.id_ses,p.descricao,p.tipo_id,p.marca_modelo,p.status,p.tipo_aquisicao,
             p.estado_conservacao,p.mobilidade,p.data_aquisicao,p.valor_aquisicao,p.nota_fiscal_numero,
             p.criado_em,p.atualizado_em,
             exists(select 1 from manutencoes_patrimonio m where m.patrimonio_id=p.id and m.status='ABERTA') as em_manutencao,
             json_build_object('id',c.id,'codigo',c.codigo,'nome',c.nome) as centros_custo,
-            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'valor_padrao',d.valor_padrao,'tipo_id',d.tipo_id,'origem',d.origem_catalogo,'fonte_valor',d.fonte_valor) end as descricoes_padrao,
+            case when d.id is null then null else json_build_object('id',d.id,'descricao',d.descricao,'tipo_id',d.tipo_id) end as descricoes_padrao,
             coalesce((select json_agg(json_build_object('id',cp.id,'nome',cp.nome) order by cp.nome)
               from patrimonio_centros_permitidos pcp join centros_custo cp on cp.id=pcp.centro_custo_id
               where pcp.patrimonio_id=p.id),'[]'::json) as centros_permitidos
@@ -541,7 +620,27 @@ export default {
           where p.public_token=${pub[1]}::uuid and p.removido=false and p.perdido=false
           limit 1`;
         if (!rows.length) return responseJson({ok:false,error:"Patrimônio não encontrado."},404,env,request);
-        return responseJson({ok:true,patrimonio:rows[0]},200,env,request);
+
+        const asset={...rows[0]};
+        const fields=config.campos;
+        if(!fields.id_ses) asset.id_ses=null;
+        if(!fields.descricao_complementar) asset.descricao=null;
+        if(!fields.tipo) asset.tipo_id=null;
+        if(!fields.marca_modelo) asset.marca_modelo=null;
+        if(!fields.status) asset.status=null;
+        if(!fields.forma_aquisicao) asset.tipo_aquisicao=null;
+        if(!fields.estado_conservacao) asset.estado_conservacao=null;
+        if(!fields.mobilidade) asset.mobilidade=null;
+        if(!fields.data_aquisicao) asset.data_aquisicao=null;
+        if(!fields.valor_aquisicao) asset.valor_aquisicao=null;
+        if(!fields.nota_fiscal) asset.nota_fiscal_numero=null;
+        if(!fields.ultima_atualizacao) asset.atualizado_em=null;
+        if(!fields.manutencao) asset.em_manutencao=false;
+        if(!fields.centro_custo) asset.centros_custo=null;
+        if(!fields.descricao_catalogo) asset.descricoes_padrao=null;
+        if(!fields.centros_permitidos) asset.centros_permitidos=[];
+
+        return responseJson({ok:true,patrimonio:asset,configuracao:config},200,env,request);
       }
 
       if (request.method === "POST" && url.pathname === "/api/auth/setup-password") {
@@ -833,6 +932,61 @@ export default {
         `;
         return responseJson({ok:true,configuracao:rows[0].valor,atualizado_em:rows[0].atualizado_em},200,env,request);
       }
+
+
+      if (request.method === "GET" && url.pathname === "/api/configuracoes/pagina-publica-qr") {
+        const defaults=defaultPublicQrConfig();
+        const rows=await sql`
+          select c.valor,c.atualizado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as atualizado_por
+          from configuracoes_sistema c
+          left join usuarios u on u.id=c.atualizado_por
+          where c.chave='PAGINA_PUBLICA_QR'
+          limit 1
+        `;
+        const stored=rows[0]?.valor && typeof rows[0].valor==="object" ? rows[0].valor : {};
+        return responseJson({
+          ok:true,
+          configuracao:{...defaults,...stored,campos:{...defaults.campos,...(stored.campos||{})}},
+          atualizado_em:rows[0]?.atualizado_em||null,
+          atualizado_por:rows[0]?.atualizado_por||null
+        },200,env,request);
+      }
+
+      if (request.method === "PUT" && url.pathname === "/api/configuracoes/pagina-publica-qr") {
+        if(!hasPermission(userPermissions,"configuracoes.templates")) return responseJson({ok:false,error:"Seu perfil não possui permissão para alterar a página pública."},403,env,request);
+        const b=await bodyJson(request);
+        let config;
+        try { config=sanitizePublicQrConfig(b.configuracao); }
+        catch(error) {
+          const msg=String(error?.message||error);
+          if(msg.startsWith("VALIDATION:")) return responseJson({ok:false,error:msg.slice(11)},400,env,request);
+          throw error;
+        }
+        const previousRows=await sql`select valor from configuracoes_sistema where chave='PAGINA_PUBLICA_QR' limit 1`;
+        const previous=previousRows[0]?.valor||null;
+        const auditValue=(value)=>value ? {...value,logo_data_url:value.logo_data_url?"[logo configurado]":null} : null;
+        const rows=await sql`
+          insert into configuracoes_sistema(chave,valor,atualizado_por,atualizado_em)
+          values('PAGINA_PUBLICA_QR',${JSON.stringify(config)}::jsonb,${user.id}::uuid,now())
+          on conflict(chave) do update
+          set valor=excluded.valor,atualizado_por=excluded.atualizado_por,atualizado_em=now()
+          returning id,valor,atualizado_em
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+          values(
+            'configuracoes_sistema',
+            ${rows[0].id}::uuid,
+            'CONFIGURACAO_PAGINA_PUBLICA_QR',
+            ${previous?JSON.stringify(auditValue(previous)):null}::jsonb,
+            ${JSON.stringify(auditValue(config))}::jsonb,
+            ${user.id}::uuid
+          )
+        `;
+        return responseJson({ok:true,configuracao:rows[0].valor,atualizado_em:rows[0].atualizado_em},200,env,request);
+      }
+
 
       if (request.method === "GET" && url.pathname === "/api/historico") {
         if(!hasPermission(userPermissions,"historico.geral")) return responseJson({ok:false,error:"Sem permissão para consultar Histórico Geral."},403,env,request);
