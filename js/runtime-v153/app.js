@@ -10,7 +10,7 @@ import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
-import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate } from "./services/configuracoes.js?v=1.9.4";
+import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate, getPublicQrConfig, savePublicQrConfig } from "./services/configuracoes.js?v=1.10.0";
 
 const state = {
   currentView: "dashboard",
@@ -49,6 +49,10 @@ const state = {
   lossTermTemplateLoaded: false,
   lossTermTemplateMeta: null,
   lossTermTemplateBusy: false,
+  publicQrConfig: null,
+  publicQrConfigLoaded: false,
+  publicQrConfigMeta: null,
+  publicQrConfigBusy: false,
   historyEvents: [],
   historyTotal: 0,
   historyUsers: [],
@@ -2948,6 +2952,276 @@ function lossTemplateSettingsCardHtml(open, template) {
   `;
 }
 
+
+
+const PUBLIC_QR_FIELDS = [
+  ["id_interna","ID interna","Identificação",false],
+  ["id_ses","ID SES","Identificação",false],
+  ["descricao_catalogo","Item do Catálogo","Identificação",false],
+  ["descricao_complementar","Descrição complementar","Identificação",false],
+  ["tipo","Tipo","Identificação",false],
+  ["marca_modelo","Marca / Modelo","Identificação",false],
+  ["centro_custo","Centro de custo","Localização e condição",false],
+  ["mobilidade","Mobilidade","Localização e condição",false],
+  ["estado_conservacao","Estado de conservação","Localização e condição",false],
+  ["status","Status","Localização e condição",false],
+  ["manutencao","Situação de manutenção","Localização e condição",false],
+  ["centros_permitidos","Centros permitidos para bem móvel","Localização e condição",false],
+  ["forma_aquisicao","Forma de aquisição","Aquisição",false],
+  ["data_aquisicao","Data de aquisição","Aquisição",false],
+  ["valor_aquisicao","Valor de aquisição","Aquisição",true],
+  ["nota_fiscal","Nota fiscal","Aquisição",true],
+  ["ultima_atualizacao","Última atualização","Rodapé",false]
+];
+
+function defaultPublicQrConfigClient() {
+  return {
+    ativo:true,
+    instituicao:"Hospital Regional Dr. José de Simone Netto",
+    titulo:"Consulta pública de patrimônio",
+    subtitulo:"Identificação e situação atual do bem",
+    texto_orientacao:"As informações abaixo são disponibilizadas somente para consulta e identificação do patrimônio.",
+    rodape:"Patrimônio+ · Consulta pública",
+    mensagem_inativo:"Este patrimônio está inativo no acervo.",
+    mensagem_manutencao:"Este patrimônio está atualmente em manutenção.",
+    logo_data_url:null,
+    logo_nome:null,
+    campos:{
+      id_interna:true,id_ses:true,descricao_catalogo:true,descricao_complementar:true,tipo:true,marca_modelo:true,
+      centro_custo:true,mobilidade:true,estado_conservacao:true,status:true,manutencao:true,centros_permitidos:false,
+      forma_aquisicao:false,data_aquisicao:false,valor_aquisicao:false,nota_fiscal:false,ultima_atualizacao:true
+    }
+  };
+}
+
+function normalizePublicQrConfigClient(value) {
+  const base=defaultPublicQrConfigClient();
+  const input=value && typeof value==="object" ? value : {};
+  return {
+    ...base,
+    ...input,
+    ativo:Object.prototype.hasOwnProperty.call(input,"ativo") ? Boolean(input.ativo) : base.ativo,
+    campos:{...base.campos,...(input.campos||{}),id_interna:true}
+  };
+}
+
+async function ensurePublicQrConfig(force=false) {
+  if(state.publicQrConfigLoaded && !force) return state.publicQrConfig;
+  if(state.publicQrConfigBusy) return state.publicQrConfig || defaultPublicQrConfigClient();
+  state.publicQrConfigBusy=true;
+  try {
+    const result=await getPublicQrConfig();
+    state.publicQrConfig=normalizePublicQrConfigClient(result.configuracao);
+    state.publicQrConfigMeta={atualizado_em:result.atualizado_em,atualizado_por:result.atualizado_por};
+    state.publicQrConfigLoaded=true;
+    return state.publicQrConfig;
+  } catch(error) {
+    state.publicQrConfig=state.publicQrConfig || defaultPublicQrConfigClient();
+    toast("Não foi possível carregar a configuração da página pública: "+error.message,"error");
+    return state.publicQrConfig;
+  } finally {
+    state.publicQrConfigBusy=false;
+  }
+}
+
+function readPublicQrConfigForm() {
+  const current=normalizePublicQrConfigClient(state.publicQrConfig);
+  const campos={};
+  for(const [key] of PUBLIC_QR_FIELDS) {
+    campos[key]=key==="id_interna" ? true : Boolean(document.querySelector(`[data-public-qr-field="${key}"]`)?.checked);
+  }
+  return {
+    ativo:Boolean(document.querySelector("#publicQrEnabled")?.checked),
+    instituicao:document.querySelector("#publicQrInstitution")?.value.trim() || "",
+    titulo:document.querySelector("#publicQrTitle")?.value.trim() || "",
+    subtitulo:document.querySelector("#publicQrSubtitle")?.value.trim() || "",
+    texto_orientacao:document.querySelector("#publicQrGuidance")?.value.trim() || "",
+    rodape:document.querySelector("#publicQrFooter")?.value.trim() || "",
+    mensagem_inativo:document.querySelector("#publicQrInactiveMessage")?.value.trim() || "",
+    mensagem_manutencao:document.querySelector("#publicQrMaintenanceMessage")?.value.trim() || "",
+    logo_data_url:current.logo_data_url || null,
+    logo_nome:current.logo_nome || null,
+    campos
+  };
+}
+
+function publicQrPreviewHtml(value) {
+  const c=normalizePublicQrConfigClient(value);
+  const f=c.campos;
+  const sample={
+    id_interna:"108260001",
+    id_ses:"SES 012345",
+    descricao_catalogo:"CADEIRA DE RODAS",
+    descricao:"Estrutura em aço, modelo padrão",
+    tipo:"Equipamento Médico",
+    marca_modelo:"Marca / Modelo",
+    centro:"UTI Adulto"
+  };
+  const field=(label,val)=>`<div class="qr-preview-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(val)}</strong></div>`;
+  const ident=[
+    f.id_interna?field("ID interna",sample.id_interna):"",
+    f.id_ses?field("ID SES",sample.id_ses):"",
+    f.descricao_catalogo?field("Item do Catálogo",sample.descricao_catalogo):"",
+    f.descricao_complementar?field("Descrição complementar",sample.descricao):"",
+    f.tipo?field("Tipo",sample.tipo):"",
+    f.marca_modelo?field("Marca / Modelo",sample.marca_modelo):""
+  ].join("");
+  const location=[
+    f.centro_custo?field("Centro de custo",sample.centro):"",
+    f.mobilidade?field("Mobilidade","Fixo"):"",
+    f.estado_conservacao?field("Estado de conservação","Bem Conservado"):"",
+    f.status?field("Status","Ativo"):"",
+    f.manutencao?field("Situação de manutenção","Sem manutenção aberta"):""
+  ].join("");
+  const acquisition=[
+    f.forma_aquisicao?field("Forma de aquisição","Compra"):"",
+    f.data_aquisicao?field("Data de aquisição","03/11/2026"):"",
+    f.valor_aquisicao?field("Valor de aquisição","R$ 2.500,00"):"",
+    f.nota_fiscal?field("Nota fiscal","NF 000123"):""
+  ].join("");
+  const heroName=f.descricao_catalogo?sample.descricao_catalogo:(f.descricao_complementar?sample.descricao:"Patrimônio "+sample.id_interna);
+  return `
+    <div class="public-qr-preview ${c.ativo?"":"is-disabled"}">
+      <div class="public-qr-preview-brand">
+        ${c.logo_data_url ? `<img src="${escapeHtml(c.logo_data_url)}" alt="Logo">` : '<div class="brand-mark">P+</div>'}
+        <div><strong>${escapeHtml(c.instituicao||"Instituição")}</strong><small>${escapeHtml(c.titulo||"Consulta pública de patrimônio")}</small></div>
+      </div>
+      ${!c.ativo?'<div class="public-qr-preview-disabled">Consulta pública desativada</div>':""}
+      <div class="public-qr-preview-hero"><small>${escapeHtml(c.subtitulo||"")}</small><h3>${escapeHtml(heroName)}</h3><b>${sample.id_interna}</b></div>
+      ${c.texto_orientacao?`<p class="public-qr-preview-guidance">${escapeHtml(c.texto_orientacao)}</p>`:""}
+      <div class="public-qr-preview-grid">
+        ${ident?`<section><h4>Identificação</h4>${ident}</section>`:""}
+        ${location?`<section><h4>Localização e condição</h4>${location}</section>`:""}
+        ${acquisition?`<section><h4>Aquisição</h4>${acquisition}</section>`:""}
+      </div>
+      <div class="public-qr-preview-footer"><span>${escapeHtml(c.rodape||"")}</span>${f.ultima_atualizacao?"<small>Última atualização: 03/11/2026 16:00</small>":""}</div>
+    </div>`;
+}
+
+function syncPublicQrDraftFromForm() {
+  if(!state.publicQrConfigLoaded) return;
+  state.publicQrConfig=normalizePublicQrConfigClient(readPublicQrConfigForm());
+  const preview=document.querySelector(".public-qr-preview");
+  if(preview) preview.outerHTML=publicQrPreviewHtml(state.publicQrConfig);
+}
+
+async function handlePublicQrLogo(event) {
+  const file=event.target.files?.[0];
+  if(!file) return;
+  if(!["image/png","image/jpeg","image/webp"].includes(file.type)) {
+    toast("Use logo em PNG, JPG ou WEBP.","error"); event.target.value=""; return;
+  }
+  if(file.size>300*1024) {
+    toast("O logo deve ter no máximo 300 KB.","error"); event.target.value=""; return;
+  }
+  const dataUrl=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(new Error("Falha ao ler o logo."));
+    reader.readAsDataURL(file);
+  });
+  state.publicQrConfig={...normalizePublicQrConfigClient(state.publicQrConfig),logo_data_url:dataUrl,logo_nome:file.name};
+  renderSettings();
+}
+
+async function savePublicQrConfigFromSettings() {
+  if(state.publicQrConfigBusy) return;
+  const config=readPublicQrConfigForm();
+  if(!config.instituicao || !config.titulo) {
+    toast("Informe instituição e título da página pública.","error"); return;
+  }
+  state.publicQrConfigBusy=true;
+  const button=document.querySelector('[data-action="save-public-qr"]');
+  if(button){button.disabled=true;button.textContent="Salvando…";}
+  try {
+    const result=await savePublicQrConfig(config);
+    state.publicQrConfig=normalizePublicQrConfigClient(result.configuracao);
+    state.publicQrConfigLoaded=true;
+    state.publicQrConfigMeta={atualizado_em:result.atualizado_em,atualizado_por:state.session?.user||null};
+    state.recentHistory=[];
+    toast("Configuração da página pública do QR Code salva.","success");
+    renderSettings();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    state.publicQrConfigBusy=false;
+  }
+}
+
+function publicQrSettingsCardHtml(open, value) {
+  const c=normalizePublicQrConfigClient(value);
+  const groups=["Identificação","Localização e condição","Aquisição","Rodapé"];
+  return `
+    <section class="settings-card ${open?"is-open":""}">
+      <button class="settings-card-toggle" type="button" data-setting-card="qr-template" aria-expanded="${open}">
+        <div class="settings-card-icon">QR</div>
+        <div class="settings-card-title">
+          <strong>Página Pública do QR Code</strong>
+          <span>Controle identidade visual, textos e quais dados ficam realmente públicos.</span>
+        </div>
+        <span class="settings-card-chevron">${open?"−":"+"}</span>
+      </button>
+      <div class="settings-card-content" ${open?"":"hidden"}>
+        ${!state.publicQrConfigLoaded?'<div class="loading">Carregando configuração…</div>':`
+          <div class="report-template-editor">
+            <div class="report-template-intro">
+              <strong>Consulta pública segura</strong>
+              <p>Campos desmarcados não são enviados pela API pública. O QR continua apontando para o mesmo patrimônio; apenas a apresentação e a exposição dos dados mudam.</p>
+            </div>
+            <div class="public-qr-master-toggle">
+              <label><input id="publicQrEnabled" type="checkbox" ${c.ativo?"checked":""}> <span><strong>Consulta pública ativada</strong><small>Ao desativar, todos os QRs públicos deixam de exibir dados até nova ativação.</small></span></label>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>1</span><div><strong>Identidade e textos</strong><small>Cabeçalho e mensagens institucionais da página.</small></div></div>
+              <div class="report-template-fields">
+                <label>Instituição<input id="publicQrInstitution" maxlength="180" value="${escapeHtml(c.instituicao||"")}"></label>
+                <label>Título<input id="publicQrTitle" maxlength="180" value="${escapeHtml(c.titulo||"")}"></label>
+                <label class="full">Subtítulo<input id="publicQrSubtitle" maxlength="220" value="${escapeHtml(c.subtitulo||"")}"></label>
+                <label class="full">Texto de orientação<textarea id="publicQrGuidance" rows="3" maxlength="600">${escapeHtml(c.texto_orientacao||"")}</textarea></label>
+                <label class="full">Rodapé<input id="publicQrFooter" maxlength="300" value="${escapeHtml(c.rodape||"")}"></label>
+                <label>Mensagem para patrimônio inativo<textarea id="publicQrInactiveMessage" rows="2" maxlength="300">${escapeHtml(c.mensagem_inativo||"")}</textarea></label>
+                <label>Mensagem para patrimônio em manutenção<textarea id="publicQrMaintenanceMessage" rows="2" maxlength="300">${escapeHtml(c.mensagem_manutencao||"")}</textarea></label>
+              </div>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>2</span><div><strong>Identidade visual</strong><small>Logo opcional exibido no topo da consulta pública.</small></div></div>
+              <div class="report-template-logo-editor">
+                ${c.logo_data_url?`<img src="${escapeHtml(c.logo_data_url)}" alt="Logo"><span>${escapeHtml(c.logo_nome||"Logo configurado")}</span>`:'<div class="report-template-logo-placeholder">Sem logo</div>'}
+                <label class="secondary-button file-button">Selecionar imagem<input id="publicQrLogo" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+                ${c.logo_data_url?'<button class="ghost-button compact-button" type="button" data-action="remove-public-qr-logo">Remover</button>':""}
+              </div>
+              <small>PNG, JPG ou WEBP, até 300 KB.</small>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>3</span><div><strong>Dados públicos</strong><small>Escolha exatamente o que uma pessoa verá ao escanear qualquer etiqueta.</small></div></div>
+              <div class="public-qr-field-groups">
+                ${groups.map(group=>`
+                  <div class="public-qr-field-group"><strong>${escapeHtml(group)}</strong><div class="config-checkbox-grid">
+                    ${PUBLIC_QR_FIELDS.filter(([, ,g])=>g===group).map(([key,label,,sensitive])=>`
+                      <label class="${sensitive?"is-sensitive":""}"><input type="checkbox" data-public-qr-field="${key}" ${c.campos?.[key]?"checked":""} ${key==="id_interna"?"disabled":""}> ${escapeHtml(label)}${sensitive?' <small>administrativo</small>':""}</label>
+                    `).join("")}
+                  </div></div>`).join("")}
+              </div>
+              <div class="public-qr-security-note"><strong>Atenção aos dados administrativos</strong><span>Valor de aquisição e Nota Fiscal ficam desativados por padrão. Ative somente se houver decisão institucional de torná-los públicos.</span></div>
+            </div>
+
+            <div class="report-template-section">
+              <div class="report-template-step"><span>4</span><div><strong>Prévia</strong><small>Simulação da página em celular/desktop antes de salvar.</small></div></div>
+              ${publicQrPreviewHtml(c)}
+            </div>
+
+            <div class="settings-editor-actions">
+              <button class="ghost-button" type="button" data-action="reset-public-qr">Restaurar padrão</button>
+              <button class="primary-button" type="button" data-action="save-public-qr">Salvar configuração</button>
+            </div>
+            ${state.publicQrConfigMeta?.atualizado_em?`<small class="settings-update-meta">Última alteração: ${escapeHtml(historyDateTime(state.publicQrConfigMeta.atualizado_em))}${state.publicQrConfigMeta?.atualizado_por?.nome?` · ${escapeHtml(state.publicQrConfigMeta.atualizado_por.nome)}`:""}</small>`:""}
+          </div>`}
+      </div>
+    </section>`;
+}
 
 function renderSettings() {
   const root = document.querySelector("#viewRoot");
