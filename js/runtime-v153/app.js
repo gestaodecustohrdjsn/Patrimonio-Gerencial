@@ -4,7 +4,7 @@ import { toast } from "./components/toast.js";
 import { getSession, signOut, onAuthChange } from "./services/auth.js";
 import { listCenters, createCenter, updateCenter, deleteCenter } from "./services/centros.js?v=1.6.0";
 import { searchCatalog, listCatalogAdmin, updateCatalogType, createCatalogItem, updateCatalogItem, deleteCatalogItem, listCatalogUpdateContext, applyCatalogUpdate, getCatalogUpdateDetail } from "./services/catalogo.js?v=1.6.0";
-import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset, registerAssetLoss, getAssetLoss } from "./services/patrimonios.js?v=1.9.4";
+import { listAssets, createAsset, updateAsset, moveAsset, setAssetRemoved, permanentlyDeleteTestAsset, listAssetHistory, getPublicAsset, registerAssetLoss, getAssetLoss } from "./services/patrimonios.js?v=1.10.0";
 import { renderLogin, renderPasswordChange } from "./pages/login.js?v=1.9.3.1";
 import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
@@ -352,7 +352,8 @@ function historyActionLabel(event) {
     "catalogo_sigem_atualizacoes:CATALOGO_SIGEM_ATUALIZADO": "Atualizou base SIGEM",
     "importacoes_patrimoniais:IMPORTACAO_PATRIMONIAL_CONCLUIDA": "Importou lote patrimonial",
     "configuracoes_sistema:CONFIGURACAO_RELACAO_PATRIMONIAL": "Atualizou template da Relação Patrimonial",
-    "configuracoes_sistema:CONFIGURACAO_TERMO_PERDA": "Atualizou template do Termo de Perda"
+    "configuracoes_sistema:CONFIGURACAO_TERMO_PERDA": "Atualizou template do Termo de Perda",
+    "configuracoes_sistema:CONFIGURACAO_PAGINA_PUBLICA_QR": "Atualizou a página pública do QR Code"
   };
   return labels[key] || String(event.operacao || "Evento").replaceAll("_", " ").toLowerCase();
 }
