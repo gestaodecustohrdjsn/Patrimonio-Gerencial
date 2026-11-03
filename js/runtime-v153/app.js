@@ -5148,69 +5148,85 @@ function publicField(label, value) {
 }
 
 function renderPublicAsset(asset) {
-  const statusText = asset.status === "ATIVO" ? "Ativo" : "Inativo";
-  const valueText = asset.valor_aquisicao == null ? null : money(asset.valor_aquisicao);
-  const centerName = asset.centros_custo?.nome || asset.centro_custo || null;
-  const sigemName = asset.descricoes_padrao?.descricao || asset.descricao_padrao || null;
-  const allowed = asset.mobilidade === "MOVEL"
-    ? ((asset.centros_permitidos || []).map(c => c.nome).filter(Boolean).join(", ") || "Nenhum centro adicional definido")
+  const config=normalizePublicQrConfigClient(asset.public_configuracao);
+  const fields=config.campos;
+  const statusText=asset.status ? (asset.status==="ATIVO" ? "Ativo" : "Inativo") : null;
+  const valueText=asset.valor_aquisicao == null ? null : money(asset.valor_aquisicao);
+  const centerName=asset.centros_custo?.nome || null;
+  const sigemName=asset.descricoes_padrao?.descricao || null;
+  const mobilityText=asset.mobilidade ? (asset.mobilidade==="MOVEL" ? "Móvel" : "Fixo") : null;
+  const allowed=asset.mobilidade==="MOVEL"
+    ? ((asset.centros_permitidos||[]).map(c=>c.nome).filter(Boolean).join(", ") || "Nenhum centro adicional definido")
     : null;
+  const heroName=(fields.descricao_catalogo && sigemName)
+    ? sigemName
+    : (fields.descricao_complementar && asset.descricao)
+      ? asset.descricao
+      : `Patrimônio ${asset.id_interna}`;
 
-  appRoot.innerHTML = `
+  const identification=[
+    fields.id_interna ? publicField("ID interna",asset.id_interna) : "",
+    fields.id_ses ? publicField("ID SES",asset.id_ses) : "",
+    fields.descricao_catalogo ? publicField("Item do Catálogo",sigemName) : "",
+    fields.descricao_complementar ? publicField("Descrição complementar",asset.descricao) : "",
+    fields.tipo ? publicField("Tipo",asset.tipo_id ? typeName(asset.tipo_id) : null) : "",
+    fields.marca_modelo ? publicField("Marca / Modelo",asset.marca_modelo) : ""
+  ].join("");
+
+  const condition=[
+    fields.centro_custo ? publicField("Centro de custo",centerName) : "",
+    fields.mobilidade ? publicField("Mobilidade",mobilityText) : "",
+    fields.estado_conservacao ? publicField("Estado de conservação",asset.estado_conservacao ? conservationName(asset.estado_conservacao) : null) : "",
+    fields.status ? publicField("Status",statusText) : "",
+    fields.manutencao ? publicField("Situação de manutenção",asset.em_manutencao ? "Em manutenção" : "Sem manutenção aberta") : "",
+    fields.centros_permitidos && asset.mobilidade==="MOVEL" ? publicField("Centros permitidos",allowed) : ""
+  ].join("");
+
+  const acquisition=[
+    fields.forma_aquisicao ? publicField("Forma de aquisição",asset.tipo_aquisicao ? acquisitionName(asset.tipo_aquisicao) : null) : "",
+    fields.data_aquisicao ? publicField("Data de aquisição",asset.data_aquisicao ? formatDate(asset.data_aquisicao) : null) : "",
+    fields.valor_aquisicao ? publicField("Valor de aquisição",valueText) : "",
+    fields.nota_fiscal ? publicField("Nota fiscal",asset.nota_fiscal_numero) : ""
+  ].join("");
+
+  appRoot.innerHTML=`
     <main class="public-page">
       <section class="public-shell">
-        <header class="public-brand">
-          <div class="brand-mark">P+</div>
-          <div><strong>Patrimônio+</strong><small>Consulta pública de patrimônio</small></div>
+        <header class="public-brand public-brand-configured">
+          ${config.logo_data_url
+            ? `<img class="public-brand-logo" src="${escapeHtml(config.logo_data_url)}" alt="Logo institucional">`
+            : '<div class="brand-mark">P+</div>'}
+          <div>
+            <strong>${escapeHtml(config.instituicao || "Patrimônio+")}</strong>
+            <small>${escapeHtml(config.titulo || "Consulta pública de patrimônio")}</small>
+          </div>
         </header>
 
         <section class="public-hero">
           <div>
-            <span class="public-eyebrow">Consulta pública · somente visualização</span>
-            <h1>${escapeHtml(assetDisplayName(asset))}</h1>
+            <span class="public-eyebrow">${escapeHtml(config.subtitulo || "Consulta pública · somente visualização")}</span>
+            <h1>${escapeHtml(heroName)}</h1>
             <div class="public-id-block"><span>ID interna</span><p class="public-id">${escapeHtml(asset.id_interna)}</p></div>
           </div>
           <div class="public-hero-status">
-            <span class="public-status ${asset.status === "ATIVO" ? "is-active" : "is-inactive"}">${statusText}</span>
-            ${asset.em_manutencao ? '<span class="public-context-tag is-maintenance">[Em manutenção]</span>' : ""}
+            ${fields.status && statusText ? `<span class="public-status ${asset.status==="ATIVO"?"is-active":"is-inactive"}">${escapeHtml(statusText)}</span>` : ""}
+            ${fields.manutencao && asset.em_manutencao ? '<span class="public-context-tag is-maintenance">[Em manutenção]</span>' : ""}
           </div>
         </section>
 
+        ${config.texto_orientacao ? `<div class="public-guidance">${escapeHtml(config.texto_orientacao)}</div>` : ""}
+        ${fields.status && asset.status==="INATIVO" && config.mensagem_inativo ? `<div class="public-state-message is-inactive">${escapeHtml(config.mensagem_inativo)}</div>` : ""}
+        ${fields.manutencao && asset.em_manutencao && config.mensagem_manutencao ? `<div class="public-state-message is-maintenance">${escapeHtml(config.mensagem_manutencao)}</div>` : ""}
+
         <section class="public-card-grid">
-          <article class="public-card">
-            <h2>Identificação</h2>
-            ${publicField("ID interna", asset.id_interna)}
-            ${publicField("ID SES", asset.id_ses)}
-            ${publicField("Item do Catálogo", sigemName)}
-            ${publicField("Descrição complementar", asset.descricao)}
-            ${publicField("Tipo", asset.tipo || typeName(asset.tipo_id))}
-            ${publicField("Marca/Modelo", asset.marca_modelo)}
-          </article>
-
-          <article class="public-card">
-            <h2>Localização e condição</h2>
-            ${publicField("Centro de custo", centerName)}
-            ${asset.mobilidade === "MOVEL" ? publicField("Mobilidade", "Móvel") : ""}
-            ${publicField("Estado de conservação", conservationName(asset.estado_conservacao))}
-            ${publicField("Status", statusText)}
-            ${asset.em_manutencao ? publicField("Condição operacional", "Em manutenção") : ""}
-            ${asset.mobilidade === "MOVEL" ? publicField("Centros permitidos", allowed) : ""}
-          </article>
-
-          <article class="public-card">
-            <h2>Aquisição</h2>
-            ${publicField("Forma de aquisição", acquisitionName(asset.tipo_aquisicao))}
-            ${publicField("Data de aquisição", formatDate(asset.data_aquisicao))}
-            ${publicField("Valor informado", valueText)}
-            ${publicField("Nota fiscal", asset.nota_fiscal_numero)}
-            ${publicField("Fornecedor", asset.fornecedor)}
-            ${publicField("Observações", asset.observacoes)}
-          </article>
+          ${identification ? `<article class="public-card"><h2>Identificação</h2>${identification}</article>` : ""}
+          ${condition ? `<article class="public-card"><h2>Localização e condição</h2>${condition}</article>` : ""}
+          ${acquisition ? `<article class="public-card"><h2>Aquisição</h2>${acquisition}</article>` : ""}
         </section>
 
         <footer class="public-footer">
-          <span>Consulta somente para visualização</span>
-          <small>Última atualização: ${escapeHtml(formatDateTime(asset.atualizado_em))}</small>
+          <span>${escapeHtml(config.rodape || "Consulta somente para visualização")}</span>
+          ${fields.ultima_atualizacao && asset.atualizado_em ? `<small>Última atualização: ${escapeHtml(formatDateTime(asset.atualizado_em))}</small>` : ""}
         </footer>
       </section>
     </main>`;
