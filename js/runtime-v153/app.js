@@ -3237,6 +3237,7 @@ function renderSettings() {
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
   const template=normalizeReportTemplateClient(state.reportTemplate);
   const lossTemplate=normalizeLossTermTemplateClient(state.lossTermTemplate);
+  const publicQrConfig=normalizePublicQrConfigClient(state.publicQrConfig);
 
   root.innerHTML = `
     <div class="page-header">
@@ -3310,23 +3311,7 @@ function renderSettings() {
 
       ${lossTemplateSettingsCardHtml(lossTemplateOpen,lossTemplate)}
 
-      <section class="settings-card ${qrTemplateOpen ? "is-open" : ""}">
-        <button class="settings-card-toggle" type="button" data-setting-card="qr-template" aria-expanded="${qrTemplateOpen}">
-          <div class="settings-card-icon">QR</div>
-          <div class="settings-card-title">
-            <strong>Template da Página Pública do QR Code</strong>
-            <span>Defina futuramente quais informações do patrimônio serão exibidas na consulta pública.</span>
-          </div>
-          <span class="settings-card-chevron">${qrTemplateOpen ? "−" : "+"}</span>
-        </button>
-        <div class="settings-card-content" ${qrTemplateOpen ? "" : "hidden"}>
-          <div class="settings-coming-soon">
-            <strong>Ideia reservada para desenvolvimento.</strong>
-            <p>Esta configuração poderá controlar campos visíveis, ordem das informações, cabeçalho, logo, textos e seções da página acessada pelo QR Code.</p>
-            <span class="badge">Em preparação</span>
-          </div>
-        </div>
-      </section>
+      ${publicQrSettingsCardHtml(qrTemplateOpen,publicQrConfig)}
     </div>
   `;
 
@@ -3340,6 +3325,9 @@ function renderSettings() {
       }
       if(state.settingsOpenCard==="loss-template" && !state.lossTermTemplateLoaded) {
         ensureLossTermTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
+      if(state.settingsOpenCard==="qr-template" && !state.publicQrConfigLoaded) {
+        ensurePublicQrConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
       }
     });
   });
@@ -3368,11 +3356,32 @@ function renderSettings() {
   });
   document.querySelector('[data-action="save-loss-template"]')?.addEventListener("click",saveLossTermTemplateFromSettings);
 
+  document.querySelector("#publicQrLogo")?.addEventListener("change",handlePublicQrLogo);
+  document.querySelectorAll(
+    "#publicQrEnabled,#publicQrInstitution,#publicQrTitle,#publicQrSubtitle,#publicQrGuidance,#publicQrFooter,#publicQrInactiveMessage,#publicQrMaintenanceMessage,[data-public-qr-field]"
+  ).forEach(control=>{
+    const eventName=(control.tagName==="INPUT" && !["checkbox"].includes(control.type)) || control.tagName==="TEXTAREA" ? "input" : "change";
+    control.addEventListener(eventName,syncPublicQrDraftFromForm);
+  });
+  document.querySelector('[data-action="remove-public-qr-logo"]')?.addEventListener("click",()=>{
+    state.publicQrConfig={...normalizePublicQrConfigClient(state.publicQrConfig),logo_data_url:null,logo_nome:null};
+    renderSettings();
+  });
+  document.querySelector('[data-action="reset-public-qr"]')?.addEventListener("click",()=>{
+    state.publicQrConfig=defaultPublicQrConfigClient();
+    state.publicQrConfigLoaded=true;
+    renderSettings();
+  });
+  document.querySelector('[data-action="save-public-qr"]')?.addEventListener("click",savePublicQrConfigFromSettings);
+
   if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
     ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
   if(lossTemplateOpen && !state.lossTermTemplateLoaded && !state.lossTermTemplateBusy) {
     ensureLossTermTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
+  if(qrTemplateOpen && !state.publicQrConfigLoaded && !state.publicQrConfigBusy) {
+    ensurePublicQrConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
 }
 
