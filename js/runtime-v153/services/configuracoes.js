@@ -40,3 +40,24 @@ export async function saveLossTermTemplate(configuracao) {
     atualizado_em:data.atualizado_em || null
   };
 }
+
+
+export async function getPublicQrConfig() {
+  const data=await apiRequest("/api/configuracoes/pagina-publica-qr");
+  return {
+    configuracao:data.configuracao,
+    atualizado_em:data.atualizado_em || null,
+    atualizado_por:data.atualizado_por || null
+  };
+}
+
+export async function savePublicQrConfig(configuracao) {
+  const data=await apiRequest("/api/configuracoes/pagina-publica-qr",{
+    method:"PUT",
+    body:{configuracao}
+  });
+  return {
+    configuracao:data.configuracao,
+    atualizado_em:data.atualizado_em || null
+  };
+}
