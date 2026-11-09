@@ -10,7 +10,7 @@ import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
-import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate, getPublicQrConfig, savePublicQrConfig } from "./services/configuracoes.js?v=1.10.0";
+import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate, getPublicQrConfig, savePublicQrConfig, getAssetExportConfig, saveAssetExportConfig } from "./services/configuracoes.js?v=1.12.0";
 
 const state = {
   currentView: "dashboard",
@@ -53,6 +53,10 @@ const state = {
   publicQrConfigLoaded: false,
   publicQrConfigMeta: null,
   publicQrConfigBusy: false,
+  assetExportConfig: null,
+  assetExportConfigLoaded: false,
+  assetExportConfigMeta: null,
+  assetExportConfigBusy: false,
   historyEvents: [],
   historyTotal: 0,
   historyUsers: [],
@@ -3240,6 +3244,7 @@ function renderSettings() {
   const templateOpen = state.settingsOpenCard === "template";
   const lossTemplateOpen = state.settingsOpenCard === "loss-template";
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
+  const assetExportOpen = state.settingsOpenCard === "asset-export";
   const template=normalizeReportTemplateClient(state.reportTemplate);
   const lossTemplate=normalizeLossTermTemplateClient(state.lossTermTemplate);
   const publicQrConfig=normalizePublicQrConfigClient(state.publicQrConfig);
@@ -3317,6 +3322,8 @@ function renderSettings() {
       ${lossTemplateSettingsCardHtml(lossTemplateOpen,lossTemplate)}
 
       ${publicQrSettingsCardHtml(qrTemplateOpen,publicQrConfig)}
+
+      ${assetExportSettingsCardHtml(assetExportOpen)}
     </div>
   `;
 
@@ -3333,6 +3340,9 @@ function renderSettings() {
       }
       if(state.settingsOpenCard==="qr-template" && !state.publicQrConfigLoaded) {
         ensurePublicQrConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
+      if(state.settingsOpenCard==="asset-export" && !state.assetExportConfigLoaded) {
+        ensureAssetExportConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
       }
     });
   });
@@ -3379,6 +3389,22 @@ function renderSettings() {
   });
   document.querySelector('[data-action="save-public-qr"]')?.addEventListener("click",savePublicQrConfigFromSettings);
 
+  document.querySelectorAll("[data-export-config-field]").forEach(input=>input.addEventListener("change",syncAssetExportSettingsUi));
+  document.querySelector('[data-action="export-config-default"]')?.addEventListener("click",()=>{
+    const defaults=new Set(defaultAssetExportKeys());
+    document.querySelectorAll("[data-export-config-field]").forEach(input=>{ input.checked=defaults.has(input.dataset.exportConfigField); });
+    syncAssetExportSettingsUi();
+  });
+  document.querySelector('[data-action="export-config-all"]')?.addEventListener("click",()=>{
+    document.querySelectorAll("[data-export-config-field]").forEach(input=>{ input.checked=true; });
+    syncAssetExportSettingsUi();
+  });
+  document.querySelector('[data-action="export-config-clear"]')?.addEventListener("click",()=>{
+    document.querySelectorAll("[data-export-config-field]").forEach(input=>{ input.checked=false; });
+    syncAssetExportSettingsUi();
+  });
+  document.querySelector('[data-action="save-asset-export-config"]')?.addEventListener("click",saveAssetExportConfigFromSettings);
+
   if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
     ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
@@ -3387,6 +3413,9 @@ function renderSettings() {
   }
   if(qrTemplateOpen && !state.publicQrConfigLoaded && !state.publicQrConfigBusy) {
     ensurePublicQrConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
+  if(assetExportOpen && !state.assetExportConfigLoaded && !state.assetExportConfigBusy) {
+    ensureAssetExportConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
 }
 
@@ -4129,7 +4158,7 @@ function bindDynamicActions() {
   document.querySelector("#allowedCenterSearch")?.addEventListener("input", debounce(renderFormAllowedCenterResults, 120));
   document.querySelectorAll('[data-action="new"]').forEach(b=>b.addEventListener("click", openNewAsset));
   document.querySelectorAll('[data-action="export"]').forEach(b=>b.addEventListener("click", exportCsv));
-  document.querySelectorAll('[data-action="export-panel"]').forEach(b=>b.addEventListener("click", () => openAssetExportDialog(filteredByPanel("assetFilters", state.showRemoved))));
+  document.querySelectorAll('[data-action="export-panel"]').forEach(b=>b.addEventListener("click", () => exportConfiguredAssets(filteredByPanel("assetFilters", state.showRemoved))));
   document.querySelectorAll('[data-action="toggle-value"]').forEach(b=>b.addEventListener("click",()=>{state.showDashboardValue=!state.showDashboardValue;renderDashboard();}));
   document.querySelectorAll('[data-action="back-assets"]').forEach(b=>b.addEventListener("click",()=>{state.detailEditMode=false;state.currentView="patrimonios";renderAssets();}));
   document.querySelectorAll('[data-action="move"]').forEach(b=>b.addEventListener("click",openMoveDialog));
@@ -5167,71 +5196,138 @@ function exportCsv(rows = filteredAssets(), selectedKeys = defaultAssetExportKey
   URL.revokeObjectURL(url);
 }
 
-function openAssetExportDialog(rows) {
-  if(!rows?.length) { toast("Não há patrimônios para exportar.","error"); return; }
-  document.querySelector("#assetExportDialog")?.remove();
-  const dialog=document.createElement("dialog");
-  dialog.id="assetExportDialog";
-  dialog.className="operation-dialog export-config-dialog";
-  const groups=["Padrão","Cadastro e localização","Aquisição e Catálogo","Controle do registro"];
-  dialog.innerHTML=`
-    <form method="dialog" id="assetExportForm">
-      <div class="dialog-header">
-        <button type="button" class="back-button" data-action="close-export-dialog">← Voltar</button>
-        <h2>Configurar exportação</h2>
-        <p>${rows.length} patrimônio(s) serão exportados conforme os filtros atuais.</p>
-      </div>
-      <div class="export-config-body">
-        <div class="export-config-intro">
-          <strong>Escolha as informações da planilha</strong>
-          <span>As colunas atuais já vêm marcadas como Padrão. Você pode adicionar outras apenas para esta exportação.</span>
-        </div>
-        ${groups.map(group=>`
-          <section class="export-field-group">
-            <div class="export-field-group-head"><strong>${escapeHtml(group)}</strong>${group==="Padrão"?'<span class="badge">Padrão atual</span>':""}</div>
-            <div class="export-field-grid">
-              ${ASSET_EXPORT_FIELDS.filter(field=>field.group===group).map(field=>`
-                <label><input type="checkbox" data-export-field="${field.key}" ${field.standard?"checked":""}> <span>${escapeHtml(field.label)}</span></label>
-              `).join("")}
-            </div>
-          </section>
-        `).join("")}
-      </div>
-      <div class="export-config-toolbar">
-        <button type="button" class="ghost-button compact-button" data-action="export-default">Restaurar padrão</button>
-        <button type="button" class="ghost-button compact-button" data-action="export-select-all">Selecionar tudo</button>
-        <span id="exportFieldCount">${defaultAssetExportKeys().length} coluna(s) selecionada(s)</span>
-      </div>
-      <div class="dialog-actions">
-        <button type="button" class="ghost-button" data-action="close-export-dialog">Cancelar</button>
-        <button type="submit" class="primary-button">Exportar CSV</button>
-      </div>
-    </form>`;
-  document.body.appendChild(dialog);
 
-  const boxes=[...dialog.querySelectorAll("[data-export-field]")];
-  const updateCount=()=>{
-    const count=boxes.filter(box=>box.checked).length;
-    const label=dialog.querySelector("#exportFieldCount");
-    if(label) label.textContent=`${count} coluna(s) selecionada(s)`;
-  };
-  boxes.forEach(box=>box.addEventListener("change",updateCount));
-  dialog.querySelectorAll('[data-action="close-export-dialog"]').forEach(button=>button.addEventListener("click",()=>dialog.close()));
-  dialog.querySelector('[data-action="export-default"]')?.addEventListener("click",()=>{
-    const defaults=new Set(defaultAssetExportKeys());
-    boxes.forEach(box=>box.checked=defaults.has(box.dataset.exportField));
-    updateCount();
+function normalizeAssetExportConfigClient(value) {
+  const defaults=defaultAssetExportKeys();
+  const hasColumns=Boolean(value && Array.isArray(value.colunas));
+  const raw=hasColumns ? value.colunas : defaults;
+  const allowed=new Set(ASSET_EXPORT_FIELDS.map(field=>field.key));
+  const colunas=[];
+  for(const item of raw) {
+    const key=String(item||"");
+    if(allowed.has(key) && !colunas.includes(key)) colunas.push(key);
+  }
+  return {colunas:hasColumns ? colunas : defaults};
+}
+
+async function ensureAssetExportConfig(force=false) {
+  if(state.assetExportConfigLoaded && !force) return state.assetExportConfig;
+  if(state.assetExportConfigBusy) return state.assetExportConfig || {colunas:defaultAssetExportKeys()};
+  state.assetExportConfigBusy=true;
+  try {
+    const result=await getAssetExportConfig();
+    state.assetExportConfig=normalizeAssetExportConfigClient(result.configuracao);
+    state.assetExportConfigMeta={atualizado_em:result.atualizado_em,atualizado_por:result.atualizado_por};
+    state.assetExportConfigLoaded=true;
+    return state.assetExportConfig;
+  } catch(error) {
+    state.assetExportConfig=state.assetExportConfig || {colunas:defaultAssetExportKeys()};
+    toast("Não foi possível carregar a configuração de exportação. Será usado o padrão: "+error.message,"error");
+    return state.assetExportConfig;
+  } finally {
+    state.assetExportConfigBusy=false;
+  }
+}
+
+function assetExportPreviewHtml(config) {
+  const current=normalizeAssetExportConfigClient(config);
+  const selected=new Set(current.colunas);
+  const fields=ASSET_EXPORT_FIELDS.filter(field=>selected.has(field.key));
+  return '<div class="export-preview">'
+    +'<div class="export-preview-head"><div><strong>Prévia das colunas</strong><small>Ordem em que aparecerão no arquivo CSV.</small></div><span>'+fields.length+' coluna(s)</span></div>'
+    +'<div class="export-preview-track">'
+    +fields.map((field,index)=>'<span><b>'+(index+1)+'</b>'+escapeHtml(field.label)+'</span>').join("")
+    +'</div></div>';
+}
+
+function assetExportSettingsCardHtml(open) {
+  const config=normalizeAssetExportConfigClient(state.assetExportConfig);
+  const selected=new Set(config.colunas);
+  const groups=["Padrão","Cadastro e localização","Aquisição e Catálogo","Controle do registro"];
+  const groupHtml=groups.map(group=>{
+    const groupFields=ASSET_EXPORT_FIELDS.filter(field=>field.group===group);
+    const active=groupFields.filter(field=>selected.has(field.key)).length;
+    const options=groupFields.map(field=>{
+      const checked=selected.has(field.key);
+      return '<label class="export-settings-option '+(checked?"is-selected":"")+'">'
+        +'<input type="checkbox" data-export-config-field="'+field.key+'" '+(checked?"checked":"")+'>'
+        +'<span class="export-settings-check" aria-hidden="true">✓</span>'
+        +'<span class="export-settings-option-copy"><strong>'+escapeHtml(field.label)+'</strong><small>'+(field.standard?"Coluna do modelo padrão":"Informação adicional")+'</small></span>'
+        +'</label>';
+    }).join("");
+    return '<section class="export-settings-group"><header><div><strong>'+escapeHtml(group)+'</strong><small>'+active+' de '+groupFields.length+' selecionada(s)</small></div>'
+      +(group==="Padrão"?'<span class="export-default-badge">Padrão original</span>':"")
+      +'</header><div class="export-settings-grid">'+options+'</div></section>';
+  }).join("");
+
+  const content=!state.assetExportConfigLoaded
+    ? '<div class="loading">Carregando configuração de exportação…</div>'
+    : '<div class="export-settings-shell">'
+      +'<div class="export-settings-hero"><div><span class="export-settings-kicker">Modelo global de exportação</span><h3>Planilha patrimonial configurável</h3><p>Escolha uma vez as informações que sua equipe precisa. O botão <strong>Exportar filtrados</strong> usará este modelo automaticamente, respeitando os filtros aplicados na tela de Patrimônios.</p></div>'
+      +'<div class="export-settings-summary"><div><strong>'+config.colunas.length+'</strong><span>colunas selecionadas</span></div><div><strong>CSV</strong><span>UTF-8 para Excel</span></div><div><strong>;</strong><span>separador de colunas</span></div></div></div>'
+      +'<div class="export-settings-toolbar"><div><strong>Seleção de informações</strong><small>O conjunto “Padrão” corresponde às colunas exportadas originalmente pelo sistema.</small></div><div class="export-settings-toolbar-actions">'
+      +'<button type="button" class="ghost-button compact-button" data-action="export-config-default">Usar padrão</button>'
+      +'<button type="button" class="ghost-button compact-button" data-action="export-config-all">Selecionar tudo</button>'
+      +'<button type="button" class="ghost-button compact-button" data-action="export-config-clear">Limpar</button></div></div>'
+      +'<div class="export-settings-groups">'+groupHtml+'</div>'
+      +assetExportPreviewHtml(config)
+      +'<div class="export-settings-footer"><div class="export-settings-note"><strong>Como funciona</strong><span>Esta configuração é global. Alterá-la muda as próximas exportações, mas não afeta arquivos já gerados.</span></div><button class="primary-button" type="button" data-action="save-asset-export-config">Salvar configuração</button></div>'
+      +(state.assetExportConfigMeta?.atualizado_em?'<small class="settings-update-meta">Última alteração: '+escapeHtml(historyDateTime(state.assetExportConfigMeta.atualizado_em))+(state.assetExportConfigMeta?.atualizado_por?.nome?' · '+escapeHtml(state.assetExportConfigMeta.atualizado_por.nome):"")+'</small>':"")
+      +'</div>';
+
+  return '<section class="settings-card '+(open?"is-open":"")+'">'
+    +'<button class="settings-card-toggle" type="button" data-setting-card="asset-export" aria-expanded="'+open+'">'
+    +'<div class="settings-card-icon">CSV</div><div class="settings-card-title"><strong>Exportação de Patrimônios</strong><span>Defina quais informações serão incluídas automaticamente em “Exportar filtrados”.</span></div><span class="settings-card-chevron">'+(open?"−":"+")+'</span></button>'
+    +'<div class="settings-card-content" '+(open?"":'hidden')+'>'+content+'</div></section>';
+}
+
+function syncAssetExportSettingsUi() {
+  const boxes=[...document.querySelectorAll("[data-export-config-field]")];
+  const selected=boxes.filter(input=>input.checked).map(input=>input.dataset.exportConfigField);
+  const selectedSet=new Set(selected);
+  boxes.forEach(input=>input.closest(".export-settings-option")?.classList.toggle("is-selected",input.checked));
+
+  document.querySelectorAll(".export-settings-group").forEach(group=>{
+    const groupBoxes=[...group.querySelectorAll("[data-export-config-field]")];
+    const small=group.querySelector("header small");
+    if(small) small.textContent=groupBoxes.filter(input=>input.checked).length+" de "+groupBoxes.length+" selecionada(s)";
   });
-  dialog.querySelector('[data-action="export-select-all"]')?.addEventListener("click",()=>{boxes.forEach(box=>box.checked=true);updateCount();});
-  dialog.querySelector("#assetExportForm")?.addEventListener("submit",event=>{
-    event.preventDefault();
-    const selected=boxes.filter(box=>box.checked).map(box=>box.dataset.exportField);
-    if(!selected.length){toast("Selecione pelo menos uma informação para exportar.","error");return;}
-    exportCsv(rows,selected);
-    dialog.close();
-  });
-  dialog.addEventListener("close",()=>dialog.remove(),{once:true});
-  dialog.showModal();
+
+  const count=document.querySelector(".export-settings-summary > div:first-child strong");
+  if(count) count.textContent=String(selected.length);
+
+  const preview=document.querySelector(".export-preview");
+  if(preview) preview.outerHTML=assetExportPreviewHtml({colunas:selected});
+
+  return selected;
+}
+
+async function saveAssetExportConfigFromSettings() {
+  if(state.assetExportConfigBusy) return;
+  const selected=[...document.querySelectorAll("[data-export-config-field]:checked")].map(input=>input.dataset.exportConfigField);
+  if(!selected.length) { toast("Selecione pelo menos uma coluna para a exportação.","error"); return; }
+  state.assetExportConfigBusy=true;
+  const button=document.querySelector('[data-action="save-asset-export-config"]');
+  if(button){button.disabled=true;button.textContent="Salvando…";}
+  try {
+    const result=await saveAssetExportConfig({colunas:selected});
+    state.assetExportConfig=normalizeAssetExportConfigClient(result.configuracao);
+    state.assetExportConfigLoaded=true;
+    state.assetExportConfigMeta={atualizado_em:result.atualizado_em,atualizado_por:state.session?.user||null};
+    state.recentHistory=[];
+    toast("Configuração de exportação salva.","success");
+    renderSettings();
+  } catch(error) {
+    toast(error.message,"error");
+  } finally {
+    state.assetExportConfigBusy=false;
+  }
+}
+
+async function exportConfiguredAssets(rows) {
+  if(!rows?.length) { toast("Não há patrimônios para exportar.","error"); return; }
+  const config=await ensureAssetExportConfig();
+  exportCsv(rows,config.colunas);
 }
 
 function formatDate(value) {

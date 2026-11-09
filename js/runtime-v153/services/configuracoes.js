@@ -61,3 +61,24 @@ export async function savePublicQrConfig(configuracao) {
     atualizado_em:data.atualizado_em || null
   };
 }
+
+
+export async function getAssetExportConfig() {
+  const data=await apiRequest("/api/configuracoes/exportacao-patrimonios");
+  return {
+    configuracao:data.configuracao,
+    atualizado_em:data.atualizado_em || null,
+    atualizado_por:data.atualizado_por || null
+  };
+}
+
+export async function saveAssetExportConfig(configuracao) {
+  const data=await apiRequest("/api/configuracoes/exportacao-patrimonios",{
+    method:"PUT",
+    body:{configuracao}
+  });
+  return {
+    configuracao:data.configuracao,
+    atualizado_em:data.atualizado_em || null
+  };
+}
