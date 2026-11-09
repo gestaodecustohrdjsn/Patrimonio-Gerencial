@@ -10,7 +10,7 @@ import { renderUsers } from "./pages/users.js?v=1.9.3";
 import { listMaintenances, createMaintenance, finishMaintenance } from "./services/manutencoes.js";
 import { listRecentHistory, listHistory } from "./services/historico.js?v=1.8.0";
 import { simulateAssetImport, applyAssetImport, listAssetImportHistory } from "./services/importacoes.js?v=1.7.0";
-import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate, getPublicQrConfig, savePublicQrConfig } from "./services/configuracoes.js?v=1.10.0";
+import { getReportTemplate, saveReportTemplate, getLossTermTemplate, saveLossTermTemplate, getPublicQrConfig, savePublicQrConfig, getAssetExportConfig, saveAssetExportConfig } from "./services/configuracoes.js?v=1.12.0";
 
 const state = {
   currentView: "dashboard",
@@ -53,6 +53,10 @@ const state = {
   publicQrConfigLoaded: false,
   publicQrConfigMeta: null,
   publicQrConfigBusy: false,
+  assetExportConfig: null,
+  assetExportConfigLoaded: false,
+  assetExportConfigMeta: null,
+  assetExportConfigBusy: false,
   historyEvents: [],
   historyTotal: 0,
   historyUsers: [],
@@ -4129,7 +4133,7 @@ function bindDynamicActions() {
   document.querySelector("#allowedCenterSearch")?.addEventListener("input", debounce(renderFormAllowedCenterResults, 120));
   document.querySelectorAll('[data-action="new"]').forEach(b=>b.addEventListener("click", openNewAsset));
   document.querySelectorAll('[data-action="export"]').forEach(b=>b.addEventListener("click", exportCsv));
-  document.querySelectorAll('[data-action="export-panel"]').forEach(b=>b.addEventListener("click", () => openAssetExportDialog(filteredByPanel("assetFilters", state.showRemoved))));
+  document.querySelectorAll('[data-action="export-panel"]').forEach(b=>b.addEventListener("click", () => exportConfiguredAssets(filteredByPanel("assetFilters", state.showRemoved))));
   document.querySelectorAll('[data-action="toggle-value"]').forEach(b=>b.addEventListener("click",()=>{state.showDashboardValue=!state.showDashboardValue;renderDashboard();}));
   document.querySelectorAll('[data-action="back-assets"]').forEach(b=>b.addEventListener("click",()=>{state.detailEditMode=false;state.currentView="patrimonios";renderAssets();}));
   document.querySelectorAll('[data-action="move"]').forEach(b=>b.addEventListener("click",openMoveDialog));
