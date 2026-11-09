@@ -3244,6 +3244,7 @@ function renderSettings() {
   const templateOpen = state.settingsOpenCard === "template";
   const lossTemplateOpen = state.settingsOpenCard === "loss-template";
   const qrTemplateOpen = state.settingsOpenCard === "qr-template";
+  const assetExportOpen = state.settingsOpenCard === "asset-export";
   const template=normalizeReportTemplateClient(state.reportTemplate);
   const lossTemplate=normalizeLossTermTemplateClient(state.lossTermTemplate);
   const publicQrConfig=normalizePublicQrConfigClient(state.publicQrConfig);
@@ -3321,6 +3322,8 @@ function renderSettings() {
       ${lossTemplateSettingsCardHtml(lossTemplateOpen,lossTemplate)}
 
       ${publicQrSettingsCardHtml(qrTemplateOpen,publicQrConfig)}
+
+      ${assetExportSettingsCardHtml(assetExportOpen)}
     </div>
   `;
 
@@ -3337,6 +3340,9 @@ function renderSettings() {
       }
       if(state.settingsOpenCard==="qr-template" && !state.publicQrConfigLoaded) {
         ensurePublicQrConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+      }
+      if(state.settingsOpenCard==="asset-export" && !state.assetExportConfigLoaded) {
+        ensureAssetExportConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
       }
     });
   });
@@ -3383,6 +3389,15 @@ function renderSettings() {
   });
   document.querySelector('[data-action="save-public-qr"]')?.addEventListener("click",savePublicQrConfigFromSettings);
 
+  document.querySelectorAll("[data-export-config-field]").forEach(input=>input.addEventListener("change",()=>{
+    const selected=[...document.querySelectorAll("[data-export-config-field]:checked")].map(item=>item.dataset.exportConfigField);
+    setAssetExportDraft(selected);
+  }));
+  document.querySelector('[data-action="export-config-default"]')?.addEventListener("click",()=>setAssetExportDraft(defaultAssetExportKeys()));
+  document.querySelector('[data-action="export-config-all"]')?.addEventListener("click",()=>setAssetExportDraft(ASSET_EXPORT_FIELDS.map(field=>field.key)));
+  document.querySelector('[data-action="export-config-clear"]')?.addEventListener("click",()=>setAssetExportDraft([]));
+  document.querySelector('[data-action="save-asset-export-config"]')?.addEventListener("click",saveAssetExportConfigFromSettings);
+
   if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
     ensureReportTemplate().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
@@ -3391,6 +3406,9 @@ function renderSettings() {
   }
   if(qrTemplateOpen && !state.publicQrConfigLoaded && !state.publicQrConfigBusy) {
     ensurePublicQrConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
+  }
+  if(assetExportOpen && !state.assetExportConfigLoaded && !state.assetExportConfigBusy) {
+    ensureAssetExportConfig().then(()=>{ if(state.currentView==="configuracoes") renderSettings(); });
   }
 }
 
