@@ -202,6 +202,34 @@ function sanitizePublicQrConfig(input) {
   };
 }
 
+
+const ASSET_EXPORT_CONFIG_KEYS = [
+  "id_interna","id_ses","descricao","descricao_complementar","tipo","centro_custo","valor","status",
+  "codigo_centro_custo","descricao_catalogo","marca_modelo","data_aquisicao","forma_aquisicao",
+  "estado_conservacao","mobilidade","em_manutencao","centros_permitidos","nota_fiscal","valor_catalogo",
+  "origem_catalogo","fonte_valor_catalogo","criado_em","atualizado_em","removido","removido_em","perdido","perdido_em"
+];
+
+function defaultAssetExportConfig() {
+  return {
+    colunas:["id_interna","id_ses","descricao","descricao_complementar","tipo","centro_custo","valor","status"]
+  };
+}
+
+function sanitizeAssetExportConfig(input) {
+  const base=defaultAssetExportConfig();
+  const value=input && typeof input==="object" ? input : {};
+  const raw=Array.isArray(value.colunas) ? value.colunas : base.colunas;
+  const allowed=new Set(ASSET_EXPORT_CONFIG_KEYS);
+  const unique=[];
+  for(const item of raw) {
+    const key=String(item||"").trim();
+    if(key && allowed.has(key) && !unique.includes(key)) unique.push(key);
+  }
+  if(!unique.length) throw new Error("VALIDATION:Selecione pelo menos uma coluna para a exportação.");
+  return {colunas:unique};
+}
+
 function sanitizeReportTemplate(input) {
   const base=defaultReportTemplate();
   const value=input && typeof input==="object" ? input : {};
@@ -591,7 +619,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false and perdido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.10.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.11.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -981,6 +1009,62 @@ export default {
             'CONFIGURACAO_PAGINA_PUBLICA_QR',
             ${previous?JSON.stringify(auditValue(previous)):null}::jsonb,
             ${JSON.stringify(auditValue(config))}::jsonb,
+            ${user.id}::uuid
+          )
+        `;
+        return responseJson({ok:true,configuracao:rows[0].valor,atualizado_em:rows[0].atualizado_em},200,env,request);
+      }
+
+
+      if (request.method === "GET" && url.pathname === "/api/configuracoes/exportacao-patrimonios") {
+        const defaults=defaultAssetExportConfig();
+        const rows=await sql`
+          select c.valor,c.atualizado_em,
+            case when u.id is null then null else json_build_object('id',u.id,'nome',u.nome) end as atualizado_por
+          from configuracoes_sistema c
+          left join usuarios u on u.id=c.atualizado_por
+          where c.chave='EXPORTACAO_PATRIMONIOS'
+          limit 1
+        `;
+        const stored=rows[0]?.valor && typeof rows[0].valor==="object" ? rows[0].valor : {};
+        let config;
+        try { config=sanitizeAssetExportConfig({...defaults,...stored}); }
+        catch { config=defaults; }
+        return responseJson({
+          ok:true,
+          configuracao:config,
+          atualizado_em:rows[0]?.atualizado_em||null,
+          atualizado_por:rows[0]?.atualizado_por||null
+        },200,env,request);
+      }
+
+      if (request.method === "PUT" && url.pathname === "/api/configuracoes/exportacao-patrimonios") {
+        if(!hasPermission(userPermissions,"configuracoes.templates")) return responseJson({ok:false,error:"Seu perfil não possui permissão para alterar a exportação."},403,env,request);
+        const b=await bodyJson(request);
+        let config;
+        try { config=sanitizeAssetExportConfig(b.configuracao); }
+        catch(error) {
+          const msg=String(error?.message||error);
+          if(msg.startsWith("VALIDATION:")) return responseJson({ok:false,error:msg.slice(11)},400,env,request);
+          throw error;
+        }
+        const previousRows=await sql`select valor from configuracoes_sistema where chave='EXPORTACAO_PATRIMONIOS' limit 1`;
+        const previous=previousRows[0]?.valor||null;
+        const rows=await sql`
+          insert into configuracoes_sistema(chave,valor,atualizado_por,atualizado_em)
+          values('EXPORTACAO_PATRIMONIOS',${JSON.stringify(config)}::jsonb,${user.id}::uuid,now())
+          on conflict(chave) do update
+          set valor=excluded.valor,atualizado_por=excluded.atualizado_por,atualizado_em=now()
+          returning id,valor,atualizado_em
+        `;
+        await sql`
+          insert into historico_alteracoes(tabela,registro_id,operacao,dados_anteriores,dados_novos,usuario_id)
+          values(
+            'configuracoes_sistema',
+            ${rows[0].id}::uuid,
+            'CONFIGURACAO_EXPORTACAO_PATRIMONIOS',
+            ${previous?JSON.stringify(previous):null}::jsonb,
+            ${JSON.stringify(config)}::jsonb,
             ${user.id}::uuid
           )
         `;
