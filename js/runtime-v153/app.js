@@ -3389,13 +3389,20 @@ function renderSettings() {
   });
   document.querySelector('[data-action="save-public-qr"]')?.addEventListener("click",savePublicQrConfigFromSettings);
 
-  document.querySelectorAll("[data-export-config-field]").forEach(input=>input.addEventListener("change",()=>{
-    const selected=[...document.querySelectorAll("[data-export-config-field]:checked")].map(item=>item.dataset.exportConfigField);
-    setAssetExportDraft(selected);
-  }));
-  document.querySelector('[data-action="export-config-default"]')?.addEventListener("click",()=>setAssetExportDraft(defaultAssetExportKeys()));
-  document.querySelector('[data-action="export-config-all"]')?.addEventListener("click",()=>setAssetExportDraft(ASSET_EXPORT_FIELDS.map(field=>field.key)));
-  document.querySelector('[data-action="export-config-clear"]')?.addEventListener("click",()=>setAssetExportDraft([]));
+  document.querySelectorAll("[data-export-config-field]").forEach(input=>input.addEventListener("change",syncAssetExportSettingsUi));
+  document.querySelector('[data-action="export-config-default"]')?.addEventListener("click",()=>{
+    const defaults=new Set(defaultAssetExportKeys());
+    document.querySelectorAll("[data-export-config-field]").forEach(input=>{ input.checked=defaults.has(input.dataset.exportConfigField); });
+    syncAssetExportSettingsUi();
+  });
+  document.querySelector('[data-action="export-config-all"]')?.addEventListener("click",()=>{
+    document.querySelectorAll("[data-export-config-field]").forEach(input=>{ input.checked=true; });
+    syncAssetExportSettingsUi();
+  });
+  document.querySelector('[data-action="export-config-clear"]')?.addEventListener("click",()=>{
+    document.querySelectorAll("[data-export-config-field]").forEach(input=>{ input.checked=false; });
+    syncAssetExportSettingsUi();
+  });
   document.querySelector('[data-action="save-asset-export-config"]')?.addEventListener("click",saveAssetExportConfigFromSettings);
 
   if(templateOpen && !state.reportTemplateLoaded && !state.reportTemplateBusy) {
@@ -5274,10 +5281,25 @@ function assetExportSettingsCardHtml(open) {
     +'<div class="settings-card-content" '+(open?"":'hidden')+'>'+content+'</div></section>';
 }
 
-function setAssetExportDraft(keys) {
-  state.assetExportConfig={colunas:keys};
-  state.assetExportConfigLoaded=true;
-  renderSettings();
+function syncAssetExportSettingsUi() {
+  const boxes=[...document.querySelectorAll("[data-export-config-field]")];
+  const selected=boxes.filter(input=>input.checked).map(input=>input.dataset.exportConfigField);
+  const selectedSet=new Set(selected);
+  boxes.forEach(input=>input.closest(".export-settings-option")?.classList.toggle("is-selected",input.checked));
+
+  document.querySelectorAll(".export-settings-group").forEach(group=>{
+    const groupBoxes=[...group.querySelectorAll("[data-export-config-field]")];
+    const small=group.querySelector("header small");
+    if(small) small.textContent=groupBoxes.filter(input=>input.checked).length+" de "+groupBoxes.length+" selecionada(s)";
+  });
+
+  const count=document.querySelector(".export-settings-summary > div:first-child strong");
+  if(count) count.textContent=String(selected.length);
+
+  const preview=document.querySelector(".export-preview");
+  if(preview) preview.outerHTML=assetExportPreviewHtml({colunas:selected});
+
+  return selected;
 }
 
 async function saveAssetExportConfigFromSettings() {
