@@ -5124,8 +5124,8 @@ const ASSET_EXPORT_FIELDS = [
   {key:"descricao_complementar",label:"Descrição complementar",group:"Padrão",standard:true,value:a=>a.descricao||""},
   {key:"tipo",label:"Tipo",group:"Padrão",standard:true,value:a=>typeName(a.tipo_id)},
   {key:"centro_custo",label:"Centro de Custo",group:"Padrão",standard:true,value:a=>a.centros_custo?.nome||""},
-  {key:"valor",label:"Valor",group:"Padrão",standard:true,value:a=>exportNumber(a.valor_aquisicao)},
-  {key:"status",label:"Status",group:"Padrão",standard:true,value:a=>assetExportStatus(a)},
+  {key:"valor",label:"Valor",group:"Padrão",standard:true,value:a=>a.valor_aquisicao},
+  {key:"status",label:"Status",group:"Padrão",standard:true,value:a=>a.status||""},
 
   {key:"codigo_centro_custo",label:"Código do Centro de Custo",group:"Cadastro e localização",value:a=>a.centros_custo?.codigo||""},
   {key:"descricao_catalogo",label:"Descrição do Catálogo",group:"Cadastro e localização",value:a=>a.descricoes_padrao?.descricao||""},
@@ -5137,7 +5137,7 @@ const ASSET_EXPORT_FIELDS = [
   {key:"em_manutencao",label:"Em manutenção",group:"Cadastro e localização",value:a=>a.em_manutencao?"Sim":"Não"},
   {key:"centros_permitidos",label:"Centros de custo permitidos",group:"Cadastro e localização",value:a=>(a.centros_permitidos||[]).map(c=>c.nome).filter(Boolean).join(", ")},
   {key:"nota_fiscal",label:"Nota Fiscal",group:"Aquisição e Catálogo",value:a=>a.nota_fiscal_numero||""},
-  {key:"valor_catalogo",label:"Valor de referência do Catálogo",group:"Aquisição e Catálogo",value:a=>exportNumber(a.descricoes_padrao?.valor_padrao)},
+  {key:"valor_catalogo",label:"Valor de referência do Catálogo",group:"Aquisição e Catálogo",value:a=>a.descricoes_padrao?.valor_padrao??""},
   {key:"origem_catalogo",label:"Origem do Catálogo",group:"Aquisição e Catálogo",value:a=>a.descricoes_padrao?.origem||""},
   {key:"fonte_valor_catalogo",label:"Fonte do valor do Catálogo",group:"Aquisição e Catálogo",value:a=>a.descricoes_padrao?.fonte_valor||""},
   {key:"criado_em",label:"Data de cadastro",group:"Controle do registro",value:a=>a.criado_em?formatDateTime(a.criado_em):""},
@@ -5148,23 +5148,12 @@ const ASSET_EXPORT_FIELDS = [
   {key:"perdido_em",label:"Data da perda",group:"Controle do registro",value:a=>a.perdido_em?formatDateTime(a.perdido_em):""}
 ];
 
-function assetExportStatus(asset) {
-  if(asset.perdido) return "Perdido";
-  if(asset.removido) return "Removido";
-  return asset.status==="ATIVO" ? "Ativo" : asset.status==="INATIVO" ? "Inativo" : (asset.status||"");
-}
-
-function exportNumber(value) {
-  if(value===null || value===undefined || value==="") return "";
-  const n=Number(value);
-  return Number.isFinite(n) ? String(n).replace(".",",") : String(value);
-}
-
 function defaultAssetExportKeys() {
   return ASSET_EXPORT_FIELDS.filter(field=>field.standard).map(field=>field.key);
 }
 
 function exportCsv(rows = filteredAssets(), selectedKeys = defaultAssetExportKeys()) {
+  if(!Array.isArray(rows)) rows=filteredAssets();
   const selected=new Set(selectedKeys);
   const fields=ASSET_EXPORT_FIELDS.filter(field=>selected.has(field.key));
   if(!fields.length) { toast("Selecione pelo menos uma informação para exportar.","error"); return; }
