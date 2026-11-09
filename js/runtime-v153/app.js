@@ -4129,7 +4129,7 @@ function bindDynamicActions() {
   document.querySelector("#allowedCenterSearch")?.addEventListener("input", debounce(renderFormAllowedCenterResults, 120));
   document.querySelectorAll('[data-action="new"]').forEach(b=>b.addEventListener("click", openNewAsset));
   document.querySelectorAll('[data-action="export"]').forEach(b=>b.addEventListener("click", exportCsv));
-  document.querySelectorAll('[data-action="export-panel"]').forEach(b=>b.addEventListener("click", () => exportCsv(filteredByPanel("assetFilters", state.showRemoved))));
+  document.querySelectorAll('[data-action="export-panel"]').forEach(b=>b.addEventListener("click", () => openAssetExportDialog(filteredByPanel("assetFilters", state.showRemoved))));
   document.querySelectorAll('[data-action="toggle-value"]').forEach(b=>b.addEventListener("click",()=>{state.showDashboardValue=!state.showDashboardValue;renderDashboard();}));
   document.querySelectorAll('[data-action="back-assets"]').forEach(b=>b.addEventListener("click",()=>{state.detailEditMode=false;state.currentView="patrimonios";renderAssets();}));
   document.querySelectorAll('[data-action="move"]').forEach(b=>b.addEventListener("click",openMoveDialog));
@@ -5117,11 +5117,121 @@ function openAssetFromHash() {
   if (asset) openAssetDetail(asset.id);
 }
 
-function exportCsv(rows = filteredAssets()) {
-  const data = [["ID Interna","ID SES","Descrição","Descrição complementar","Tipo","Centro de Custo","Valor","Status"], ...rows.map(asset=>[asset.id_interna,asset.id_ses||"",assetDisplayName(asset),asset.descricao||"",typeName(asset.tipo_id),asset.centros_custo?.nome||"",asset.valor_aquisicao,asset.status])];
+const ASSET_EXPORT_FIELDS = [
+  {key:"id_interna",label:"ID Interna",group:"Padrão",standard:true,value:a=>a.id_interna},
+  {key:"id_ses",label:"ID SES",group:"Padrão",standard:true,value:a=>a.id_ses||""},
+  {key:"descricao",label:"Descrição",group:"Padrão",standard:true,value:a=>assetDisplayName(a)},
+  {key:"descricao_complementar",label:"Descrição complementar",group:"Padrão",standard:true,value:a=>a.descricao||""},
+  {key:"tipo",label:"Tipo",group:"Padrão",standard:true,value:a=>typeName(a.tipo_id)},
+  {key:"centro_custo",label:"Centro de Custo",group:"Padrão",standard:true,value:a=>a.centros_custo?.nome||""},
+  {key:"valor",label:"Valor",group:"Padrão",standard:true,value:a=>a.valor_aquisicao},
+  {key:"status",label:"Status",group:"Padrão",standard:true,value:a=>a.status||""},
+
+  {key:"codigo_centro_custo",label:"Código do Centro de Custo",group:"Cadastro e localização",value:a=>a.centros_custo?.codigo||""},
+  {key:"descricao_catalogo",label:"Descrição do Catálogo",group:"Cadastro e localização",value:a=>a.descricoes_padrao?.descricao||""},
+  {key:"marca_modelo",label:"Marca / Modelo",group:"Cadastro e localização",value:a=>a.marca_modelo||""},
+  {key:"data_aquisicao",label:"Data de aquisição",group:"Cadastro e localização",value:a=>a.data_aquisicao?formatDate(a.data_aquisicao):""},
+  {key:"forma_aquisicao",label:"Forma de aquisição",group:"Cadastro e localização",value:a=>a.tipo_aquisicao?acquisitionName(a.tipo_aquisicao):""},
+  {key:"estado_conservacao",label:"Estado de conservação",group:"Cadastro e localização",value:a=>a.estado_conservacao?conservationName(a.estado_conservacao):""},
+  {key:"mobilidade",label:"Mobilidade",group:"Cadastro e localização",value:a=>a.mobilidade==="MOVEL"?"Móvel":a.mobilidade==="FIXO"?"Fixo":""},
+  {key:"em_manutencao",label:"Em manutenção",group:"Cadastro e localização",value:a=>a.em_manutencao?"Sim":"Não"},
+  {key:"centros_permitidos",label:"Centros de custo permitidos",group:"Cadastro e localização",value:a=>(a.centros_permitidos||[]).map(c=>c.nome).filter(Boolean).join(", ")},
+  {key:"nota_fiscal",label:"Nota Fiscal",group:"Aquisição e Catálogo",value:a=>a.nota_fiscal_numero||""},
+  {key:"valor_catalogo",label:"Valor de referência do Catálogo",group:"Aquisição e Catálogo",value:a=>a.descricoes_padrao?.valor_padrao??""},
+  {key:"origem_catalogo",label:"Origem do Catálogo",group:"Aquisição e Catálogo",value:a=>a.descricoes_padrao?.origem||""},
+  {key:"fonte_valor_catalogo",label:"Fonte do valor do Catálogo",group:"Aquisição e Catálogo",value:a=>a.descricoes_padrao?.fonte_valor||""},
+  {key:"criado_em",label:"Data de cadastro",group:"Controle do registro",value:a=>a.criado_em?formatDateTime(a.criado_em):""},
+  {key:"atualizado_em",label:"Última atualização",group:"Controle do registro",value:a=>a.atualizado_em?formatDateTime(a.atualizado_em):""},
+  {key:"removido",label:"Removido",group:"Controle do registro",value:a=>a.removido?"Sim":"Não"},
+  {key:"removido_em",label:"Data de remoção",group:"Controle do registro",value:a=>a.removido_em?formatDateTime(a.removido_em):""},
+  {key:"perdido",label:"Perdido",group:"Controle do registro",value:a=>a.perdido?"Sim":"Não"},
+  {key:"perdido_em",label:"Data da perda",group:"Controle do registro",value:a=>a.perdido_em?formatDateTime(a.perdido_em):""}
+];
+
+function defaultAssetExportKeys() {
+  return ASSET_EXPORT_FIELDS.filter(field=>field.standard).map(field=>field.key);
+}
+
+function exportCsv(rows = filteredAssets(), selectedKeys = defaultAssetExportKeys()) {
+  if(!Array.isArray(rows)) rows=filteredAssets();
+  const selected=new Set(selectedKeys);
+  const fields=ASSET_EXPORT_FIELDS.filter(field=>selected.has(field.key));
+  if(!fields.length) { toast("Selecione pelo menos uma informação para exportar.","error"); return; }
+  const data=[fields.map(field=>field.label),...rows.map(asset=>fields.map(field=>field.value(asset)))];
   const csv=data.map(row=>row.map(value=>`"${String(value??"").replaceAll('"','""')}"`).join(";")).join("\n");
   const url=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));
-  const a=document.createElement("a");a.href=url;a.download=`patrimonios-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`patrimonios-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function openAssetExportDialog(rows) {
+  if(!rows?.length) { toast("Não há patrimônios para exportar.","error"); return; }
+  document.querySelector("#assetExportDialog")?.remove();
+  const dialog=document.createElement("dialog");
+  dialog.id="assetExportDialog";
+  dialog.className="operation-dialog export-config-dialog";
+  const groups=["Padrão","Cadastro e localização","Aquisição e Catálogo","Controle do registro"];
+  dialog.innerHTML=`
+    <form method="dialog" id="assetExportForm">
+      <div class="dialog-header">
+        <button type="button" class="back-button" data-action="close-export-dialog">← Voltar</button>
+        <h2>Configurar exportação</h2>
+        <p>${rows.length} patrimônio(s) serão exportados conforme os filtros atuais.</p>
+      </div>
+      <div class="export-config-body">
+        <div class="export-config-intro">
+          <strong>Escolha as informações da planilha</strong>
+          <span>As colunas atuais já vêm marcadas como Padrão. Você pode adicionar outras apenas para esta exportação.</span>
+        </div>
+        ${groups.map(group=>`
+          <section class="export-field-group">
+            <div class="export-field-group-head"><strong>${escapeHtml(group)}</strong>${group==="Padrão"?'<span class="badge">Padrão atual</span>':""}</div>
+            <div class="export-field-grid">
+              ${ASSET_EXPORT_FIELDS.filter(field=>field.group===group).map(field=>`
+                <label><input type="checkbox" data-export-field="${field.key}" ${field.standard?"checked":""}> <span>${escapeHtml(field.label)}</span></label>
+              `).join("")}
+            </div>
+          </section>
+        `).join("")}
+      </div>
+      <div class="export-config-toolbar">
+        <button type="button" class="ghost-button compact-button" data-action="export-default">Restaurar padrão</button>
+        <button type="button" class="ghost-button compact-button" data-action="export-select-all">Selecionar tudo</button>
+        <span id="exportFieldCount">${defaultAssetExportKeys().length} coluna(s) selecionada(s)</span>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="ghost-button" data-action="close-export-dialog">Cancelar</button>
+        <button type="submit" class="primary-button">Exportar CSV</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dialog);
+
+  const boxes=[...dialog.querySelectorAll("[data-export-field]")];
+  const updateCount=()=>{
+    const count=boxes.filter(box=>box.checked).length;
+    const label=dialog.querySelector("#exportFieldCount");
+    if(label) label.textContent=`${count} coluna(s) selecionada(s)`;
+  };
+  boxes.forEach(box=>box.addEventListener("change",updateCount));
+  dialog.querySelectorAll('[data-action="close-export-dialog"]').forEach(button=>button.addEventListener("click",()=>dialog.close()));
+  dialog.querySelector('[data-action="export-default"]')?.addEventListener("click",()=>{
+    const defaults=new Set(defaultAssetExportKeys());
+    boxes.forEach(box=>box.checked=defaults.has(box.dataset.exportField));
+    updateCount();
+  });
+  dialog.querySelector('[data-action="export-select-all"]')?.addEventListener("click",()=>{boxes.forEach(box=>box.checked=true);updateCount();});
+  dialog.querySelector("#assetExportForm")?.addEventListener("submit",event=>{
+    event.preventDefault();
+    const selected=boxes.filter(box=>box.checked).map(box=>box.dataset.exportField);
+    if(!selected.length){toast("Selecione pelo menos uma informação para exportar.","error");return;}
+    exportCsv(rows,selected);
+    dialog.close();
+  });
+  dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+  dialog.showModal();
 }
 
 function formatDate(value) {

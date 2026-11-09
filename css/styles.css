@@ -1376,3 +1376,77 @@ button:disabled { opacity: .65; cursor: wait; }
   .public-qr-preview-grid{grid-template-columns:1fr}
   .public-qr-preview-footer{flex-direction:column}
 }
+
+
+/* Exportação configurável de patrimônios */
+.export-config-dialog{
+  width:min(860px,calc(100vw - 28px));
+}
+.export-config-body{
+  display:grid;
+  gap:18px;
+  padding:4px 0 10px;
+}
+.export-config-intro{
+  display:grid;
+  gap:5px;
+  padding:14px 16px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:var(--surface-soft);
+}
+.export-config-intro strong{font-size:14px}
+.export-config-intro span{color:var(--muted);font-size:12px;line-height:1.45}
+.export-field-group{
+  display:grid;
+  gap:10px;
+}
+.export-field-group-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.export-field-group-head strong{
+  font-size:13px;
+}
+.export-field-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.export-field-grid label{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-height:42px;
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:#fff;
+  font-size:12px;
+  font-weight:700;
+}
+.export-field-grid input{
+  width:17px;
+  height:17px;
+  flex:0 0 auto;
+}
+.export-config-toolbar{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:12px 0 2px;
+  border-top:1px solid var(--border);
+}
+.export-config-toolbar span{
+  margin-left:auto;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:750;
+}
+@media (max-width:700px){
+  .export-field-grid{grid-template-columns:1fr}
+  .export-config-toolbar span{width:100%;margin-left:0}
+}
