@@ -5192,14 +5192,15 @@ function exportCsv(rows = filteredAssets(), selectedKeys = defaultAssetExportKey
 
 function normalizeAssetExportConfigClient(value) {
   const defaults=defaultAssetExportKeys();
-  const raw=value && Array.isArray(value.colunas) ? value.colunas : defaults;
+  const hasColumns=Boolean(value && Array.isArray(value.colunas));
+  const raw=hasColumns ? value.colunas : defaults;
   const allowed=new Set(ASSET_EXPORT_FIELDS.map(field=>field.key));
   const colunas=[];
   for(const item of raw) {
     const key=String(item||"");
     if(allowed.has(key) && !colunas.includes(key)) colunas.push(key);
   }
-  return {colunas:colunas.length ? colunas : defaults};
+  return {colunas:hasColumns ? colunas : defaults};
 }
 
 async function ensureAssetExportConfig(force=false) {
