@@ -50,7 +50,7 @@ function can(code) {
 function currentUser() { return state.session && state.session.user ? String(state.session.user.nome || "") : ""; }
 function typeName(id) { return ({1:"Equipamento Médico",2:"Mobiliário",3:"Equipamento de Informática"})[Number(id)] || "—"; }
 function conservationName(v) { return ({PRODUTO_NOVO:"Produto Novo",BEM_CONSERVADO:"Bem Conservado",DESGASTADO:"Desgastado",INUTILIZAVEL:"Inutilizável"})[v] || v || "—"; }
-function acquisitionName(v) { return ({COMPRA:"Compra",DOACAO:"Doação",LOCACAO:"Locação"})[v] || v || "—"; }
+function acquisitionName(v) { return ({COMPRA:"Compra",CEDIDO_FUNDO_ESPECIAL:"Cedido Fundo Especial",DOACAO:"Cedido Fundo Especial",LOCACAO:"Locação"})[v] || v || "—"; }
 function formatDate(v) {
   if (!v) return "—";
   const parts = String(v).slice(0,10).split("-");
@@ -842,7 +842,7 @@ function renderNew() {
     '<label>ID SES<input name="id_ses"></label>' +
     '<label>Centro de custo<select name="centro" required><option value="">Selecione…</option>' + centerOptions("",false) + '</select></label>' +
     '<label>Marca / Modelo<input name="marca_modelo"></label><label>Data de aquisição<input name="data" type="date" value="' + today + '" required></label>' +
-    '<label>Tipo de aquisição<select name="aquisicao" required><option value="COMPRA">Compra</option><option value="DOACAO">Doação</option><option value="LOCACAO">Locação</option></select></label>' +
+    '<label>Tipo de aquisição<select name="aquisicao" required><option value="COMPRA">Compra</option><option value="CEDIDO_FUNDO_ESPECIAL">Cedido Fundo Especial</option><option value="LOCACAO">Locação</option></select></label>' +
     '<label>Valor de aquisição<input name="valor" type="number" step="0.01" min="0"></label>' +
     '<label>Estado<select name="estado"><option value="BEM_CONSERVADO">Bem Conservado</option><option value="PRODUTO_NOVO">Produto Novo</option><option value="DESGASTADO">Desgastado</option><option value="INUTILIZAVEL">Inutilizável</option></select></label>' +
     '<label>Mobilidade<select name="mobilidade" id="newMobility"><option value="FIXO">Fixo</option><option value="MOVEL">Móvel</option></select></label>' +
