@@ -148,7 +148,7 @@ function shell() {
 
       <fieldset class="form-section"><legend>Aquisição e valores</legend><div class="form-grid">
         <label>Data de aquisição *<input id="dataAquisicao" type="date" required><small>Preenchida automaticamente com a data atual.</small></label>
-        <label>Aquisição *<select id="aquisicao" required><option value="">Selecione</option><option value="COMPRA">Compra</option><option value="DOACAO">Doação</option><option value="LOCACAO">Locação</option><option value="CONTRATO_GESTAO">Contrato de Gestão</option></select></label>
+        <label>Aquisição *<select id="aquisicao" required><option value="">Selecione</option><option value="COMPRA">Compra</option><option value="CEDIDO_FUNDO_ESPECIAL">Cedido Fundo Especial</option><option value="LOCACAO">Locação</option><option value="CONTRATO_GESTAO">Contrato de Gestão</option></select></label>
         <label><span class="field-title">Valor de aquisição <span class="optional-note">(Opcional)</span></span><input id="valor" inputmode="decimal" placeholder="R$ 0,00"></label>
         <label>Valor de referência do Catálogo<input id="valorSigem" readonly tabindex="-1" placeholder="—"></label>
         <label>Nº Nota Fiscal<input id="notaFiscal" maxlength="60"></label>
@@ -753,7 +753,7 @@ function filterPanelHtml(key, title = "Filtros") {
       <label>Centro de custo<select data-filter-key="${key}" data-filter-field="centro"><option value="">Todos</option>${centerOptions}</select></label>
       <label>Tipo<select data-filter-key="${key}" data-filter-field="tipo"><option value="">Todos</option><option value="1" ${f.tipo==="1"?"selected":""}>Equipamento Médico</option><option value="2" ${f.tipo==="2"?"selected":""}>Mobiliário</option><option value="3" ${f.tipo==="3"?"selected":""}>Informática</option></select></label>
       <label>Status<select data-filter-key="${key}" data-filter-field="status"><option value="">Todos</option><option value="ATIVO" ${f.status==="ATIVO"?"selected":""}>Ativo</option><option value="INATIVO" ${f.status==="INATIVO"?"selected":""}>Inativo</option></select></label>
-      <label>Aquisição<select data-filter-key="${key}" data-filter-field="aquisicao"><option value="">Todas</option><option value="COMPRA" ${f.aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${f.aquisicao==="DOACAO"?"selected":""}>Doação</option><option value="LOCACAO" ${f.aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${f.aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select></label>
+      <label>Aquisição<select data-filter-key="${key}" data-filter-field="aquisicao"><option value="">Todas</option><option value="COMPRA" ${f.aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${f.aquisicao==="CEDIDO_FUNDO_ESPECIAL"?"selected":""}>Doação</option><option value="LOCACAO" ${f.aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${f.aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select></label>
       <label>Conservação<select data-filter-key="${key}" data-filter-field="conservacao"><option value="">Todos</option><option value="PRODUTO_NOVO" ${f.conservacao==="PRODUTO_NOVO"?"selected":""}>Produto Novo</option><option value="BEM_CONSERVADO" ${f.conservacao==="BEM_CONSERVADO"?"selected":""}>Bem Conservado</option><option value="DESGASTADO" ${f.conservacao==="DESGASTADO"?"selected":""}>Desgastado</option><option value="INUTILIZAVEL" ${f.conservacao==="INUTILIZAVEL"?"selected":""}>Inutilizável</option></select></label>
       <label>Vínculo com Catálogo<select data-filter-key="${key}" data-filter-field="sigem"><option value="">Todos</option><option value="sim" ${f.sigem==="sim"?"selected":""}>Com Catálogo</option><option value="nao" ${f.sigem==="nao"?"selected":""}>Sem Catálogo</option></select></label>
       <label>Valor<select data-filter-key="${key}" data-filter-field="valor"><option value="">Todos</option><option value="sim" ${f.valor==="sim"?"selected":""}>Com valor</option><option value="nao" ${f.valor==="nao"?"selected":""}>Sem valor</option></select></label>
@@ -1046,7 +1046,7 @@ function detailEditFormHtml(asset) {
       <article class="detail-card"><h2>Aquisição e valores</h2>
         <div class="inline-form-grid">
           <label>Data de aquisição *<div class="date-shell"><input type="date" name="data_aquisicao" required value="${escapeHtml(normalizeDateOnly(asset.data_aquisicao))}"></div></label>
-          <label>Aquisição *<select name="tipo_aquisicao" required><option value="COMPRA" ${asset.tipo_aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${asset.tipo_aquisicao==="DOACAO"?"selected":""}>Doação</option><option value="LOCACAO" ${asset.tipo_aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${asset.tipo_aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select></label>
+          <label>Aquisição *<select name="tipo_aquisicao" required><option value="COMPRA" ${asset.tipo_aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${asset.tipo_aquisicao==="CEDIDO_FUNDO_ESPECIAL"?"selected":""}>Doação</option><option value="LOCACAO" ${asset.tipo_aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${asset.tipo_aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select></label>
           <label>Valor de aquisição<input name="valor_aquisicao" value="${asset.valor_aquisicao == null ? "" : escapeHtml(String(asset.valor_aquisicao).replace(".", ","))}" placeholder="R$ 0,00"></label>
           <label>Nota fiscal<input name="nota_fiscal_numero" value="${escapeHtml(asset.nota_fiscal_numero || "")}"></label>
         </div>
@@ -1340,7 +1340,7 @@ function renderReports() {
           <select data-report-filter="manutencao"><option value="">Todos</option><option value="sim" ${f.manutencao==="sim"?"selected":""}>Em manutenção</option><option value="nao" ${f.manutencao==="nao"?"selected":""}>Fora de manutenção</option></select>
         </label>
         <label>Aquisição
-          <select data-report-filter="aquisicao"><option value="">Todas</option><option value="COMPRA" ${f.aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${f.aquisicao==="DOACAO"?"selected":""}>Doação</option><option value="LOCACAO" ${f.aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${f.aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select>
+          <select data-report-filter="aquisicao"><option value="">Todas</option><option value="COMPRA" ${f.aquisicao==="COMPRA"?"selected":""}>Compra</option><option value="DOACAO" ${f.aquisicao==="CEDIDO_FUNDO_ESPECIAL"?"selected":""}>Doação</option><option value="LOCACAO" ${f.aquisicao==="LOCACAO"?"selected":""}>Locação</option><option value="CONTRATO_GESTAO" ${f.aquisicao==="CONTRATO_GESTAO"?"selected":""}>Contrato de Gestão</option></select>
         </label>
         <label>Conservação
           <select data-report-filter="conservacao"><option value="">Todos</option><option value="PRODUTO_NOVO" ${f.conservacao==="PRODUTO_NOVO"?"selected":""}>Produto Novo</option><option value="BEM_CONSERVADO" ${f.conservacao==="BEM_CONSERVADO"?"selected":""}>Bem Conservado</option><option value="DESGASTADO" ${f.conservacao==="DESGASTADO"?"selected":""}>Desgastado</option><option value="INUTILIZAVEL" ${f.conservacao==="INUTILIZAVEL"?"selected":""}>Inutilizável</option></select>
@@ -5344,7 +5344,7 @@ function formatDateTime(value) {
     return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
   } catch { return "—"; }
 }
-function acquisitionName(value) { return ({ COMPRA: "Compra", DOACAO: "Doação", LOCACAO: "Locação", CONTRATO_GESTAO: "Contrato de Gestão" })[value] || value || "—"; }
+function acquisitionName(value) { return ({ COMPRA: "Compra", CEDIDO_FUNDO_ESPECIAL: "Cedido Fundo Especial", DOACAO: "Cedido Fundo Especial", LOCACAO: "Locação", CONTRATO_GESTAO: "Contrato de Gestão" })[value] || value || "—"; }
 function conservationName(value) { return ({ PRODUTO_NOVO: "Produto Novo", BEM_CONSERVADO: "Bem Conservado", DESGASTADO: "Desgastado", INUTILIZAVEL: "Inutilizável" })[value] || value || "—"; }
 
 
