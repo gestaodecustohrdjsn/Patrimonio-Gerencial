@@ -282,15 +282,22 @@ function normalizeCatalogText(value) {
 }
 
 
+function normalizeAcquisitionCode(value) {
+  const raw=String(value||"").trim().toUpperCase();
+  if(raw==="DOACAO") return "CEDIDO_FUNDO_ESPECIAL";
+  return raw;
+}
+
 function importAcquisition(value) {
   const n=normalizeCatalogText(value);
   if (!n) return null;
   if (n.includes("contrato") && n.includes("gestao")) return "CONTRATO_GESTAO";
-  if (n.includes("doa")) return "DOACAO";
+  if ((n.includes("cedido") && n.includes("fundo") && n.includes("especial")) || n.includes("doa")) return "CEDIDO_FUNDO_ESPECIAL";
   if (n.includes("loca") || n.includes("alug")) return "LOCACAO";
   if (n.includes("compra") || n.includes("proprio") || n.includes("aquis")) return "COMPRA";
-  if (["contrato_gestao","doacao","locacao","compra"].includes(String(value||"").trim().toLowerCase())) {
-    return String(value).trim().toUpperCase();
+  const raw=String(value||"").trim().toUpperCase();
+  if (["CONTRATO_GESTAO","CEDIDO_FUNDO_ESPECIAL","DOACAO","LOCACAO","COMPRA"].includes(raw)) {
+    return normalizeAcquisitionCode(raw);
   }
   return null;
 }
@@ -619,7 +626,7 @@ export default {
           (select count(*)::int from centros_custo) centros,
           (select count(*)::int from descricoes_padrao) catalogo,
           (select count(*)::int from patrimonios where removido=false and perdido=false) patrimonios`;
-        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.11.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
+        return responseJson({ok:true,service:"Patrimônio+ API",version:"3.12.0",database:r[0].database,counts:{centrosCusto:r[0].centros,itensCatalogo:r[0].catalogo,patrimonios:r[0].patrimonios}},200,env,request);
       }
 
       const pub = url.pathname.match(/^\/api\/public\/patrimonio\/([0-9a-f-]{36})$/i);
@@ -1759,7 +1766,7 @@ export default {
         }
         const mobility=["FIXO","MOVEL"].includes(String(b.mobilidade||""))?String(b.mobilidade):"FIXO";
         const rows=await sql`insert into patrimonios(id_interna,id_ses,descricao,descricao_padrao_id,data_aquisicao,valor_aquisicao,nota_fiscal_numero,centro_custo_id,tipo_id,marca_modelo,status,tipo_aquisicao,estado_conservacao,mobilidade,criado_por,atualizado_por)
-          values(null,${b.id_ses||null},${String(b.descricao).trim()},${b.descricao_padrao_id||null}::uuid,coalesce(${b.data_aquisicao||null}::date,current_date),coalesce(${b.valor_aquisicao??null},(select valor_padrao from descricoes_padrao where id=${b.descricao_padrao_id||null}::uuid)),${b.nota_fiscal_numero||null},${b.centro_custo_id}::uuid,${Number(b.tipo_id)},${b.marca_modelo||null},coalesce(${b.status||null}::status_patrimonio,'ATIVO'),${b.tipo_aquisicao}::tipo_aquisicao,coalesce(${b.estado_conservacao||null}::estado_conservacao,'BEM_CONSERVADO'),${mobility},${user.id}::uuid,${user.id}::uuid) returning id`;
+          values(null,${b.id_ses||null},${String(b.descricao).trim()},${b.descricao_padrao_id||null}::uuid,coalesce(${b.data_aquisicao||null}::date,current_date),coalesce(${b.valor_aquisicao??null},(select valor_padrao from descricoes_padrao where id=${b.descricao_padrao_id||null}::uuid)),${b.nota_fiscal_numero||null},${b.centro_custo_id}::uuid,${Number(b.tipo_id)},${b.marca_modelo||null},coalesce(${b.status||null}::status_patrimonio,'ATIVO'),${normalizeAcquisitionCode(b.tipo_aquisicao)}::tipo_aquisicao,coalesce(${b.estado_conservacao||null}::estado_conservacao,'BEM_CONSERVADO'),${mobility},${user.id}::uuid,${user.id}::uuid) returning id`;
         await sql`select sincronizar_centros_permitidos_api(${rows[0].id}::uuid,${mobility==="MOVEL"?(Array.isArray(b.centros_permitidos_ids)?b.centros_permitidos_ids:[]):[]}::uuid[],${user.id}::uuid)`;
         return responseJson({ok:true,patrimonio:await hydrateAsset(sql,rows[0].id)},201,env,request);
       }
@@ -1783,7 +1790,7 @@ export default {
           tipo_id: has("tipo_id") ? Number(b.tipo_id) : Number(current.tipo_id),
           marca_modelo: has("marca_modelo") ? (b.marca_modelo || null) : current.marca_modelo,
           status: has("status") ? String(b.status || "") : current.status,
-          tipo_aquisicao: has("tipo_aquisicao") ? String(b.tipo_aquisicao || "") : current.tipo_aquisicao,
+          tipo_aquisicao: has("tipo_aquisicao") ? normalizeAcquisitionCode(b.tipo_aquisicao) : current.tipo_aquisicao,
           estado_conservacao: has("estado_conservacao") ? String(b.estado_conservacao || "") : current.estado_conservacao,
           mobilidade: has("mobilidade") && ["FIXO","MOVEL"].includes(String(b.mobilidade)) ? String(b.mobilidade) : (current.mobilidade || "FIXO")
         };
